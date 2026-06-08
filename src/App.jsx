@@ -1,9 +1,11 @@
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
-import { Shield, History, Settings } from 'lucide-react';
+import { Shield, History, Settings, BarChart3 } from 'lucide-react';
 import ScannerView from './pages/ScannerView';
 import HistoryView from './pages/HistoryView';
 import SettingsView from './pages/SettingsView';
 import ReviewScan from './pages/ReviewScan';
+import DashboardView from './pages/DashboardView';
+
 
 function Layout({ children }) {
   const location = useLocation();
@@ -33,6 +35,10 @@ function Layout({ children }) {
             <History className="w-6 h-6 mb-1" />
             <span className="text-xs font-medium">History</span>
           </Link>
+          <Link to="/dashboard" className={`flex-1 flex flex-col items-center justify-center py-3 transition-colors ${location.pathname === '/dashboard' ? 'text-emerald-600 dark:text-emerald-500' : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'}`}>
+            <BarChart3 className="w-6 h-6 mb-1" />
+            <span className="text-xs font-medium">Dashboard</span>
+          </Link>
           <Link to="/settings" className={`flex-1 flex flex-col items-center justify-center py-3 transition-colors ${location.pathname === '/settings' ? 'text-emerald-600 dark:text-emerald-500' : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'}`}>
             <Settings className="w-6 h-6 mb-1" />
             <span className="text-xs font-medium">Settings</span>
@@ -51,6 +57,7 @@ function App() {
           <Route path="/" element={<ScannerView />} />
           <Route path="/review" element={<ReviewScan />} />
           <Route path="/history" element={<HistoryView />} />
+          <Route path="/dashboard" element={<DashboardView />} />
           <Route path="/settings" element={<SettingsView />} />
         </Routes>
       </Layout>
