@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { Camera, Image as ImageIcon, FileText, Upload, X, FileSpreadsheet, Play, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import { Camera, Image as ImageIcon, FileText, Upload, X, FileSpreadsheet, Play, CheckCircle2, AlertCircle, Loader2, Download, Copy, ArrowRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { db } from '../utils/database';
 import { analyzeJobPosting } from '../services/geminiService';
@@ -21,8 +21,22 @@ export default function ScannerView() {
   const [batchSuccessCount, setBatchSuccessCount] = useState(0);
   const [batchErrorCount, setBatchErrorCount] = useState(0);
   const [shouldAbortBatch, setShouldAbortBatch] = useState(false);
+  const [batchLogs, setBatchLogs] = useState([]);
+  const [isBatchDone, setIsBatchDone] = useState(false);
   
   const abortRef = useRef(false);
+  const logsContainerRef = useRef(null);
+
+  useEffect(() => {
+    if (logsContainerRef.current) {
+      logsContainerRef.current.scrollTop = logsContainerRef.current.scrollHeight;
+    }
+  }, [batchLogs]);
+
+  const addLog = (type, message) => {
+    const time = new Date().toLocaleTimeString();
+    setBatchLogs(prev => [...prev, { time, type, message }]);
+  };
   
   // Camera specific
   const videoRef = useRef(null);
@@ -138,21 +152,30 @@ export default function ScannerView() {
     }
 
     setIsProcessingBatch(true);
+    setIsBatchDone(false);
     setBatchProgress(0);
     setBatchSuccessCount(0);
     setBatchErrorCount(0);
+    setBatchLogs([]);
     const batchId = `batch_${Date.now()}`;
     let successCount = 0;
     let errorCount = 0;
     abortRef.current = false;
     setShouldAbortBatch(false);
 
+    addLog('info', `Starting batch scan for ${batchRows.length} items using ${modelName || 'gemini-2.5-flash'}...`);
+
     for (let i = 0; i < batchRows.length; i++) {
-      if (abortRef.current) break;
+      if (abortRef.current) {
+        addLog('error', `Batch processing aborted by user.`);
+        break;
+      }
 
       const row = batchRows[i];
       const jobTitle = row.job_title || `Job Posting #${i + 1}`;
-      setCurrentProcessingName(jobTitle);
+      const displayTitle = jobTitle.length > 60 ? jobTitle.substring(0, 60) + '...' : jobTitle;
+      setCurrentProcessingName(displayTitle);
+      addLog('info', `[${i + 1}/${batchRows.length}] Requesting Gemini analysis for: "${displayTitle}"`);
 
       try {
         const result = await analyzeJobPosting(apiKey, modelName, {
@@ -194,10 +217,12 @@ export default function ScannerView() {
         await db.scans.add(record);
         successCount++;
         setBatchSuccessCount(successCount);
+        addLog('success', `✔ "${displayTitle}" processed. Score: ${score} (${level.label}). Flags: ${activeFlags.length > 0 ? activeFlags.join(', ') : 'None'}`);
       } catch (err) {
         console.error(`Error processing batch row ${i}:`, err);
         errorCount++;
         setBatchErrorCount(errorCount);
+        addLog('error', `✘ Error processing "${displayTitle}": ${err.message || err.toString()}`);
       }
 
       setBatchProgress(Math.round(((i + 1) / batchRows.length) * 100));
@@ -207,8 +232,8 @@ export default function ScannerView() {
       }
     }
 
-    setIsProcessingBatch(false);
-    navigate('/history');
+    addLog('info', `Batch execution ended. Final Stats -> Success: ${successCount}, Errors: ${errorCount}`);
+    setIsBatchDone(true);
   };
 
   const handleScan = () => {
@@ -375,15 +400,19 @@ export default function ScannerView() {
       {/* Batch Processing Overlay */}
       {isProcessingBatch && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 w-full max-w-md shadow-2xl space-y-6">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 w-full max-w-xl shadow-2xl space-y-6">
             <div className="text-center space-y-2">
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white">Processing Batch</h3>
-              <p className="text-sm text-slate-500">Respecting API rate limits (2s delay per item)</p>
+              <h3 className="text-xl font-bold text-slate-900 dark:text-white">
+                {isBatchDone ? 'Batch Processing Complete' : 'Processing Batch'}
+              </h3>
+              <p className="text-sm text-slate-500">
+                {isBatchDone ? 'Scan process has completed' : 'Respecting API rate limits (2s delay per item)'}
+              </p>
             </div>
 
             <div className="space-y-4">
               {/* Progress stats */}
-              <div className="flex items-center justify-between text-xs text-slate-500 font-semibold uppercase tracking-wider">
+              <div className="flex items-center justify-between text-xs text-slate-500 font-bold uppercase tracking-wider">
                 <span>Success: <span className="text-emerald-600">{batchSuccessCount}</span></span>
                 <span>Errors: <span className="text-red-500">{batchErrorCount}</span></span>
                 <span>{batchProgress}%</span>
@@ -397,23 +426,110 @@ export default function ScannerView() {
                 />
               </div>
 
-              {/* Current processing row */}
-              <div className="bg-slate-50 dark:bg-slate-950/50 border border-slate-100 dark:border-slate-800 p-3.5 rounded-xl flex items-center gap-3">
-                <Loader2 className="w-5 h-5 text-emerald-600 animate-spin flex-shrink-0" />
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs text-slate-400 font-medium">Currently Analyzing:</p>
-                  <p className="text-sm font-bold text-slate-700 dark:text-slate-300 truncate">{currentProcessingName}</p>
+              {/* Current processing row / Status Indicator */}
+              {!isBatchDone && (
+                <div className="bg-slate-50 dark:bg-slate-950/50 border border-slate-100 dark:border-slate-800 p-3.5 rounded-xl flex items-center gap-3">
+                  <Loader2 className="w-5 h-5 text-emerald-600 animate-spin flex-shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs text-slate-400 font-medium">Currently Analyzing:</p>
+                    <p className="text-sm font-bold text-slate-700 dark:text-slate-300 truncate">{currentProcessingName}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Logs / Console output */}
+              <div className="space-y-1.5">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Console Dump / Error Log</span>
+                  {batchLogs.length > 0 && (
+                    <div className="flex gap-2">
+                      <button 
+                        onClick={() => {
+                          const logText = batchLogs.map(log => `[${log.time}] [${log.type.toUpperCase()}] ${log.message}`).join('\n');
+                          navigator.clipboard.writeText(logText);
+                          alert('Logs copied to clipboard!');
+                        }}
+                        className="text-xs text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1 font-semibold"
+                      >
+                        <Copy className="w-3.5 h-3.5" /> Copy Dump
+                      </button>
+                      <button 
+                        onClick={() => {
+                          const logText = batchLogs.map(log => `[${log.time}] [${log.type.toUpperCase()}] ${log.message}`).join('\n');
+                          const blob = new Blob([logText], { type: 'text/plain' });
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = `batch_scan_log_${Date.now()}.txt`;
+                          document.body.appendChild(a);
+                          a.click();
+                          document.body.removeChild(a);
+                          URL.revokeObjectURL(url);
+                        }}
+                        className="text-xs text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1 font-semibold"
+                      >
+                        <Download className="w-3.5 h-3.5" /> Download
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <div 
+                  ref={logsContainerRef}
+                  className="w-full h-48 bg-slate-900 dark:bg-slate-950 border border-slate-800 rounded-xl p-3 font-mono text-xs overflow-y-auto space-y-1 shadow-inner text-slate-300"
+                >
+                  {batchLogs.length === 0 ? (
+                    <div className="text-slate-500 italic">No logs yet. Initializing...</div>
+                  ) : (
+                    batchLogs.map((log, index) => {
+                      let colorClass = 'text-sky-400';
+                      if (log.type === 'success') colorClass = 'text-emerald-400';
+                      if (log.type === 'error') colorClass = 'text-rose-400';
+                      return (
+                        <div key={index} className="leading-relaxed whitespace-pre-wrap">
+                          <span className="text-slate-500">[{log.time}]</span>{' '}
+                          <span className={colorClass}>[{log.type.toUpperCase()}]</span>{' '}
+                          <span>{log.message}</span>
+                        </div>
+                      );
+                    })
+                  )}
                 </div>
               </div>
             </div>
 
-            <button
-              onClick={handleCancelBatch}
-              disabled={shouldAbortBatch}
-              className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold rounded-xl text-sm transition-colors active:scale-[0.98]"
-            >
-              {shouldAbortBatch ? 'Aborting...' : 'Cancel Batch'}
-            </button>
+            <div className="flex gap-3">
+              {!isBatchDone ? (
+                <button
+                  onClick={handleCancelBatch}
+                  disabled={shouldAbortBatch}
+                  className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold rounded-xl text-sm transition-colors active:scale-[0.98]"
+                >
+                  {shouldAbortBatch ? 'Aborting...' : 'Cancel Batch'}
+                </button>
+              ) : (
+                <>
+                  <button
+                    onClick={() => {
+                      setIsProcessingBatch(false);
+                      setIsBatchDone(false);
+                    }}
+                    className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold rounded-xl text-sm transition-colors active:scale-[0.98]"
+                  >
+                    Close
+                  </button>
+                  <button
+                    onClick={() => {
+                      setIsProcessingBatch(false);
+                      setIsBatchDone(false);
+                      navigate('/history');
+                    }}
+                    className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl text-sm transition-colors active:scale-[0.98] flex items-center justify-center gap-1.5"
+                  >
+                    Go to History <ArrowRight className="w-4 h-4" />
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -461,7 +577,7 @@ function parseCSV(text) {
   const headers = lines[0].map(h => h.trim().toLowerCase());
   
   // Find column indexes
-  const titleIdx = headers.findIndex(h => h.includes('title') || h.includes('role') || h.includes('job'));
+  const titleIdx = headers.findIndex(h => (h.includes('title') || h.includes('role') || h === 'job') && !h.includes('desc') && !h.includes('text') && !h.includes('body') && !h.includes('post'));
   const descIdx = headers.findIndex(h => h.includes('desc') || h.includes('text') || h.includes('body') || h.includes('post'));
   const locIdx = headers.findIndex(h => h.includes('loc') || h.includes('city') || h.includes('country') || h.includes('addr'));
   const empIdx = headers.findIndex(h => h.includes('employer') || h.includes('company') || h.includes('org') || h.includes('firm'));

@@ -1,28 +1,11 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vite.dev/config/
 export default defineConfig(({ command }) => ({
-  server: {
-    watch: {
-      usePolling: true,
-      awaitWriteFinish: {
-        stabilityThreshold: 300,
-        pollInterval: 100
-      },
-      ignored: [
-        '**/package.json',
-        '**/README.md',
-        '**/eslint.config.js',
-        '**/.git/**',
-        '**/*.timestamp-*'
-      ]
-    }
-  },
+  server: {},
   plugins: [
-    tailwindcss(),
     react(),
     command === 'build' && VitePWA({
       registerType: 'autoUpdate',

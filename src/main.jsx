@@ -10,7 +10,6 @@ if (import.meta.env.DEV && 'serviceWorker' in navigator) {
       registration.unregister().then((success) => {
         if (success) {
           console.log('Successfully unregistered service worker in development');
-          window.location.reload();
         }
       });
     }

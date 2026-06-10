@@ -57,6 +57,24 @@ export async function analyzeJobPosting(apiKey, modelName, { text, imageBase64 }
       parts: [{ text: SYSTEM_INSTRUCTION }]
     },
     contents: contents,
+    safetySettings: [
+      {
+        category: "HARM_CATEGORY_HARASSMENT",
+        threshold: "BLOCK_NONE"
+      },
+      {
+        category: "HARM_CATEGORY_HATE_SPEECH",
+        threshold: "BLOCK_NONE"
+      },
+      {
+        category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+        threshold: "BLOCK_NONE"
+      },
+      {
+        category: "HARM_CATEGORY_DANGEROUS_CONTENT",
+        threshold: "BLOCK_NONE"
+      }
+    ],
     generationConfig: {
       responseMimeType: "application/json",
       temperature: 0.1
@@ -78,7 +96,21 @@ export async function analyzeJobPosting(apiKey, modelName, { text, imageBase64 }
     }
 
     const data = await response.json();
-    const resultText = data.candidates[0].content.parts[0].text;
+    
+    if (!data.candidates || data.candidates.length === 0) {
+      throw new Error('No candidates returned from Gemini API. The response may have been blocked.');
+    }
+    
+    const candidate = data.candidates[0];
+    if (candidate.finishReason && candidate.finishReason !== 'STOP' && candidate.finishReason !== 'MAX_TOKENS') {
+      throw new Error(`API finished with reason: ${candidate.finishReason}. The content was likely blocked or flagged by safety filters.`);
+    }
+
+    if (!candidate.content || !candidate.content.parts || candidate.content.parts.length === 0) {
+      throw new Error('API returned empty response content.');
+    }
+
+    const resultText = candidate.content.parts[0].text;
     
     // Extract just the JSON object to handle models that wrap output in markdown
     let cleanText = resultText;
