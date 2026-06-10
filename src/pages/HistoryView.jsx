@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '../utils/database';
+import { supabase, mapDbToRecord } from '../utils/supabaseClient';
 import { Search, ChevronRight, ChevronDown, AlertTriangle, Briefcase, MapPin, Folder, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
@@ -11,11 +10,29 @@ export default function HistoryView() {
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedBatches, setExpandedBatches] = useState([]);
   const [viewType, setViewType] = useState('list'); // 'list', 'graph'
+  const [scans, setScans] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  
-  const scans = useLiveQuery(
-    () => db.scans.orderBy('timestamp').reverse().toArray()
-  );
+  const fetchScans = async () => {
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('scans')
+        .select('*')
+        .order('timestamp', { ascending: false });
+
+      if (error) throw error;
+      setScans((data || []).map(mapDbToRecord));
+    } catch (err) {
+      console.error("Error fetching scans:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchScans();
+  }, []);
 
   const filteredScans = scans?.filter(scan => 
     (scan.jobTitle?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
@@ -33,12 +50,16 @@ export default function HistoryView() {
     e.stopPropagation();
     if (window.confirm(`Are you sure you want to delete the entire batch "${batchName}" and all of its associated scans?`)) {
       try {
-        const batchScans = scans.filter(s => s.batchId === batchId);
-        const ids = batchScans.map(s => s.id);
-        await db.scans.bulkDelete(ids);
+        const { error } = await supabase
+          .from('scans')
+          .delete()
+          .eq('batch_id', batchId);
+          
+        if (error) throw error;
+        fetchScans();
       } catch (err) {
         console.error("Failed to delete batch:", err);
-        alert("Failed to delete batch");
+        alert("Failed to delete batch: " + (err.message || err.toString()));
       }
     }
   };

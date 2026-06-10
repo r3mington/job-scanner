@@ -1,12 +1,14 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Camera, Image as ImageIcon, FileText, Upload, X, FileSpreadsheet, Play, CheckCircle2, AlertCircle, Loader2, Download, Copy, ArrowRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { db } from '../utils/database';
+import { supabase } from '../utils/supabaseClient';
 import { analyzeJobPosting } from '../services/geminiService';
 import { calculateRiskScore, getRiskLevel } from '../utils/scoring';
+import { useAuth } from '../context/AuthContext';
 
 export default function ScannerView() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('camera'); // 'camera', 'upload', 'text', 'batch'
   const [capturedImage, setCapturedImage] = useState(null);
   const [pastedText, setPastedText] = useState('');
@@ -211,10 +213,12 @@ export default function ScannerView() {
           isTranslated: result.is_translated || false,
           translatedText: result.translated_text || null,
           batchId: batchId,
-          batchName: batchName
+          batchName: batchName,
+          userId: user?.id || null
         };
 
-        await db.scans.add(record);
+        const { error: dbErr } = await supabase.from('scans').insert(record);
+        if (dbErr) throw dbErr;
         successCount++;
         setBatchSuccessCount(successCount);
         addLog('success', `✔ "${displayTitle}" processed. Score: ${score} (${level.label}). Flags: ${activeFlags.length > 0 ? activeFlags.join(', ') : 'None'}`);

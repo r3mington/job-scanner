@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { db } from '../utils/database';
+import { supabase, mapRecordToDb, uploadBase64Image } from '../utils/supabaseClient';
 import { calculateRiskScore, getRiskLevel, RISK_FLAGS } from '../utils/scoring';
 import { ShieldAlert, CheckCircle, AlertTriangle, Save, ArrowLeft, Loader2, MapPin, TrendingUp, BrainCircuit } from 'lucide-react';
 import { analyzeJobPosting } from '../services/geminiService';
 import { getMedianSalary } from '../utils/countryMedians';
+import { useAuth } from '../context/AuthContext';
 
 export default function ReviewScan() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { user } = useAuth();
   
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -111,6 +113,16 @@ export default function ReviewScan() {
       const score = calculateRiskScore(activeFlags);
       const level = getRiskLevel(score);
 
+      // Handle uploading image if raw Base64
+      let imageUrl = scanInput.image || scanInput.originalImage || null;
+      if (imageUrl && imageUrl.startsWith('data:image/')) {
+        try {
+          imageUrl = await uploadBase64Image(imageUrl);
+        } catch (uploadErr) {
+          console.error("Image upload failed, saving record anyway:", uploadErr);
+        }
+      }
+
       const record = {
         timestamp: scanInput.isExistingScan ? scanInput.timestamp : Date.now(),
         jobTitle: formData.job_title,
@@ -119,27 +131,37 @@ export default function ReviewScan() {
         riskLevel: level.label,
         extractedData: formData,
         activeFlags: activeFlags,
-        originalImage: scanInput.image,
-        originalText: scanInput.text,
+        originalImage: imageUrl,
+        originalText: scanInput.text || scanInput.originalText,
         ocrText: ocrText,
         aiReview: aiReview,
         parsedSalaryUsd: parsedSalaryUsd,
         locationCountry: locationCountry,
         detectedLanguage: detectedLanguage,
         isTranslated: isTranslated,
-        translatedText: translatedText
+        translatedText: translatedText,
+        userId: user?.id || null
       };
 
+      const mappedRecord = mapRecordToDb(record);
+
       if (scanInput.isExistingScan && scanInput.id) {
-        await db.scans.update(scanInput.id, record);
+        const { error: dbErr } = await supabase
+          .from('scans')
+          .update(mappedRecord)
+          .eq('id', scanInput.id);
+        if (dbErr) throw dbErr;
       } else {
-        await db.scans.add(record);
+        const { error: dbErr } = await supabase
+          .from('scans')
+          .insert(mappedRecord);
+        if (dbErr) throw dbErr;
       }
 
       navigate('/history');
     } catch (err) {
       console.error('Failed to save:', err);
-      alert('Failed to save to database');
+      alert('Failed to save to database: ' + (err.message || err.toString()));
     } finally {
       setSaving(false);
     }

@@ -1,14 +1,30 @@
-import React from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '../utils/database';
+import React, { useState, useEffect } from 'react';
+import { supabase, mapDbToRecord } from '../utils/supabaseClient';
 import { BarChart3, AlertTriangle, ShieldAlert, CheckCircle2, TrendingUp, Users, MapPin, PhoneCall, Loader2, Award } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 export default function DashboardView() {
   const navigate = useNavigate();
-  const scans = useLiveQuery(() => db.scans.toArray());
+  const [scans, setScans] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  if (!scans) {
+  useEffect(() => {
+    const fetchScans = async () => {
+      try {
+        setLoading(true);
+        const { data, error } = await supabase.from('scans').select('*');
+        if (error) throw error;
+        setScans((data || []).map(mapDbToRecord));
+      } catch (err) {
+        console.error("Dashboard data load failed:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchScans();
+  }, []);
+
+  if (loading || !scans) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center py-20">
         <Loader2 className="w-10 h-10 text-emerald-600 animate-spin mb-3" />
