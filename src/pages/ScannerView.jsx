@@ -177,6 +177,31 @@ export default function ScannerView() {
       const jobTitle = row.job_title || `Job Posting #${i + 1}`;
       const displayTitle = jobTitle.length > 60 ? jobTitle.substring(0, 60) + '...' : jobTitle;
       setCurrentProcessingName(displayTitle);
+      
+      // Check for duplicate in database to avoid wasting API calls
+      let isDuplicate = false;
+      try {
+        const { data: dupData } = await supabase
+          .from('scans')
+          .select('id')
+          .eq('original_text', row.text)
+          .eq('user_id', user.id)
+          .limit(1);
+        if (dupData && dupData.length > 0) {
+          isDuplicate = true;
+        }
+      } catch (dupErr) {
+        console.error("Duplicate check error:", dupErr);
+      }
+
+      if (isDuplicate) {
+        addLog('success', `➜ "${displayTitle}" skipped (already analyzed in history).`);
+        successCount++;
+        setBatchSuccessCount(successCount);
+        setBatchProgress(Math.round(((i + 1) / batchRows.length) * 100));
+        continue;
+      }
+
       addLog('info', `[${i + 1}/${batchRows.length}] Requesting Gemini analysis for: "${displayTitle}"`);
 
       try {

@@ -72,6 +72,34 @@ export default function ReviewScan() {
         throw new Error('Please configure your Gemini API Key in Settings first.');
       }
 
+      // Check for duplicate in database before calling Gemini API
+      if (scanInput.text && user) {
+        try {
+          const { data: dupData } = await supabase
+            .from('scans')
+            .select('*')
+            .eq('original_text', scanInput.text)
+            .eq('user_id', user.id)
+            .limit(1);
+
+          if (dupData && dupData.length > 0) {
+            const existingScan = mapDbToRecord(dupData[0]);
+            if (window.confirm(`This job description has already been analyzed. Would you like to view the existing analysis instead of running a new scan?`)) {
+              navigate('/review', { 
+                state: { 
+                  ...existingScan,
+                  isExistingScan: true
+                },
+                replace: true
+              });
+              return;
+            }
+          }
+        } catch (dupErr) {
+          console.error("Duplicate search failed:", dupErr);
+        }
+      }
+
       const result = await analyzeJobPosting(apiKey, modelName, {
         text: scanInput.text,
         imageBase64: scanInput.image
