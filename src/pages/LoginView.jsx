@@ -3,10 +3,9 @@ import { supabase } from '../utils/supabaseClient';
 import { Shield, Mail, Lock, Loader2, AlertCircle, LogIn, UserPlus, Database, Save } from 'lucide-react';
 
 export default function LoginView() {
-  // Check if Supabase is configured
-  const storedUrl = localStorage.getItem('supabase_url') || '';
-  const storedAnon = localStorage.getItem('supabase_anon_key') || '';
-  const isSupabaseConfigured = storedUrl && storedUrl !== '' && !storedUrl.includes('placeholder-url');
+  const activeUrl = import.meta.env.VITE_SUPABASE_URL || localStorage.getItem('supabase_url') || '';
+  const activeAnon = import.meta.env.VITE_SUPABASE_ANON_KEY || localStorage.getItem('supabase_anon_key') || '';
+  const isSupabaseConfigured = activeUrl && activeUrl !== '' && !activeUrl.includes('placeholder-url');
 
   const [isSignUp, setIsSignUp] = useState(false);
   const [showSetup, setShowSetup] = useState(!isSupabaseConfigured);
@@ -17,8 +16,8 @@ export default function LoginView() {
   const [successMsg, setSuccessMsg] = useState('');
 
   // Setup form states
-  const [sbUrl, setSbUrl] = useState(storedUrl);
-  const [sbKey, setSbKey] = useState(storedAnon);
+  const [sbUrl, setSbUrl] = useState(localStorage.getItem('supabase_url') || import.meta.env.VITE_SUPABASE_URL || '');
+  const [sbKey, setSbKey] = useState(localStorage.getItem('supabase_anon_key') || import.meta.env.VITE_SUPABASE_ANON_KEY || '');
   const [sbBucket, setSbBucket] = useState(localStorage.getItem('supabase_bucket') || 'scans-images');
   const [setupSaving, setSetupSaving] = useState(false);
 
