@@ -146,7 +146,7 @@ export default function ScannerView() {
   const startBatchProcess = async () => {
     if (batchRows.length === 0) return;
     
-    const apiKey = localStorage.getItem('gemini_api_key');
+    const apiKey = localStorage.getItem('gemini_api_key') || import.meta.env.VITE_GEMINI_API_KEY;
     const modelName = localStorage.getItem('gemini_model');
     if (!apiKey) {
       alert('Please configure your Gemini API Key in Settings first.');
