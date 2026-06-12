@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Camera, Image as ImageIcon, FileText, Upload, X, FileSpreadsheet, Play, CheckCircle2, AlertCircle, Loader2, Download, Copy, ArrowRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../utils/supabaseClient';
+import { supabase, mapRecordToDb } from '../utils/supabaseClient';
 import { analyzeJobPosting } from '../services/geminiService';
 import { calculateRiskScore, getRiskLevel } from '../utils/scoring';
 import { useAuth } from '../context/AuthContext';
@@ -242,7 +242,7 @@ export default function ScannerView() {
           userId: user?.id || null
         };
 
-        const { error: dbErr } = await supabase.from('scans').insert(record);
+        const { error: dbErr } = await supabase.from('scans').insert(mapRecordToDb(record));
         if (dbErr) throw dbErr;
         successCount++;
         setBatchSuccessCount(successCount);
