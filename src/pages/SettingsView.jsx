@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Key, Save, AlertCircle, Cpu } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 export default function SettingsView() {
+  const { profile, updateProfile } = useAuth();
   const envApiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
   const [apiKey, setApiKey] = useState('');
   const [modelName, setModelName] = useState('gemini-1.5-flash');
@@ -10,17 +12,22 @@ export default function SettingsView() {
   const [fetchingModels, setFetchingModels] = useState(false);
 
   useEffect(() => {
-    const storedKey = localStorage.getItem('gemini_api_key');
-    const storedModel = localStorage.getItem('gemini_model');
+    if (profile) {
+      setApiKey(profile.gemini_api_key || localStorage.getItem('gemini_api_key') || envApiKey);
+      setModelName(profile.gemini_model || localStorage.getItem('gemini_model') || 'gemini-1.5-flash');
+    } else {
+      const storedKey = localStorage.getItem('gemini_api_key');
+      const storedModel = localStorage.getItem('gemini_model');
 
-    if (storedKey) {
-      setApiKey(storedKey);
-    } else if (envApiKey) {
-      setApiKey(envApiKey);
+      if (storedKey) {
+        setApiKey(storedKey);
+      } else if (envApiKey) {
+        setApiKey(envApiKey);
+      }
+      
+      if (storedModel) setModelName(storedModel);
     }
-    
-    if (storedModel) setModelName(storedModel);
-  }, [envApiKey]);
+  }, [profile, envApiKey]);
 
   const fetchModels = async () => {
     const activeKey = apiKey.trim() || envApiKey;
@@ -55,9 +62,17 @@ export default function SettingsView() {
     }
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    // Save to localstorage as fallback
     localStorage.setItem('gemini_api_key', apiKey.trim());
     localStorage.setItem('gemini_model', modelName);
+
+    // Save to supabase profile
+    await updateProfile({
+      gemini_api_key: apiKey.trim(),
+      gemini_model: modelName
+    });
+
     setSaved(true);
     setTimeout(() => {
       setSaved(false);

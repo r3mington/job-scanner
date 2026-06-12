@@ -8,7 +8,7 @@ import { useAuth } from '../context/AuthContext';
 
 export default function ScannerView() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [activeTab, setActiveTab] = useState('camera'); // 'camera', 'upload', 'text', 'batch'
   const [capturedImage, setCapturedImage] = useState(null);
   const [pastedText, setPastedText] = useState('');
@@ -146,8 +146,8 @@ export default function ScannerView() {
   const startBatchProcess = async () => {
     if (batchRows.length === 0) return;
     
-    const apiKey = localStorage.getItem('gemini_api_key') || import.meta.env.VITE_GEMINI_API_KEY;
-    const modelName = localStorage.getItem('gemini_model');
+    const apiKey = profile?.gemini_api_key || localStorage.getItem('gemini_api_key') || import.meta.env.VITE_GEMINI_API_KEY;
+    const modelName = profile?.gemini_model || localStorage.getItem('gemini_model');
     if (!apiKey) {
       alert('Please configure your Gemini API Key in Settings first.');
       return;

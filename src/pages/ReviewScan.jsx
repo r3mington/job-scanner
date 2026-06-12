@@ -10,7 +10,7 @@ import { useAuth } from '../context/AuthContext';
 export default function ReviewScan() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -65,8 +65,8 @@ export default function ReviewScan() {
   const performScan = async () => {
     try {
       setLoading(true);
-      const apiKey = localStorage.getItem('gemini_api_key') || import.meta.env.VITE_GEMINI_API_KEY;
-      const modelName = localStorage.getItem('gemini_model');
+      const apiKey = profile?.gemini_api_key || localStorage.getItem('gemini_api_key') || import.meta.env.VITE_GEMINI_API_KEY;
+      const modelName = profile?.gemini_model || localStorage.getItem('gemini_model');
       
       if (!apiKey) {
         throw new Error('Please configure your Gemini API Key in Settings first.');
