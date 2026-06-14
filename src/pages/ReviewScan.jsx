@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { supabase, mapRecordToDb, uploadBase64Image } from '../utils/supabaseClient';
+import { supabase, mapRecordToDb, mapDbToRecord, uploadBase64Image } from '../utils/supabaseClient';
 import { calculateRiskScore, getRiskLevel, RISK_FLAGS } from '../utils/scoring';
-import { ShieldAlert, CheckCircle, AlertTriangle, Save, ArrowLeft, Loader2, MapPin, TrendingUp, BrainCircuit } from 'lucide-react';
+import { ShieldAlert, CheckCircle, AlertTriangle, Save, ArrowLeft, Loader2, MapPin, TrendingUp, BrainCircuit, Columns, Copy, X } from 'lucide-react';
 import { analyzeJobPosting } from '../services/geminiService';
 import { getMedianSalary } from '../utils/countryMedians';
 import { useAuth } from '../context/AuthContext';
+import { calculateSimilarity, computeWordDiff } from '../utils/similarity';
 
 export default function ReviewScan() {
   const location = useLocation();
@@ -35,10 +36,45 @@ export default function ReviewScan() {
   const [translatedText, setTranslatedText] = useState(null);
   const [activeTabInput, setActiveTabInput] = useState('original');
   const [normalizedText, setNormalizedText] = useState('');
+  const [similarScans, setSimilarScans] = useState([]);
+  const [comparisonTarget, setComparisonTarget] = useState(null);
   
   // Extract inputs from navigation state (image or text)
   const scanInput = location.state;
   const normalizedTextVal = normalizedText || '';
+
+  useEffect(() => {
+    if (!user || !normalizedTextVal) return;
+
+    const fetchSimilarScans = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('scans')
+          .select('*')
+          .eq('user_id', user.id);
+
+        if (error) throw error;
+
+        if (data) {
+          const processed = data
+            .map(scan => {
+              const record = mapDbToRecord(scan);
+              const similarity = calculateSimilarity(normalizedTextVal, record.normalizedText || '');
+              return { ...record, similarity };
+            })
+            // Filter out the current scan being reviewed and keep similarities above 40%
+            .filter(item => item.id !== scanInput?.id && item.similarity > 0.40)
+            .sort((a, b) => b.similarity - a.similarity);
+
+          setSimilarScans(processed);
+        }
+      } catch (err) {
+        console.error('Failed to fetch similar scans:', err);
+      }
+    };
+
+    fetchSimilarScans();
+  }, [user, normalizedTextVal, scanInput?.id]);
 
   useEffect(() => {
     if (!scanInput) {
@@ -351,6 +387,60 @@ export default function ReviewScan() {
         </div>
       </div>
 
+      {/* Similar Job Postings Section */}
+      {similarScans.length > 0 && (
+        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
+          <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex items-center justify-between">
+            <div>
+              <h3 className="font-bold text-slate-800 dark:text-slate-200">Similar Job Ads Detected</h3>
+              <p className="text-xs text-slate-500 mt-1">Found potential matches or template re-use in your history.</p>
+            </div>
+            <span className="bg-amber-50 dark:bg-amber-950 text-amber-600 dark:text-amber-400 text-xs px-2.5 py-1 rounded-full font-bold">
+              {similarScans.length} similar ad{similarScans.length > 1 ? 's' : ''}
+            </span>
+          </div>
+          <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-60 overflow-y-auto">
+            {similarScans.map((scan) => {
+              const pct = Math.round(scan.similarity * 100);
+              return (
+                <div key={scan.id} className="p-4 flex items-center justify-between hover:bg-slate-50/50 dark:hover:bg-slate-800/20 transition-colors">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-slate-900 dark:text-white truncate">
+                        {scan.jobTitle || 'Unknown Job'}
+                      </span>
+                      <span className="text-xs text-slate-400 truncate">
+                        ({scan.employer || 'Unknown Employer'})
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Scanned on {new Date(scan.timestamp).toLocaleDateString()}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <span className={`text-xs font-bold px-2 py-1 rounded ${
+                      pct >= 80 ? 'bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400' :
+                      pct >= 60 ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400' :
+                      'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                    }`}>
+                      {pct}% Match
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setComparisonTarget(scan)}
+                      className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold rounded-lg transition-colors flex items-center gap-1"
+                    >
+                      <Columns className="w-3.5 h-3.5" />
+                      Compare Diff
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Risk Score Widget */}
       <div className={`rounded-2xl shadow-sm border overflow-hidden ${
         score >= 60 ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800/30' : 
@@ -556,6 +646,97 @@ export default function ReviewScan() {
           Save to History
         </button>
       </div>
+
+      {/* Side-by-Side Diff Modal */}
+      {comparisonTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-5xl h-[85vh] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col overflow-hidden animate-scale-in">
+            {/* Modal Header */}
+            <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/50">
+              <div>
+                <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-2 text-lg">
+                  <Columns className="w-5 h-5 text-emerald-600" />
+                  Side-by-Side Ad Comparison
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Comparing current ad with historical scan from {new Date(comparisonTarget.timestamp).toLocaleDateString()} ({Math.round(comparisonTarget.similarity * 100)}% match)
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setComparisonTarget(null)}
+                className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            {/* Modal Content - Side by Side Scrollable Panels */}
+            <div className="flex-1 overflow-hidden grid grid-cols-2 divide-x divide-slate-200 dark:divide-slate-800">
+              {/* Left Panel: Historical Ad */}
+              <div className="flex flex-col h-full overflow-hidden">
+                <div className="p-3 bg-slate-50/30 dark:bg-slate-900/30 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-500 uppercase">Historical Scan</span>
+                  <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-2 py-0.5 rounded font-mono truncate max-w-[200px]">
+                    {comparisonTarget.jobTitle || 'Unknown'}
+                  </span>
+                </div>
+                <div className="flex-1 overflow-y-auto p-4 font-sans text-sm leading-relaxed text-slate-700 dark:text-slate-300 bg-slate-50/10 dark:bg-slate-950/10 whitespace-pre-wrap select-text">
+                  {(() => {
+                    const diffs = computeWordDiff(comparisonTarget.originalText || comparisonTarget.ocrText || '', scanInput?.text || scanInput?.originalText || ocrText || '');
+                    return diffs
+                      .filter(d => d.type !== 'added')
+                      .map((d, index) => (
+                        <span 
+                          key={index} 
+                          className={d.type === 'removed' ? 'bg-red-100 dark:bg-red-950/60 text-red-700 dark:text-red-300 font-bold px-0.5 rounded border-b border-red-300 dark:border-red-800' : ''}
+                        >
+                          {d.value}
+                        </span>
+                      ));
+                  })()}
+                </div>
+              </div>
+
+              {/* Right Panel: Current Ad */}
+              <div className="flex flex-col h-full overflow-hidden">
+                <div className="p-3 bg-slate-50/30 dark:bg-slate-900/30 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-500 uppercase">Current Scan</span>
+                  <span className="text-[10px] bg-emerald-50 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 px-2 py-0.5 rounded font-mono truncate max-w-[200px]">
+                    {formData.job_title || 'Current'}
+                  </span>
+                </div>
+                <div className="flex-1 overflow-y-auto p-4 font-sans text-sm leading-relaxed text-slate-700 dark:text-slate-300 bg-slate-50/10 dark:bg-slate-950/10 whitespace-pre-wrap select-text">
+                  {(() => {
+                    const diffs = computeWordDiff(comparisonTarget.originalText || comparisonTarget.ocrText || '', scanInput?.text || scanInput?.originalText || ocrText || '');
+                    return diffs
+                      .filter(d => d.type !== 'removed')
+                      .map((d, index) => (
+                        <span 
+                          key={index} 
+                          className={d.type === 'added' ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-bold px-0.5 rounded border-b border-emerald-300 dark:border-emerald-800' : ''}
+                        >
+                          {d.value}
+                        </span>
+                      ));
+                  })()}
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setComparisonTarget(null)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 text-white text-sm font-bold rounded-xl shadow-sm transition-colors"
+              >
+                Close Comparison
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );
