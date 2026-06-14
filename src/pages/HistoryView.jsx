@@ -4,6 +4,7 @@ import { Search, ChevronRight, ChevronDown, AlertTriangle, Briefcase, MapPin, Fo
 import { format } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import NetworkGraphView from '../components/NetworkGraphView';
+import { calculateSimilarity } from '../utils/similarity';
 
 export default function HistoryView() {
   const navigate = useNavigate();
@@ -62,6 +63,29 @@ export default function HistoryView() {
         alert("Failed to delete batch: " + (err.message || err.toString()));
       }
     }
+  };
+
+  const handleDeleteScan = async (e, scanId, jobTitle) => {
+    e.stopPropagation();
+    if (window.confirm(`Are you sure you want to delete the scan for "${jobTitle || 'this job'}"?`)) {
+      try {
+        const { error } = await supabase
+          .from('scans')
+          .delete()
+          .eq('id', scanId);
+          
+        if (error) throw error;
+        fetchScans();
+      } catch (err) {
+        console.error("Failed to delete scan:", err);
+        alert("Failed to delete scan: " + (err.message || err.toString()));
+      }
+    }
+  };
+
+  const getSimilarCount = (targetScan) => {
+    if (!scans || !targetScan.normalizedText) return 0;
+    return scans.filter(s => s.id !== targetScan.id && s.normalizedText && calculateSimilarity(targetScan.normalizedText, s.normalizedText) > 0.40).length;
   };
 
   const handleScanClick = (scan) => {
@@ -222,11 +246,44 @@ export default function HistoryView() {
                             </div>
                             
                             {scan.activeFlags?.length > 0 && (
-                              <span className="text-[10px] font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 px-1.5 py-0.5 rounded-md flex-shrink-0">
+                              <span className="text-[10px] font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 px-1.5 py-0.5 rounded-md flex-shrink-0 mr-1">
                                 {scan.activeFlags.length} Flag{scan.activeFlags.length !== 1 ? 's' : ''}
                               </span>
                             )}
-                            <ChevronRight className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                            
+                            <div className="flex items-center gap-1 flex-shrink-0" onClick={e => e.stopPropagation()}>
+                              {(() => {
+                                const simCount = getSimilarCount(scan);
+                                return simCount > 0 ? (
+                                  <button
+                                    onClick={() => handleScanClick(scan)}
+                                    title={`Find Similar Ads (${simCount} found)`}
+                                    className="p-1.5 hover:bg-slate-200/50 dark:hover:bg-slate-800 text-amber-600 dark:text-amber-400 rounded-lg transition-colors flex items-center gap-1 text-[10px] font-black bg-amber-50 dark:bg-amber-950/30"
+                                  >
+                                    <Search className="w-3.5 h-3.5" />
+                                    <span>{simCount}</span>
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={() => handleScanClick(scan)}
+                                    title="Check Similar Ads"
+                                    className="p-1.5 hover:bg-slate-200/50 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 rounded-lg transition-colors"
+                                  >
+                                    <Search className="w-3.5 h-3.5" />
+                                  </button>
+                                );
+                              })()}
+                              
+                              <button
+                                onClick={(e) => handleDeleteScan(e, scan.id, scan.jobTitle)}
+                                title="Delete Scan"
+                                className="p-1.5 hover:bg-slate-200/50 dark:hover:bg-slate-800 text-slate-400 hover:text-red-600 rounded-lg transition-colors"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                            
+                            <ChevronRight className="w-4 h-4 text-slate-400 flex-shrink-0 cursor-pointer" onClick={() => handleScanClick(scan)} />
                           </div>
                         ))}
                       </div>
@@ -269,7 +326,39 @@ export default function HistoryView() {
                     )}
                   </div>
                   
-                  <ChevronRight className="w-5 h-5 text-slate-400 flex-shrink-0" />
+                  <div className="flex items-center gap-1.5 flex-shrink-0" onClick={e => e.stopPropagation()}>
+                    {(() => {
+                      const simCount = getSimilarCount(scan);
+                      return simCount > 0 ? (
+                        <button
+                          onClick={() => handleScanClick(scan)}
+                          title={`Find Similar Ads (${simCount} found)`}
+                          className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 text-amber-600 dark:text-amber-400 rounded-lg transition-colors flex items-center gap-1 text-[10px] font-black bg-amber-50 dark:bg-amber-950/30"
+                        >
+                          <Search className="w-4 h-4" />
+                          <span>{simCount}</span>
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => handleScanClick(scan)}
+                          title="Check Similar Ads"
+                          className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 rounded-lg transition-colors"
+                        >
+                          <Search className="w-4 h-4" />
+                        </button>
+                      );
+                    })()}
+                    
+                    <button
+                      onClick={(e) => handleDeleteScan(e, scan.id, scan.jobTitle)}
+                      title="Delete Scan"
+                      className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-red-600 rounded-lg transition-colors"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+
+                    <ChevronRight className="w-5 h-5 text-slate-400 cursor-pointer" onClick={() => handleScanClick(scan)} />
+                  </div>
                 </div>
               );
             })
