@@ -6,7 +6,7 @@ const HOMOGLYPH_MAP = {
   'р': 'r', 'с': 's', 'т': 't', 'у': 'u', 'ф': 'f', 'х': 'x', 'ц': 'ts', 'ч': 'ch', 
   'ш': 'sh', 'щ': 'shch', 'ъ': '', 'ы': 'y', 'ь': '', 'э': 'e', 'ю': 'yu', 'я': 'ya',
   'А': 'a', 'В': 'v', 'Е': 'e', 'К': 'k', 'М': 'm', 'Н': 'n', 'О': 'o', 'Р': 'r', 
-  'С': 's', 'Т': 't', 'Х': 'x', 'У': 'u',
+  'С': 's', '聯': 't', 'Х': 'x', 'У': 'u',
   
   // Greek to Latin
   'α': 'a', 'β': 'b', 'γ': 'g', 'δ': 'd', 'ε': 'e', 'ζ': 'z', 'η': 'h', 'θ': 'th', 
@@ -47,6 +47,7 @@ const LEET_MAP = {
 /**
  * Normalizes job posting texts for accurate similarity checks.
  * Strips formatting, homoglyphs, and basic obfuscation.
+ * Preserves actual numeric characters (like salaries/dates).
  * 
  * @param {string} text - The input text to normalize
  * @returns {string} - The clean, normalized lowercase string
@@ -54,36 +55,63 @@ const LEET_MAP = {
 export function normalizeText(text) {
   if (!text || typeof text !== 'string') return '';
 
-  // 1. Decompose unicode accents/diacritics (e.g. converting "ë" to "e" + diacritic, then stripping the diacritic)
+  // 1. Decompose unicode accents/diacritics
   let normalized = text.normalize('NFKD');
 
-  // 2. Build character-by-character replacement
-  let processed = '';
-  for (let i = 0; i < normalized.length; i++) {
-    const char = normalized[i];
-    
-    // Check homoglyph map first
-    if (HOMOGLYPH_MAP[char]) {
-      processed += HOMOGLYPH_MAP[char];
-    } 
-    // Check leet map next
-    else if (LEET_MAP[char]) {
-      processed += LEET_MAP[char];
-    } 
-    // Otherwise keep the original character
-    else {
-      processed += char;
+  // 2. Process word by word to analyze contextual characters
+  const tokens = normalized.split(/\s+/);
+  const processedTokens = tokens.map(token => {
+    let processedToken = '';
+    for (let i = 0; i < token.length; i++) {
+      const char = token[i];
+      
+      // Check homoglyphs first
+      if (HOMOGLYPH_MAP[char]) {
+        processedToken += HOMOGLYPH_MAP[char];
+        continue;
+      }
+
+      // If it's a digit in the leet-speak map, apply smart checking
+      if (/\d/.test(char) && LEET_MAP[char]) {
+        const prevChar = i > 0 ? token[i - 1] : '';
+        const nextChar = i < token.length - 1 ? token[i + 1] : '';
+        
+        // Multi-digit numbers (like 1100, 3000, 6699) should never be mapped to letters
+        const isMultiDigit = /\d/.test(prevChar) || /\d/.test(nextChar);
+        
+        if (isMultiDigit) {
+          processedToken += char;
+        } else {
+          // Single digits (like the 3s in T3l3gram) are mapped ONLY if adjacent to letters
+          const isAdjacentToLetter = /[a-zA-Z]/.test(prevChar) || /[a-zA-Z]/.test(nextChar);
+          if (isAdjacentToLetter) {
+            processedToken += LEET_MAP[char];
+          } else {
+            processedToken += char;
+          }
+        }
+        continue;
+      }
+
+      // Otherwise map symbols (like @, $, £) or keep original character
+      if (LEET_MAP[char]) {
+        processedToken += LEET_MAP[char];
+      } else {
+        processedToken += char;
+      }
     }
-  }
+    return processedToken;
+  });
+
+  let processed = processedTokens.join(' ');
 
   // 3. Lowercase everything
   processed = processed.toLowerCase();
 
-  // 4. Strip punctuation, emojis, and symbols (preserve letters, digits, and spaces)
-  // Replace underscores and all non-alphanumeric/non-whitespace characters
+  // 4. Strip punctuation, emojis, and symbols (keep only letters, digits, and spaces)
   processed = processed.replace(/[^a-z0-9\s]/g, '');
 
-  // 5. Compress multiple consecutive whitespace characters down to a single space
+  // 5. Compress multiple consecutive spaces
   processed = processed.replace(/\s+/g, ' ').trim();
 
   return processed;
