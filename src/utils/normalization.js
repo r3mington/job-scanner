@@ -6,7 +6,7 @@ const HOMOGLYPH_MAP = {
   'р': 'r', 'с': 's', 'т': 't', 'у': 'u', 'ф': 'f', 'х': 'x', 'ц': 'ts', 'ч': 'ch', 
   'ш': 'sh', 'щ': 'shch', 'ъ': '', 'ы': 'y', 'ь': '', 'э': 'e', 'ю': 'yu', 'я': 'ya',
   'А': 'a', 'В': 'v', 'Е': 'e', 'К': 'k', 'М': 'm', 'Н': 'n', 'О': 'o', 'Р': 'r', 
-  'С': 's', '聯': 't', 'Х': 'x', 'У': 'u',
+  'С': 's', 'Т': 't', 'Х': 'x', 'У': 'u',
   
   // Greek to Latin
   'α': 'a', 'β': 'b', 'γ': 'g', 'δ': 'd', 'ε': 'e', 'ζ': 'z', 'η': 'h', 'θ': 'th', 
@@ -108,10 +108,18 @@ export function normalizeText(text) {
   // 3. Lowercase everything
   processed = processed.toLowerCase();
 
-  // 4. Strip punctuation, emojis, and symbols (keep only letters, digits, and spaces)
+  // 4. Merge single letters separated by exactly one space (e.g. "c o m p a n y" -> "company")
+  // We run this iteratively to ensure multiple single-spaced characters are combined
+  let previousLength;
+  do {
+    previousLength = processed.length;
+    processed = processed.replace(/(\b[a-z0-9])\s(?=[a-z0-9]\b)/g, '$1');
+  } while (processed.length < previousLength);
+
+  // 5. Strip punctuation, emojis, and symbols (keep only letters, digits, and spaces)
   processed = processed.replace(/[^a-z0-9\s]/g, '');
 
-  // 5. Compress multiple consecutive spaces
+  // 6. Compress multiple consecutive spaces
   processed = processed.replace(/\s+/g, ' ').trim();
 
   return processed;

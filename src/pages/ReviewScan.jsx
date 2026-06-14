@@ -38,7 +38,7 @@ export default function ReviewScan() {
   
   // Extract inputs from navigation state (image or text)
   const scanInput = location.state;
-  const normalizedTextVal = scanInput?.normalizedText || normalizeText(translatedText || scanInput?.text || scanInput?.originalText || ocrText || '');
+  const normalizedTextVal = normalizeText(translatedText || scanInput?.text || scanInput?.originalText || ocrText || '');
 
   useEffect(() => {
     if (!scanInput) {
