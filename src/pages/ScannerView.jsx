@@ -242,7 +242,7 @@ export default function ScannerView() {
           batchId: batchId,
           batchName: batchName,
           userId: user?.id || null,
-          normalizedText: normalizeText(textToNormalize)
+          normalizedText: result.normalized_text || normalizeText(textToNormalize)
         };
 
         const { error: dbErr } = await supabase.from('scans').insert(mapRecordToDb(record));

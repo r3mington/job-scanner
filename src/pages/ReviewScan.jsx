@@ -35,10 +35,11 @@ export default function ReviewScan() {
   const [isTranslated, setIsTranslated] = useState(false);
   const [translatedText, setTranslatedText] = useState(null);
   const [activeTabInput, setActiveTabInput] = useState('original');
+  const [normalizedText, setNormalizedText] = useState('');
   
   // Extract inputs from navigation state (image or text)
   const scanInput = location.state;
-  const normalizedTextVal = normalizeText(translatedText || scanInput?.text || scanInput?.originalText || ocrText || '');
+  const normalizedTextVal = normalizedText || normalizeText(translatedText || scanInput?.text || scanInput?.originalText || ocrText || '');
 
   useEffect(() => {
     if (!scanInput) {
@@ -57,6 +58,7 @@ export default function ReviewScan() {
       setDetectedLanguage(scanInput.detectedLanguage || 'English');
       setIsTranslated(scanInput.isTranslated || false);
       setTranslatedText(scanInput.translatedText || null);
+      setNormalizedText(scanInput.normalizedText || '');
       setLoading(false);
     } else {
       // New scan - call Gemini API
@@ -96,6 +98,7 @@ export default function ReviewScan() {
             setDetectedLanguage(dupScan.detected_language || 'English');
             setIsTranslated(dupScan.is_translated || false);
             setTranslatedText(dupScan.translated_text || null);
+            setNormalizedText(dupScan.normalized_text || '');
             setLoading(false);
             return;
           }
@@ -126,6 +129,7 @@ export default function ReviewScan() {
       setDetectedLanguage(result.detected_language || 'English');
       setIsTranslated(result.is_translated || false);
       setTranslatedText(result.translated_text || null);
+      setNormalizedText(result.normalized_text || '');
     } catch (err) {
       console.error(err);
       setError(err.message || 'Verification scan failed. Please check your API key and network.');
@@ -175,7 +179,7 @@ export default function ReviewScan() {
         isTranslated: isTranslated,
         translatedText: translatedText,
         userId: user?.id || null,
-        normalizedText: normalizeText(textToNormalize)
+        normalizedText: normalizedText || normalizeText(textToNormalize)
       };
 
       const mappedRecord = mapRecordToDb(record);

@@ -16,6 +16,7 @@ You must output ONLY valid JSON matching this schema:
   "detected_language": "string (The name of the language used originally in the input text/image, e.g. 'English', 'Khmer', 'Chinese', 'Spanish', etc.)",
   "is_translated": "boolean (Set to true if the original language is NOT English and you translated the text into English, false otherwise)",
   "translated_text": "string or null (The full English translation of the raw_ocr_text or original input text if the input is not in English. Set to null if the input is already in English)",
+  "normalized_text": "string (Provide a clean, normalized lowercase version of the job ad text in English. Strip all emojis, decorative symbols, and weird punctuation. Un-obfuscate any intentionally spaced-out words or letters like 'C o m p a n y' to 'company' and decode any leet-speak/characters used to bypass filters like 'Cu$tomer', 'Paki$tan', or 'T3l3gram' to 'customer', 'pakistan', and 'telegram'. Ensure actual numeric values like salaries, years, and dates remain as digits and are NOT converted to letters)",
   "detected_red_flags": [
     "array of exact strings from this list: ['Upfront Fees', 'Passport/ID Control', 'Immediate Travel Pressure', 'Housing Compound Isolation', 'Employer Anonymity', 'Wage Disparity', 'Encrypted Apps Migration', 'Vague Description', 'Urgent Timeline', 'Suspicious Messaging']"
   ]
