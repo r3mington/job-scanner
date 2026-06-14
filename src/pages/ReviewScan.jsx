@@ -38,6 +38,7 @@ export default function ReviewScan() {
   
   // Extract inputs from navigation state (image or text)
   const scanInput = location.state;
+  const normalizedTextVal = scanInput?.normalizedText || normalizeText(translatedText || scanInput?.text || scanInput?.originalText || ocrText || '');
 
   useEffect(() => {
     if (!scanInput) {
@@ -84,47 +85,64 @@ export default function ReviewScan() {
             .limit(1);
 
           if (dupData && dupData.length > 0) {
-            const existingScan = mapDbToRecord(dupData[0]);
-            if (window.confirm(`This job description has already been analyzed. Would you like to view the existing analysis instead of running a new scan?`)) {
-              navigate('/review', { 
-                state: { 
-                  ...existingScan,
-                  isExistingScan: true
-                },
-                replace: true
-              });
-              return;
-            }
+            const dupScan = dupData[0];
+            // Load duplicate scan and stop loading
+            setFormData(dupScan.extracted_data);
+            setActiveFlags(dupScan.active_flags || []);
+            setOcrText(dupScan.ocr_text || null);
+            setAiReview(dupScan.ai_review || '');
+            setParsedSalaryUsd(dupScan.parsed_salary_usd || null);
+            setLocationCountry(dupScan.location_country || null);
+            setDetectedLanguage(dupScan.detected_language || 'English');
+            setIsTranslated(dupScan.is_translated || false);
+            setTranslatedText(dupScan.translated_text || null);
+            setLoading(false);
+            return;
           }
-        } catch (dupErr) {
-          console.error("Duplicate search failed:", dupErr);
+        } catch (dbErr) {
+          console.warn('Failed to check duplicate scan, proceeding with Gemini API:', dbErr);
         }
       }
 
-      const result = await analyzeJobPosting(apiKey, modelName, {
+      const rawText = scanInput.text || scanInput.ocrText;
+      const { 
+        jobTitle, 
+        employer, 
+        riskScore, 
+        riskLevel, 
+        extractedData, 
+        activeFlags: scanFlags,
+        aiReview: review,
+        parsedSalaryUsd: salary,
+        locationCountry: country,
+        detectedLanguage: lang,
+        isTranslated: trans,
+        translatedText: transText
+      } = await analyzeJobPosting(apiKey, modelName, {
         text: scanInput.text,
         imageBase64: scanInput.image
       });
 
       setFormData({
-        job_title: result.job_title || '',
-        employer_identity: result.employer_identity || '',
-        salary_range: result.salary_range || '',
-        location: result.location || '',
-        industry: result.industry || '',
-        contact_method: result.contact_method || ''
+        job_title: extractedData.job_title || '',
+        employer_identity: extractedData.employer_identity || '',
+        salary_range: extractedData.salary_range || '',
+        location: extractedData.location || '',
+        industry: extractedData.industry || '',
+        contact_method: extractedData.contact_method || ''
       });
       
-      setActiveFlags(result.detected_red_flags || []);
-      setOcrText(result.raw_ocr_text || null);
-      setAiReview(result.ai_review || '');
-      setParsedSalaryUsd(result.parsed_salary_usd || null);
-      setLocationCountry(result.location_country || null);
-      setDetectedLanguage(result.detected_language || 'English');
-      setIsTranslated(result.is_translated || false);
-      setTranslatedText(result.translated_text || null);
+      setActiveFlags(scanFlags);
+      setOcrText(scanInput.ocrText || null);
+      setAiReview(review);
+      setParsedSalaryUsd(salary);
+      setLocationCountry(country);
+      setDetectedLanguage(lang);
+      setIsTranslated(trans);
+      setTranslatedText(transText);
     } catch (err) {
-      setError(err.message);
+      console.error(err);
+      setError(err.message || 'Verification scan failed. Please check your API key and network.');
     } finally {
       setLoading(false);
     }
@@ -201,9 +219,8 @@ export default function ReviewScan() {
   if (loading) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center">
-        <Loader2 className="w-12 h-12 text-emerald-600 animate-spin mb-4" />
-        <h2 className="text-xl font-bold text-slate-900 dark:text-white">Analyzing Posting...</h2>
-        <p className="text-slate-500 mt-2">Checking for exploitative patterns</p>
+        <Loader2 className="w-10 h-10 text-emerald-600 animate-spin mb-4" />
+        <p className="text-slate-600 dark:text-slate-400 font-semibold animate-pulse">Running risk parameters audit...</p>
       </div>
     );
   }
@@ -228,10 +245,10 @@ export default function ReviewScan() {
   const riskInfo = getRiskLevel(score);
 
   return (
-    <div className="flex flex-col flex-1 max-w-lg w-full mx-auto my-4 gap-4 pb-20">
+    <div className="flex flex-col flex-1 p-4 max-w-4xl w-full mx-auto space-y-6">
       
       {/* Header */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-4">
         <button onClick={() => navigate(-1)} className="p-2 -ml-2 text-slate-500 hover:text-slate-900 dark:hover:text-white transition-colors">
           <ArrowLeft className="w-6 h-6" />
         </button>
@@ -245,32 +262,45 @@ export default function ReviewScan() {
            <p className="text-xs text-slate-500 mt-1">The original text or image used for analysis.</p>
         </div>
 
-        {isTranslated && (
-          <div className="bg-blue-50 dark:bg-blue-900/20 border-b border-blue-100 dark:border-blue-800/30 p-3 px-4 flex flex-col gap-2">
-            <div className="flex items-center gap-2 text-xs font-semibold text-blue-700 dark:text-blue-400">
-              <BrainCircuit className="w-4 h-4 text-blue-500" />
-              <span>Translated from {detectedLanguage} to English by AI</span>
-            </div>
-            
-            {/* Input Switch Tabs */}
-            <div className="flex bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg text-xs mt-1 self-start">
-              <button
-                type="button"
-                onClick={() => setActiveTabInput('original')}
-                className={`px-3 py-1.5 rounded-md font-medium transition-colors ${activeTabInput === 'original' ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-white shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}
-              >
-                Original Text ({detectedLanguage})
-              </button>
+        {/* Input Switch Tabs always visible */}
+        <div className="bg-slate-50/50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-800 p-3 px-4 flex flex-wrap gap-2 items-center justify-between">
+          <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400">
+            {isTranslated ? (
+              <span className="flex items-center gap-1.5 text-blue-700 dark:text-blue-400">
+                <BrainCircuit className="w-3.5 h-3.5 text-blue-500 animate-pulse" />
+                Translated from {detectedLanguage} to English by AI
+              </span>
+            ) : (
+              <span>Detected Language: {detectedLanguage}</span>
+            )}
+          </div>
+          
+          <div className="flex bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg text-xs self-start">
+            <button
+              type="button"
+              onClick={() => setActiveTabInput('original')}
+              className={`px-3 py-1.5 rounded-md font-medium transition-colors ${activeTabInput === 'original' ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-white shadow-sm font-semibold' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}
+            >
+              Original Text
+            </button>
+            {isTranslated && (
               <button
                 type="button"
                 onClick={() => setActiveTabInput('translation')}
-                className={`px-3 py-1.5 rounded-md font-medium transition-colors ${activeTabInput === 'translation' ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-white shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}
+                className={`px-3 py-1.5 rounded-md font-medium transition-colors ${activeTabInput === 'translation' ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-white shadow-sm font-semibold' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}
               >
                 English Translation
               </button>
-            </div>
+            )}
+            <button
+              type="button"
+              onClick={() => setActiveTabInput('normalized')}
+              className={`px-3 py-1.5 rounded-md font-medium transition-colors ${activeTabInput === 'normalized' ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-white shadow-sm font-semibold' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}
+            >
+              Normalized Text
+            </button>
           </div>
-        )}
+        </div>
 
         <div className="p-4 flex flex-col gap-4">
           {scanInput?.image || scanInput?.originalImage ? (
@@ -278,7 +308,7 @@ export default function ReviewScan() {
               <img src={scanInput.image || scanInput.originalImage} alt="Raw Input" className="w-full max-w-sm mx-auto rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 object-contain max-h-64" />
               
               {/* If we have OCR text, we can show it here based on translation active tab */}
-              {ocrText && (!isTranslated || activeTabInput === 'original') && (
+              {ocrText && activeTabInput === 'original' && (
                 <div className="border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden">
                   <div className="bg-slate-50 dark:bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800">
                     Extracted Text ({detectedLanguage})
@@ -299,16 +329,33 @@ export default function ReviewScan() {
                   </div>
                 </div>
               )}
+
+              {activeTabInput === 'normalized' && (
+                <div className="border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden">
+                  <div className="bg-slate-50 dark:bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800">
+                    Normalized Text (Cleaned & De-obfuscated)
+                  </div>
+                  <div className="p-3 text-xs text-slate-600 dark:text-slate-400 font-mono bg-slate-50/50 dark:bg-slate-950/50 whitespace-pre-wrap max-h-48 overflow-y-auto">
+                    {normalizedTextVal || 'No normalized text generated.'}
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <div>
-              {(!isTranslated || activeTabInput === 'original') ? (
+              {activeTabInput === 'original' && (
                 <div className="bg-slate-50 dark:bg-slate-950 p-4 rounded-lg border border-slate-200 dark:border-slate-800 text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap">
                   {scanInput?.text || scanInput?.originalText || 'No input text provided.'}
                 </div>
-              ) : (
+              )}
+              {isTranslated && activeTabInput === 'translation' && (
                 <div className="bg-slate-50 dark:bg-slate-950 p-4 rounded-lg border border-slate-200 dark:border-slate-800 text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap">
                   {translatedText || 'No translation available.'}
+                </div>
+              )}
+              {activeTabInput === 'normalized' && (
+                <div className="bg-slate-50 dark:bg-slate-950 p-4 rounded-lg border border-slate-200 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-400 font-mono whitespace-pre-wrap">
+                  {normalizedTextVal || 'No normalized text generated.'}
                 </div>
               )}
             </div>
