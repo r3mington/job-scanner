@@ -6,6 +6,7 @@ import { ShieldAlert, CheckCircle, AlertTriangle, Save, ArrowLeft, Loader2, MapP
 import { analyzeJobPosting } from '../services/geminiService';
 import { getMedianSalary } from '../utils/countryMedians';
 import { useAuth } from '../context/AuthContext';
+import { normalizeText } from '../utils/normalization';
 
 export default function ReviewScan() {
   const location = useLocation();
@@ -151,6 +152,7 @@ export default function ReviewScan() {
         }
       }
 
+      const textToNormalize = translatedText || scanInput.text || scanInput.originalText || '';
       const record = {
         timestamp: scanInput.isExistingScan ? scanInput.timestamp : Date.now(),
         jobTitle: formData.job_title,
@@ -168,7 +170,8 @@ export default function ReviewScan() {
         detectedLanguage: detectedLanguage,
         isTranslated: isTranslated,
         translatedText: translatedText,
-        userId: user?.id || null
+        userId: user?.id || null,
+        normalizedText: normalizeText(textToNormalize)
       };
 
       const mappedRecord = mapRecordToDb(record);

@@ -33,7 +33,8 @@ export function mapRecordToDb(record) {
     translated_text: record.translatedText,
     batch_id: record.batchId,
     batch_name: record.batchName,
-    user_id: record.userId || record.user_id || null
+    user_id: record.userId || record.user_id || null,
+    normalized_text: record.normalizedText || null
   };
 }
 
@@ -61,7 +62,8 @@ export function mapDbToRecord(dbRecord) {
     translatedText: dbRecord.translated_text,
     batchId: dbRecord.batch_id,
     batchName: dbRecord.batch_name,
-    userId: dbRecord.user_id
+    userId: dbRecord.user_id,
+    normalizedText: dbRecord.normalized_text
   };
 }
 

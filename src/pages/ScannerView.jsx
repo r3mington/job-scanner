@@ -5,6 +5,7 @@ import { supabase, mapRecordToDb } from '../utils/supabaseClient';
 import { analyzeJobPosting } from '../services/geminiService';
 import { calculateRiskScore, getRiskLevel } from '../utils/scoring';
 import { useAuth } from '../context/AuthContext';
+import { normalizeText } from '../utils/normalization';
 
 export default function ScannerView() {
   const navigate = useNavigate();
@@ -213,6 +214,7 @@ export default function ScannerView() {
         const score = calculateRiskScore(activeFlags);
         const level = getRiskLevel(score);
 
+        const textToNormalize = result.translated_text || row.text || '';
         const record = {
           timestamp: Date.now(),
           jobTitle: result.job_title || row.job_title || 'Unknown Title',
@@ -239,7 +241,8 @@ export default function ScannerView() {
           translatedText: result.translated_text || null,
           batchId: batchId,
           batchName: batchName,
-          userId: user?.id || null
+          userId: user?.id || null,
+          normalizedText: normalizeText(textToNormalize)
         };
 
         const { error: dbErr } = await supabase.from('scans').insert(mapRecordToDb(record));
