@@ -104,42 +104,28 @@ export default function ReviewScan() {
         }
       }
 
-      const rawText = scanInput.text || scanInput.ocrText;
-      const { 
-        jobTitle, 
-        employer, 
-        riskScore, 
-        riskLevel, 
-        extractedData, 
-        activeFlags: scanFlags,
-        aiReview: review,
-        parsedSalaryUsd: salary,
-        locationCountry: country,
-        detectedLanguage: lang,
-        isTranslated: trans,
-        translatedText: transText
-      } = await analyzeJobPosting(apiKey, modelName, {
+      const result = await analyzeJobPosting(apiKey, modelName, {
         text: scanInput.text,
         imageBase64: scanInput.image
       });
 
       setFormData({
-        job_title: extractedData.job_title || '',
-        employer_identity: extractedData.employer_identity || '',
-        salary_range: extractedData.salary_range || '',
-        location: extractedData.location || '',
-        industry: extractedData.industry || '',
-        contact_method: extractedData.contact_method || ''
+        job_title: result.job_title || '',
+        employer_identity: result.employer_identity || '',
+        salary_range: result.salary_range || '',
+        location: result.location || '',
+        industry: result.industry || '',
+        contact_method: result.contact_method || ''
       });
       
-      setActiveFlags(scanFlags);
-      setOcrText(scanInput.ocrText || null);
-      setAiReview(review);
-      setParsedSalaryUsd(salary);
-      setLocationCountry(country);
-      setDetectedLanguage(lang);
-      setIsTranslated(trans);
-      setTranslatedText(transText);
+      setActiveFlags(result.detected_red_flags || []);
+      setOcrText(result.raw_ocr_text || null);
+      setAiReview(result.ai_review || '');
+      setParsedSalaryUsd(result.parsed_salary_usd || null);
+      setLocationCountry(result.location_country || null);
+      setDetectedLanguage(result.detected_language || 'English');
+      setIsTranslated(result.is_translated || false);
+      setTranslatedText(result.translated_text || null);
     } catch (err) {
       console.error(err);
       setError(err.message || 'Verification scan failed. Please check your API key and network.');
