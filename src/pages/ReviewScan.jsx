@@ -1510,7 +1510,7 @@ export default function ReviewScan() {
                 <p className="text-[10px] font-mono font-bold text-slate-600 uppercase tracking-widest mb-2">Risk Breakdown</p>
                 {scoreDetails && scoreDetails.length > 0 ? (
                   <div className="space-y-1.5">
-                    {scoreDetails.map((detail, idx) => {
+                    {[...scoreDetails].sort((a, b) => b.weight - a.weight).map((detail, idx) => {
                       const maxWeight = Math.max(...scoreDetails.map(d => d.weight));
                       const pct = Math.round((detail.weight / maxWeight) * 100);
                       const isCritical = CRITICAL_FLAGS.has(detail.name);
