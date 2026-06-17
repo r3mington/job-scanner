@@ -118,15 +118,15 @@ function highlightWords(text, spans, showHighlights, isTranslationActive, hovere
           if (isAnyHovered) {
             if (isCurrentHovered) {
               highlightClass = isHigh
-                ? 'text-red-400 border-b-2 border-red-500 bg-red-500/10 scale-[1.02] shadow-[0_0_12px_rgba(239,68,68,0.2)]'
-                : 'text-amber-400 border-b-2 border-amber-500 bg-amber-500/8 scale-[1.02] shadow-[0_0_12px_rgba(245,158,11,0.15)]';
+                ? 'text-red-700 border-b-2 border-red-600 bg-red-500/15 scale-[1.02] shadow-[0_0_12px_rgba(239,68,68,0.25)]'
+                : 'text-amber-700 border-b-2 border-amber-600 bg-amber-400/20 scale-[1.02] shadow-[0_0_12px_rgba(245,158,11,0.2)]';
             } else {
-              highlightClass = 'text-slate-600 border-transparent bg-transparent opacity-25';
+              highlightClass = 'text-slate-400 border-transparent bg-transparent opacity-30';
             }
           } else {
             highlightClass = isHigh
-              ? 'text-slate-300 border-b border-red-500/80 bg-red-500/8'
-              : 'text-slate-300 border-b border-amber-500/60 bg-amber-500/6';
+              ? 'text-red-800 border-b-2 border-red-500 bg-red-400/15'
+              : 'text-amber-800 border-b border-amber-500 bg-amber-400/20';
           }
 
           return (
@@ -963,20 +963,73 @@ export default function ReviewScan() {
         </div>
 
         {/* Text Body + Annotation Overlay */}
-        <div ref={textContainerRef} className="relative p-5" style={{ minHeight: `${containerMinHeight}px` }}>
-          <div className="w-[65%] pr-6">
+        <div
+          ref={textContainerRef}
+          className="relative"
+          style={{
+            minHeight: `${containerMinHeight}px`,
+            background: 'linear-gradient(to bottom, #f7f6f1, #f2f0ea)',
+            backgroundImage: `
+              linear-gradient(to bottom, #f7f6f1, #f2f0ea),
+              repeating-linear-gradient(transparent, transparent 27px, rgba(0,0,0,0.045) 27px, rgba(0,0,0,0.045) 28px)
+            `,
+            backgroundBlendMode: 'normal',
+            boxShadow: 'inset 0 2px 12px rgba(0,0,0,0.18), inset 0 0 0 1px rgba(0,0,0,0.07)',
+            borderTop: '1px solid rgba(0,0,0,0.10)',
+            borderBottom: '1px solid rgba(0,0,0,0.10)',
+          }}
+        >
+          {/* Forensic EXHIBIT watermark */}
+          <div
+            aria-hidden="true"
+            style={{
+              position: 'absolute',
+              inset: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              pointerEvents: 'none',
+              zIndex: 0,
+              overflow: 'hidden',
+            }}
+          >
+            <span style={{
+              fontSize: '7rem',
+              fontWeight: 900,
+              fontFamily: 'monospace',
+              letterSpacing: '0.25em',
+              color: 'rgba(0,0,0,0.035)',
+              transform: 'rotate(-30deg)',
+              userSelect: 'none',
+              whiteSpace: 'nowrap',
+            }}>EXHIBIT</span>
+          </div>
+
+          {/* Left margin rule (red margin line like a legal pad) */}
+          <div style={{
+            position: 'absolute',
+            top: 0,
+            bottom: 0,
+            left: '2rem',
+            width: '1px',
+            background: 'rgba(239, 68, 68, 0.18)',
+            pointerEvents: 'none',
+            zIndex: 1,
+          }} />
+
+          <div className="relative w-[65%] pl-12 pr-6 py-5" style={{ zIndex: 2 }}>
             {activeTabInput === 'original' && (
-              <div className="text-sm text-slate-400 leading-7 whitespace-pre-wrap select-text">
+              <div className="text-sm leading-7 whitespace-pre-wrap select-text font-mono text-slate-700">
                 {highlightWords(ocrText || scanInput?.text || scanInput?.originalText || 'No input text provided.', suspiciousSpans, showHighlights, false, hoveredKey, setHoveredKey)}
               </div>
             )}
             {isTranslated && activeTabInput === 'translation' && (
-              <div className="text-sm text-slate-400 leading-7 whitespace-pre-wrap select-text">
+              <div className="text-sm leading-7 whitespace-pre-wrap select-text font-mono text-slate-700">
                 {highlightWords(translatedText || 'No translation available.', suspiciousSpans, showHighlights, true, hoveredKey, setHoveredKey)}
               </div>
             )}
             {activeTabInput === 'normalized' && (
-              <div className="text-xs text-slate-600 font-mono leading-6 whitespace-pre-wrap select-text">
+              <div className="text-xs text-slate-500 font-mono leading-6 whitespace-pre-wrap select-text">
                 {normalizedTextVal || 'No normalized text generated.'}
               </div>
             )}
