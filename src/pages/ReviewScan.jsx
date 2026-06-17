@@ -884,6 +884,9 @@ export default function ReviewScan() {
   const scoreDetails = scoreResult.details;
   const riskInfo = getRiskLevel(score);
 
+  // Sticky intel bar derived values
+  const stickyScoreColor = score >= 60 ? 'text-red-400 bg-red-500/10 border-red-500/30' : score >= 30 ? 'text-amber-400 bg-amber-500/10 border-amber-500/30' : 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30';
+
   return (
     <div className="flex flex-col flex-1 p-4 max-w-4xl w-full mx-auto space-y-6">
       
@@ -893,6 +896,24 @@ export default function ReviewScan() {
           <ArrowLeft className="w-6 h-6" />
         </button>
         <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Review Analysis</h1>
+      </div>
+
+      {/* Sticky intel bar */}
+      <div className="sticky top-0 z-40 -mx-4 px-4 py-2 flex items-center justify-between gap-3 backdrop-blur-md border-b" style={{ background: 'rgba(10,12,18,0.88)', borderColor: 'rgba(255,255,255,0.06)' }}>
+        <span className="text-xs font-mono font-bold text-slate-400 truncate">
+          {formData.job_title ? `▸ ${formData.job_title}` : '▸ Ad Review'}
+          {formData.location ? <span className="text-slate-600 font-normal"> · {formData.location}</span> : null}
+        </span>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {suspiciousSpans.length > 0 && (
+            <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded border text-amber-400 bg-amber-500/10 border-amber-500/30">
+              {suspiciousSpans.length} flags
+            </span>
+          )}
+          <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${stickyScoreColor}`}>
+            RISK {score}
+          </span>
+        </div>
       </div>
 
       {/* Interactive Ad Analysis — Tactical threat card */}
@@ -1165,7 +1186,7 @@ export default function ReviewScan() {
 
       {/* Trafficker Playbook — compact summary-first (Option C) */}
       {getPlaybookData().length > 0 && (
-        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
+        <div className="rounded-2xl overflow-hidden border border-slate-800/80" style={{background:'#111318'}}>
           {/* Collapsed summary bar — always visible */}
           <button
             type="button"
@@ -1252,7 +1273,7 @@ export default function ReviewScan() {
 
 
       {/* Take Action Operational Dashboard */}
-      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-5 overflow-hidden">
+      <div className="rounded-2xl overflow-hidden border border-slate-800/80 p-5" style={{background:'#111318'}}>
         <div className="border-b border-slate-100 dark:border-slate-800 pb-3 mb-4">
           <h3 className="font-bold text-slate-800 dark:text-slate-200">Take Action</h3>
           <p className="text-xs text-slate-500 mt-1">Operational next steps and evidence-gathering tools for analysts.</p>
@@ -1319,7 +1340,7 @@ export default function ReviewScan() {
 
       {/* Collapsible reference flyer image box */}
       {(scanInput?.image || scanInput?.originalImage) && (
-        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
+        <div className="rounded-2xl overflow-hidden border border-slate-800/80" style={{background:'#111318'}}>
           <button
             type="button"
             onClick={() => setIsImageExpanded(!isImageExpanded)}
@@ -1351,8 +1372,8 @@ export default function ReviewScan() {
 
       {/* Similar Job Postings Section */}
       {similarScans.length > 0 && (
-        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
-          <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex items-center justify-between">
+        <div className="rounded-2xl overflow-hidden border border-slate-800/80" style={{background:'#111318'}}>
+          <div className="p-4 border-b border-slate-800 flex items-center justify-between">
             <div>
               <h3 className="font-bold text-slate-800 dark:text-slate-200">Similar Job Ads Detected</h3>
               <p className="text-xs text-slate-500 mt-1">Found potential matches or template re-use in your history.</p>
@@ -1403,154 +1424,180 @@ export default function ReviewScan() {
         </div>
       )}
 
-      {/* Risk Score Widget */}
-      <div className={`rounded-2xl shadow-sm border overflow-hidden ${
-        score >= 60 ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800/30' : 
-        score >= 30 ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800/30' : 
-        'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800/30'
-      } transition-colors`}>
-        {/* Score hero row */}
-        <div className="px-5 py-4 flex items-center justify-between gap-4">
-          <div className="flex items-baseline gap-3">
-            <h2 className="text-5xl font-black text-slate-900 dark:text-white tracking-tight leading-none">{score}</h2>
-            <div>
-              <p className={`text-[10px] font-bold uppercase tracking-widest ${
-                score >= 60 ? 'text-red-500' :
-                score >= 30 ? 'text-amber-500' :
-                'text-emerald-500'
-              }`}>{riskInfo.label}</p>
-              <p className="text-[10px] text-slate-400 font-mono">/ 100 risk pts</p>
-            </div>
-          </div>
-          <div className="opacity-60">
-            {score >= 60 ? <ShieldAlert className="w-10 h-10 text-red-500" /> :
-             score >= 30 ? <AlertTriangle className="w-10 h-10 text-amber-500" /> :
-             <CheckCircle className="w-10 h-10 text-emerald-500" />}
-          </div>
-        </div>
+      {/* Risk Score Widget — Radial Gauge */}
+      {(() => {
+        const gaugeSize = 180;
+        const strokeW = 14;
+        const r = (gaugeSize / 2) - strokeW;
+        // Arc spans 240 degrees (from 150° to 390°/30°)
+        const arcDeg = 240;
+        const circumference = Math.PI * 2 * r;
+        const arcLen = (arcDeg / 360) * circumference;
+        const gapLen = circumference - arcLen;
+        // dashoffset: fill proportion based on score
+        const fillPct = Math.min(score, 100) / 100;
+        const fillLen = fillPct * arcLen;
+        const dashOffset = arcLen - fillLen;
+        const scoreColor = score >= 60 ? '#ef4444' : score >= 30 ? '#f59e0b' : '#10b981';
+        const scoreGlow = score >= 60 ? 'rgba(239,68,68,0.35)' : score >= 30 ? 'rgba(245,158,11,0.30)' : 'rgba(16,185,129,0.30)';
+        const scoreBorder = score >= 60 ? 'border-red-800/40' : score >= 30 ? 'border-amber-800/40' : 'border-emerald-800/40';
+        // rotation so arc starts at bottom-left
+        const rotation = 150;
+        return (
+          <div className={`rounded-2xl overflow-hidden border ${scoreBorder}`} style={{background:'#111318'}}>
+            {/* Gauge hero */}
+            <div className="px-5 pt-5 pb-3 flex items-center gap-6">
+              {/* SVG Radial Arc */}
+              <div className="relative flex-shrink-0" style={{width: gaugeSize, height: gaugeSize * 0.72}}>
+                {!scoreBarsVisible && (
+                  <span className="sr-only" ref={el => { if (el) requestAnimationFrame(() => setScoreBarsVisible(true)); }} />
+                )}
+                <svg
+                  width={gaugeSize}
+                  height={gaugeSize}
+                  viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}
+                  style={{ position: 'absolute', top: 0, left: 0, overflow: 'visible' }}
+                >
+                  <defs>
+                    <filter id="score-glow">
+                      <feGaussianBlur stdDeviation="4" result="blur"/>
+                      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+                    </filter>
+                  </defs>
+                  {/* Track arc */}
+                  <circle
+                    cx={gaugeSize/2} cy={gaugeSize/2} r={r}
+                    fill="none"
+                    stroke="rgba(255,255,255,0.06)"
+                    strokeWidth={strokeW}
+                    strokeDasharray={`${arcLen} ${gapLen}`}
+                    strokeDashoffset={0}
+                    strokeLinecap="round"
+                    transform={`rotate(${rotation} ${gaugeSize/2} ${gaugeSize/2})`}
+                  />
+                  {/* Fill arc */}
+                  <circle
+                    cx={gaugeSize/2} cy={gaugeSize/2} r={r}
+                    fill="none"
+                    stroke={scoreColor}
+                    strokeWidth={strokeW}
+                    strokeDasharray={`${arcLen} ${gapLen}`}
+                    strokeDashoffset={scoreBarsVisible ? dashOffset : arcLen}
+                    strokeLinecap="round"
+                    filter="url(#score-glow)"
+                    transform={`rotate(${rotation} ${gaugeSize/2} ${gaugeSize/2})`}
+                    style={{ transition: 'stroke-dashoffset 1s cubic-bezier(0.34,1.56,0.64,1)', transitionDelay: '150ms' }}
+                  />
+                  {/* Center score label */}
+                  <text
+                    x={gaugeSize/2} y={gaugeSize/2 + 2}
+                    textAnchor="middle" dominantBaseline="middle"
+                    fontSize="40" fontWeight="900" fontFamily="monospace"
+                    fill="white"
+                  >{score}</text>
+                  <text
+                    x={gaugeSize/2} y={gaugeSize/2 + 26}
+                    textAnchor="middle" dominantBaseline="middle"
+                    fontSize="9" fontWeight="700" fontFamily="monospace"
+                    fill={scoreColor}
+                    letterSpacing="3"
+                  >{riskInfo.label.toUpperCase()}</text>
+                </svg>
+              </div>
 
-        {/* Breakdown bars */}
-        {scoreDetails && scoreDetails.length > 0 ? (
-          <div className={`px-4 pb-4 pt-1 border-t ${
-            score >= 60 ? 'border-red-200 dark:border-red-800/30' :
-            score >= 30 ? 'border-amber-200 dark:border-amber-800/30' :
-            'border-emerald-200 dark:border-emerald-800/30'
-          }`}>
-            {/* Trigger bars on first render */}
-            {!scoreBarsVisible && (
-              <span className="sr-only" ref={el => { if (el) requestAnimationFrame(() => setScoreBarsVisible(true)); }} />
-            )}
-            <div className="space-y-1.5 mt-3">
-              {scoreDetails.map((detail, idx) => {
-                const maxWeight = Math.max(...scoreDetails.map(d => d.weight));
-                const pct = Math.round((detail.weight / maxWeight) * 100);
-                const isCritical = CRITICAL_FLAGS.has(detail.name);
-                const barColor = detail.isSalaryAnomaly || detail.isCrossBorderMismatch
-                  ? 'bg-amber-400 dark:bg-amber-500'
-                  : isCritical
-                  ? 'bg-red-500'
-                  : 'bg-red-400/80';
-                const nameColor = detail.isSalaryAnomaly
-                  ? 'text-amber-600 dark:text-amber-400'
-                  : detail.isCrossBorderMismatch
-                  ? 'text-rose-600 dark:text-rose-400'
-                  : 'text-slate-700 dark:text-slate-300';
-                return (
-                  <div key={detail.name} className="flex items-center gap-2 group">
-                    {/* Label */}
-                    <span className={`text-[11px] w-[44%] flex-shrink-0 truncate ${nameColor}`}>{detail.name}</span>
-                    {/* Animated bar track */}
-                    <div className="flex-1 h-1.5 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all ease-out ${barColor}`}
-                        style={{
-                          width: scoreBarsVisible ? `${pct}%` : '0%',
-                          transitionDuration: '600ms',
-                          transitionDelay: `${idx * 60}ms`,
-                        }}
-                      />
+              {/* Breakdown bars */}
+              <div className="flex-1 min-w-0">
+                <p className="text-[10px] font-mono font-bold text-slate-600 uppercase tracking-widest mb-2">Risk Breakdown</p>
+                {scoreDetails && scoreDetails.length > 0 ? (
+                  <div className="space-y-1.5">
+                    {scoreDetails.map((detail, idx) => {
+                      const maxWeight = Math.max(...scoreDetails.map(d => d.weight));
+                      const pct = Math.round((detail.weight / maxWeight) * 100);
+                      const isCritical = CRITICAL_FLAGS.has(detail.name);
+                      const barColor = detail.isSalaryAnomaly || detail.isCrossBorderMismatch
+                        ? '#f59e0b' : isCritical ? '#ef4444' : '#f87171';
+                      return (
+                        <div key={detail.name} className="flex items-center gap-2">
+                          <span className="text-[10px] w-[46%] flex-shrink-0 truncate text-slate-400 font-mono">{detail.name}</span>
+                          <div className="flex-1 h-1 bg-slate-800 rounded-full overflow-hidden">
+                            <div
+                              className="h-full rounded-full transition-all ease-out"
+                              style={{
+                                width: scoreBarsVisible ? `${pct}%` : '0%',
+                                background: barColor,
+                                transitionDuration: '600ms',
+                                transitionDelay: `${150 + idx * 60}ms`,
+                              }}
+                            />
+                          </div>
+                          <span className="text-[9px] font-mono text-slate-500 w-5 text-right flex-shrink-0">+{detail.weight}</span>
+                        </div>
+                      );
+                    })}
+                    <div className="flex justify-between items-center mt-2 pt-2 border-t border-slate-800">
+                      <span className="text-[10px] text-slate-600 uppercase tracking-widest font-mono">Total (capped)</span>
+                      <span className="text-xs font-black font-mono" style={{color: scoreColor}}>{score} / 100</span>
                     </div>
-                    {/* Weight */}
-                    <span className="text-[10px] font-mono font-semibold text-slate-500 dark:text-slate-400 w-7 text-right flex-shrink-0">+{detail.weight}</span>
                   </div>
-                );
-              })}
-            </div>
-            {/* Total row */}
-            <div className={`flex justify-between items-center mt-3 pt-2 border-t ${
-              score >= 60 ? 'border-red-200 dark:border-red-800/30' :
-              score >= 30 ? 'border-amber-200 dark:border-amber-800/30' :
-              'border-emerald-200 dark:border-emerald-800/30'
-            }`}>
-              <span className="text-[11px] text-slate-500 uppercase tracking-widest font-mono">Total (capped)</span>
-              <span className={`text-sm font-black font-mono ${
-                score >= 60 ? 'text-red-500' :
-                score >= 30 ? 'text-amber-500' :
-                'text-emerald-500'
-              }`}>{score}</span>
+                ) : (
+                  <p className="text-[11px] text-slate-600 font-mono">No risk triggers detected.</p>
+                )}
+              </div>
             </div>
           </div>
-        ) : (
-          <div className={`px-4 py-3 border-t text-[11px] ${
-            score >= 60 ? 'border-red-200 dark:border-red-800/30' :
-            score >= 30 ? 'border-amber-200 dark:border-amber-800/30' :
-            'border-emerald-200 dark:border-emerald-800/30'
-          } text-slate-500 dark:text-slate-400 text-center`}>
-            No risk triggers detected.
-          </div>
-        )}
-      </div>
+        );
+      })()}
 
       {/* AI Review Widget */}
       {aiReview && (
-        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
-          <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-indigo-50/50 dark:bg-indigo-900/10 flex items-center gap-2">
-             <BrainCircuit className="w-5 h-5 text-indigo-500" />
-             <h3 className="font-bold text-slate-800 dark:text-slate-200">AI Scam Analysis</h3>
+        <div className="rounded-2xl overflow-hidden border border-indigo-900/40" style={{background:'#111318'}}>
+          <div className="p-4 border-b border-indigo-900/30 bg-indigo-500/5 flex items-center gap-2">
+             <BrainCircuit className="w-4 h-4 text-indigo-400" />
+             <h3 className="font-bold text-slate-200 text-sm">AI Scam Analysis</h3>
           </div>
-          <div className="p-4 text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
+          <div className="p-4 text-sm text-slate-400 leading-relaxed border-l-2 border-indigo-500/30 ml-4 mr-4 mt-0 pl-3">
              {aiReview}
           </div>
         </div>
       )}
 
       {/* Analyst Comments & Notes Widget */}
-      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
+      <div className="rounded-2xl overflow-hidden border border-slate-800/80" style={{background:'#111318'}}>
         <button
           type="button"
           onClick={() => setIsNotesExpanded(prev => !prev)}
-          className="w-full p-4 flex items-center justify-between text-left hover:bg-slate-50 dark:hover:bg-slate-850/50 transition-colors"
+          className="w-full p-4 flex items-center justify-between text-left hover:bg-slate-800/30 transition-colors"
         >
           <div className="flex items-center gap-2">
-            <MessageSquare className="w-5 h-5 text-emerald-500" />
+            <MessageSquare className="w-4 h-4 text-emerald-500" />
             <div>
-              <h3 className="font-bold text-slate-800 dark:text-slate-200 text-sm md:text-base">Analyst Notes & Case Comments</h3>
-              <p className="text-xs text-slate-500 mt-0.5">
+              <h3 className="font-bold text-slate-200 text-sm">Analyst Notes & Case Comments</h3>
+              <p className="text-xs text-slate-600 mt-0.5">
                 {notes ? 'Click to view/edit existing comments' : 'Click to add internal investigation comments'}
               </p>
             </div>
           </div>
-          {isNotesExpanded ? <ChevronUp className="w-5 h-5 text-slate-500" /> : <ChevronDown className="w-5 h-5 text-slate-500" />}
+          {isNotesExpanded ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
         </button>
 
         {isNotesExpanded && (
-          <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50/30 dark:bg-slate-950/20">
+          <div className="p-4 border-t border-slate-800">
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Enter details about associated syndicates, Telegram channels, recruiter identities, or general investigation notes..."
               rows={4}
-              className="w-full p-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all outline-none resize-y placeholder:text-slate-400 dark:placeholder:text-slate-655"
+              className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-300 focus:ring-1 focus:ring-emerald-500/50 focus:border-emerald-500/30 transition-all outline-none resize-y placeholder:text-slate-600 font-mono"
             />
           </div>
         )}
       </div>
 
       {/* Extracted Data Form */}
-      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
-        <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
-           <h3 className="font-bold text-slate-800 dark:text-slate-200">Extracted Details</h3>
-           <p className="text-xs text-slate-500 mt-1">Tap fields to correct any inaccuracies.</p>
+      <div className="rounded-2xl overflow-hidden border border-slate-800/80" style={{background:'#111318'}}>
+        <div className="p-4 border-b border-slate-800">
+           <h3 className="font-bold text-slate-200 text-sm">Extracted Details</h3>
+           <p className="text-xs text-slate-600 mt-1">Tap fields to correct any inaccuracies.</p>
         </div>
         <div className="p-4 space-y-4">
            {Object.keys(formData).map(key => (
@@ -1634,10 +1681,10 @@ export default function ReviewScan() {
        </div>
 
       {/* Risk Flags Override */}
-      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden mb-6">
-        <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
-           <h3 className="font-bold text-slate-800 dark:text-slate-200">Risk Indicators</h3>
-           <p className="text-xs text-slate-500 mt-1">Check triggers you've discovered to recalculate the score.</p>
+      <div className="rounded-2xl overflow-hidden border border-slate-800/80 mb-6" style={{background:'#111318'}}>
+        <div className="p-4 border-b border-slate-800">
+           <h3 className="font-bold text-slate-200 text-sm">Risk Indicators</h3>
+           <p className="text-xs text-slate-600 mt-1">Check triggers you've discovered to recalculate the score.</p>
         </div>
         <div className="p-2 divide-y divide-slate-100 dark:divide-slate-800/50">
            {Object.keys(RISK_FLAGS).map(flag => (
@@ -1656,10 +1703,10 @@ export default function ReviewScan() {
 
       {/* Raw OCR Text */}
       {ocrText && (
-        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden mb-6">
-          <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
-             <h3 className="font-bold text-slate-800 dark:text-slate-200">Image OCR Output</h3>
-             <p className="text-xs text-slate-500 mt-1">Full text extracted from the image by the AI.</p>
+        <div className="rounded-2xl overflow-hidden border border-slate-800/80 mb-6" style={{background:'#111318'}}>
+          <div className="p-4 border-b border-slate-800">
+             <h3 className="font-bold text-slate-200 text-sm">Image OCR Output</h3>
+             <p className="text-xs text-slate-600 mt-1">Full text extracted from the image by the AI.</p>
           </div>
           <div className="p-4 bg-slate-50 dark:bg-slate-950">
              <div className="text-sm font-mono text-slate-700 dark:text-slate-300 whitespace-pre-wrap">
