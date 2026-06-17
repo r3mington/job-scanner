@@ -34,7 +34,8 @@ export function mapRecordToDb(record) {
     batch_id: record.batchId,
     batch_name: record.batchName,
     user_id: record.userId || record.user_id || null,
-    normalized_text: record.normalizedText || null
+    normalized_text: record.normalizedText || null,
+    notes: record.notes || null
   };
 }
 
@@ -63,7 +64,8 @@ export function mapDbToRecord(dbRecord) {
     batchId: dbRecord.batch_id,
     batchName: dbRecord.batch_name,
     userId: dbRecord.user_id,
-    normalizedText: dbRecord.normalized_text
+    normalizedText: dbRecord.normalized_text,
+    notes: dbRecord.notes || ''
   };
 }
 

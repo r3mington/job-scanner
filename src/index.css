@@ -15,3 +15,66 @@
     @apply bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 antialiased;
   }
 }
+
+@layer utilities {
+  /* Gentle floating bob — used by threat classification chips */
+  @keyframes threat-float-1 {
+    0%, 100% { transform: translateY(0px); }
+    50%       { transform: translateY(-5px); }
+  }
+  @keyframes threat-float-2 {
+    0%, 100% { transform: translateY(0px); }
+    50%       { transform: translateY(-7px); }
+  }
+  @keyframes threat-float-3 {
+    0%, 100% { transform: translateY(0px); }
+    50%       { transform: translateY(-4px); }
+  }
+
+  /* Barely-there ambient glow — almost invisible at rest, present on hover */
+  @keyframes glow-red {
+    0%, 100% { box-shadow: 0 0 0px 0px rgba(239,68,68,0); }
+    50%       { box-shadow: 0 0 6px 1px rgba(239,68,68,0.12); }
+  }
+  @keyframes glow-amber {
+    0%, 100% { box-shadow: 0 0 0px 0px rgba(245,158,11,0); }
+    50%       { box-shadow: 0 0 5px 1px rgba(245,158,11,0.10); }
+  }
+
+  .threat-bubble-1  { animation: threat-float-1 3.2s ease-in-out infinite; }
+  .threat-bubble-2  { animation: threat-float-2 2.8s ease-in-out infinite 0.4s; }
+  .threat-bubble-3  { animation: threat-float-3 3.6s ease-in-out infinite 0.8s; }
+  .threat-bubble-4  { animation: threat-float-1 3.0s ease-in-out infinite 1.2s; }
+  .threat-bubble-5  { animation: threat-float-2 2.6s ease-in-out infinite 0.2s; }
+  .threat-bubble-6  { animation: threat-float-3 3.4s ease-in-out infinite 0.6s; }
+  .threat-bubble-7  { animation: threat-float-1 2.9s ease-in-out infinite 1.0s; }
+  .threat-bubble-8  { animation: threat-float-2 3.1s ease-in-out infinite 1.4s; }
+
+  .glow-red   { animation: glow-red   3s ease-in-out infinite; }
+  .glow-amber { animation: glow-amber 3.5s ease-in-out infinite; }
+
+  /* Floating annotation card bob — 6 independent rhythms */
+  @keyframes float-card {
+    0%, 100% { transform: translateY(0px); }
+    50%       { transform: translateY(-4px); }
+  }
+  .float-card-0 { animation: float-card 3.2s ease-in-out infinite; }
+  .float-card-1 { animation: float-card 2.9s ease-in-out infinite 0.5s; }
+  .float-card-2 { animation: float-card 3.5s ease-in-out infinite 1.0s; }
+  .float-card-3 { animation: float-card 3.0s ease-in-out infinite 0.3s; }
+  .float-card-4 { animation: float-card 2.7s ease-in-out infinite 0.8s; }
+  .float-card-5 { animation: float-card 3.3s ease-in-out infinite 1.3s; }
+
+  /* SVG dotted connector — dots crawl from phrase toward card */
+  @keyframes dash-crawl {
+    to { stroke-dashoffset: -28; }
+  }
+  .connector-dash { animation: dash-crawl 1.5s linear infinite; }
+
+  /* Laser sweep loader animation */
+  @keyframes laser-sweep {
+    0%, 100% { top: 0%; }
+    50%       { top: 98%; }
+  }
+  .animate-laser-sweep { animation: laser-sweep 2.2s ease-in-out infinite; }
+}

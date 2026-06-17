@@ -1,5 +1,14 @@
 const SYSTEM_INSTRUCTION = `You are a recruitment safety analyzer. 
 Analyze the provided job flyer image or text and extract the structured recruitment parameters.
+You are tasked with identifying potential human trafficking, forced labor, or online scam recruiting networks.
+Be extremely sensitive and thorough when auditing:
+1. Demographic Targeting: Flag any specific nationality profiling (e.g. "preferably Malaysian/Chinese/Taiwanese/Vietnamese") or specific language profiling.
+2. Labor Abuse / High Pressure: Flag phrases indicating extreme work pressure, high stamina, compliance, obedience, night shifts, or long working hours.
+3. Excessive Enticements: Flag promises of free private rooms, accommodation, visa/flight ticket sponsor, free meals, or high commissions for easy work.
+4. Suspect Location Hub: Flag border areas, Special Economic Zones (SEZs), border towns, or known hubs (e.g., Sihanoukville, Cambodia, Mae Sot, Thailand, Poipet, Myawaddy, Golden Triangle).
+5. Minimal Qualifications: Flag ads offering huge salaries ($3000-$15000+) for zero experience, basic typing, or simple qualifications.
+Do not hold back. Any snippet matching these risk factors must be added to 'suspicious_spans'. If the ad contains multiple triggers, aim to extract 4 to 10 distinct suspicious spans.
+
 If the language of the input text or image is not English, you must translate all extracted fields into English, and also provide a full English translation of the entire job advertisement in the "translated_text" field.
 You must output ONLY valid JSON matching this schema:
 {
@@ -18,7 +27,23 @@ You must output ONLY valid JSON matching this schema:
   "translated_text": "string or null (The full English translation of the raw_ocr_text or original input text if the input is not in English. Set to null if the input is already in English)",
   "normalized_text": "string (Provide a clean, normalized lowercase version of the job ad text in English. Strip all emojis, decorative symbols, and weird punctuation. Un-obfuscate any intentionally spaced-out words or letters like 'C o m p a n y' to 'company' and decode any leet-speak/characters used to bypass filters like 'Cu$tomer', 'Paki$tan', or 'T3l3gram' to 'customer', 'pakistan', and 'telegram'. Ensure actual numeric values like salaries, years, and dates remain as digits and are NOT converted to letters)",
   "detected_red_flags": [
-    "array of exact strings from this list: ['Upfront Fees', 'Passport/ID Control', 'Immediate Travel Pressure', 'Housing Compound Isolation', 'Employer Anonymity', 'Wage Disparity', 'Encrypted Apps Migration', 'Vague Description', 'Urgent Timeline', 'Suspicious Messaging']"
+    "array of exact strings from this list: ['Upfront Fees', 'Passport/ID Control', 'Immediate Travel Pressure', 'Housing Compound Isolation', 'Employer Anonymity', 'Wage Disparity', 'Encrypted Apps Migration', 'Vague Description', 'Urgent Timeline', 'Suspicious Messaging', 'Demographic Targeting', 'Labor Abuse / High Pressure', 'Excessive Enticements', 'Suspect Location Hub', 'Minimal Qualifications']"
+  ],
+  "suspicious_spans": [
+    {
+      "original_snippet": "string or null (the exact phrase/sentence from raw_ocr_text / original input text that is highly suspicious. Must match the casing and spelling exactly)",
+      "translated_snippet": "string or null (the corresponding exact phrase/sentence in the translated_text. Set to null if the original language is English)",
+      "red_flag": "string (the name of the matching red flag from the list)",
+      "explanation": "string (a very concise, single-sentence explanation of why this specific phrase is suspicious, max 15 words)",
+      "detailed_explanation": "string (a detailed, analytical explanation of the threat, why it is dangerous, and what it indicates for analysts, around 30-50 words)"
+    }
+  ],
+  "predicted_playbook": [
+    {
+      "phase": "string (the chronological stage name, e.g., 'Stage 1: Contact', 'Stage 2: Coercion', 'Stage 3: Transit', 'Stage 4: Confinement')",
+      "tactic": "string (the specific action the recruiter will perform next based on details in the ad, e.g., 'Requests passport photos under the guise of visa pre-processing')",
+      "red_flag_indicator": "string (the exact indicator the candidate/analyst should watch out for as proof, e.g., 'Refusal to use official visa registration portals')"
+    }
   ]
 }`;
 
@@ -115,9 +140,24 @@ export async function analyzeJobPosting(apiKey, modelName, { text, imageBase64 }
     
     // Extract just the JSON object to handle models that wrap output in markdown
     let cleanText = resultText;
-    const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      cleanText = jsonMatch[0];
+    const firstBrace = cleanText.indexOf('{');
+    if (firstBrace !== -1) {
+      let depth = 0;
+      let lastBrace = -1;
+      for (let i = firstBrace; i < cleanText.length; i++) {
+        if (cleanText[i] === '{') {
+          depth++;
+        } else if (cleanText[i] === '}') {
+          depth--;
+          if (depth === 0) {
+            lastBrace = i;
+            break;
+          }
+        }
+      }
+      if (lastBrace !== -1) {
+        cleanText = cleanText.substring(firstBrace, lastBrace + 1);
+      }
     }
     
     return JSON.parse(cleanText);
