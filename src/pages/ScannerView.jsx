@@ -13,6 +13,11 @@ export default function ScannerView() {
   const [capturedImage, setCapturedImage] = useState(null);
   const [pastedText, setPastedText] = useState('');
   
+  // Drag & drop state
+  const [isDragging, setIsDragging] = useState(false);
+  const [imageMeta, setImageMeta] = useState(null);
+  const [csvMapping, setCsvMapping] = useState(null);
+  
   // Metadata state
   const [sourcePlatform, setSourcePlatform] = useState('unspecified');
   const [sourceUrl, setSourceUrl] = useState('');
@@ -35,6 +40,43 @@ export default function ScannerView() {
   
   const abortRef = useRef(false);
   const logsContainerRef = useRef(null);
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (activeTab === 'upload' || activeTab === 'batch') {
+      setIsDragging(true);
+    }
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      const file = e.dataTransfer.files[0];
+      if (activeTab === 'upload') {
+        if (file.type.startsWith('image/')) {
+          handleFileUpload(file);
+        } else {
+          alert('Please drop an image file (PNG, JPG, WEBP).');
+        }
+      } else if (activeTab === 'batch') {
+        if (file.name.endsWith('.csv') || file.type === 'text/csv') {
+          handleCSVUpload(file);
+        } else {
+          alert('Please drop a CSV file.');
+        }
+      }
+    }
+  };
 
   useEffect(() => {
     if (logsContainerRef.current) {
@@ -107,8 +149,14 @@ export default function ScannerView() {
   };
 
   const handleFileUpload = (e) => {
-    const file = e.target.files[0];
+    const file = e.target && e.target.files ? e.target.files[0] : e;
     if (file) {
+      const sizeMb = (file.size / (1024 * 1024)).toFixed(2);
+      setImageMeta({
+        name: file.name,
+        size: `${sizeMb} MB`,
+        type: file.type || 'image/jpeg'
+      });
       const reader = new FileReader();
       reader.onloadend = () => {
         setCapturedImage(reader.result);
@@ -118,7 +166,7 @@ export default function ScannerView() {
   };
 
   const handleCSVUpload = (e) => {
-    const file = e.target.files[0];
+    const file = e.target && e.target.files ? e.target.files[0] : e;
     if (file) {
       setBatchFile(file);
       const fileNameWithoutExt = file.name.replace(/\.[^/.]+$/, "");
@@ -127,8 +175,9 @@ export default function ScannerView() {
       const reader = new FileReader();
       reader.onload = (event) => {
         const text = event.target.result;
-        const rows = parseCSV(text);
-        setBatchRows(rows);
+        const result = parseCSV(text);
+        setBatchRows(result.rows);
+        setCsvMapping(result.mapping);
       };
       reader.readAsText(file);
     }
@@ -140,6 +189,8 @@ export default function ScannerView() {
     setBatchFile(null);
     setBatchRows([]);
     setBatchName('');
+    setImageMeta(null);
+    setCsvMapping(null);
     setSourcePlatform('unspecified');
     setSourceUrl('');
     setIngestionMethod('Analyst Upload');
@@ -298,46 +349,73 @@ export default function ScannerView() {
   return (
     <div className="flex flex-col flex-1 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden my-4">
       
-      {/* Tabs */}
-      <div className="flex border-b border-slate-200 dark:border-slate-800 overflow-x-auto">
+      {/* Tabs - Pill style container */}
+      <div className="p-1.5 bg-slate-100 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 flex gap-1.5 overflow-x-auto">
         <button 
           onClick={() => handleTabChange('camera')}
-          className={`flex-1 py-3 px-2 text-sm font-medium flex items-center justify-center gap-2 transition-colors whitespace-nowrap ${activeTab === 'camera' ? 'text-emerald-600 border-b-2 border-emerald-600 bg-emerald-50 dark:bg-emerald-900/20' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800/50'}`}
+          className={`flex-1 py-2 px-3 text-xs font-mono font-bold uppercase tracking-wider flex items-center justify-center gap-2 rounded-lg transition-all whitespace-nowrap ${activeTab === 'camera' ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-500 shadow-sm border border-slate-200/60 dark:border-slate-850' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-350'}`}
         >
-          <Camera className="w-4 h-4 flex-shrink-0" /> Camera
+          <Camera className="w-3.5 h-3.5 flex-shrink-0" /> Camera
         </button>
         <button 
           onClick={() => handleTabChange('upload')}
-          className={`flex-1 py-3 px-2 text-sm font-medium flex items-center justify-center gap-2 transition-colors whitespace-nowrap ${activeTab === 'upload' ? 'text-emerald-600 border-b-2 border-emerald-600 bg-emerald-50 dark:bg-emerald-900/20' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800/50'}`}
+          className={`flex-1 py-2 px-3 text-xs font-mono font-bold uppercase tracking-wider flex items-center justify-center gap-2 rounded-lg transition-all whitespace-nowrap ${activeTab === 'upload' ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-500 shadow-sm border border-slate-200/60 dark:border-slate-850' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-350'}`}
         >
-          <ImageIcon className="w-4 h-4 flex-shrink-0" /> Upload
+          <ImageIcon className="w-3.5 h-3.5 flex-shrink-0" /> Upload Image
         </button>
         <button 
           onClick={() => handleTabChange('text')}
-          className={`flex-1 py-3 px-2 text-sm font-medium flex items-center justify-center gap-2 transition-colors whitespace-nowrap ${activeTab === 'text' ? 'text-emerald-600 border-b-2 border-emerald-600 bg-emerald-50 dark:bg-emerald-900/20' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800/50'}`}
+          className={`flex-1 py-2 px-3 text-xs font-mono font-bold uppercase tracking-wider flex items-center justify-center gap-2 rounded-lg transition-all whitespace-nowrap ${activeTab === 'text' ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-500 shadow-sm border border-slate-200/60 dark:border-slate-850' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-350'}`}
         >
-          <FileText className="w-4 h-4 flex-shrink-0" /> Text
+          <FileText className="w-3.5 h-3.5 flex-shrink-0" /> Paste Text
         </button>
         <button 
           onClick={() => handleTabChange('batch')}
-          className={`flex-1 py-3 px-2 text-sm font-medium flex items-center justify-center gap-2 transition-colors whitespace-nowrap ${activeTab === 'batch' ? 'text-emerald-600 border-b-2 border-emerald-600 bg-emerald-50 dark:bg-emerald-900/20' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800/50'}`}
+          className={`flex-1 py-2 px-3 text-xs font-mono font-bold uppercase tracking-wider flex items-center justify-center gap-2 rounded-lg transition-all whitespace-nowrap ${activeTab === 'batch' ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-500 shadow-sm border border-slate-200/60 dark:border-slate-850' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-350'}`}
         >
-          <FileSpreadsheet className="w-4 h-4 flex-shrink-0" /> Batch
+          <FileSpreadsheet className="w-3.5 h-3.5 flex-shrink-0" /> Batch CSV
         </button>
       </div>
 
-      {/* Content Area */}
-      <div className="flex-1 p-4 flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950/50 min-h-[400px]">
+      {/* Content Area with Drag & Drop Listener */}
+      <div 
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        className={`flex-1 p-4 flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950/30 min-h-[400px] transition-all relative ${isDragging ? 'bg-emerald-50/20 dark:bg-emerald-950/10' : ''}`}
+      >
         
+        {/* Drag & Drop Overlay */}
+        {isDragging && (
+          <div className="absolute inset-4 border-2 border-dashed border-emerald-500 dark:border-emerald-400 bg-white/95 dark:bg-slate-950/95 rounded-xl flex flex-col items-center justify-center z-15 animate-fade-in shadow-[0_0_15px_rgba(16,185,129,0.15)]">
+            <Upload className="w-12 h-12 text-emerald-500 animate-bounce mb-3" />
+            <p className="text-emerald-600 dark:text-emerald-400 font-mono text-sm font-bold uppercase tracking-wider">Drop File to Ingest</p>
+            <p className="text-slate-400 text-xs mt-1">Accepts {activeTab === 'upload' ? 'Images (PNG, JPG, WEBP)' : 'CSV Spreadsheet'}</p>
+          </div>
+        )}
+
         {capturedImage ? (
-          <div className="relative w-full max-w-md">
-            <img src={capturedImage} alt="Captured" className="w-full rounded-lg shadow-md border border-slate-200 dark:border-slate-700" />
-            <button 
-              onClick={resetCapture}
-              className="absolute top-3 right-3 p-2 bg-slate-900/70 text-white rounded-full hover:bg-slate-900/90 backdrop-blur-sm transition-colors shadow-lg"
-            >
-              <X className="w-5 h-5" />
-            </button>
+          <div className="relative w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-md space-y-4">
+            <div className="relative aspect-video w-full rounded-lg overflow-hidden border border-slate-100 dark:border-slate-800/80">
+              <img src={capturedImage} alt="Captured" className="w-full h-full object-cover" />
+            </div>
+            
+            <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800/60 pt-3">
+              <div className="min-w-0 flex-1 pr-4">
+                <p className="text-xs font-mono font-bold text-slate-700 dark:text-slate-300 truncate">
+                  {imageMeta?.name || 'Captured_Scan_Frame.jpg'}
+                </p>
+                <p className="text-[10px] text-slate-400 font-mono">
+                  {imageMeta?.size || 'Direct capture'} • {imageMeta?.type || 'image/jpeg'}
+                </p>
+              </div>
+              <button 
+                onClick={resetCapture}
+                className="px-3 py-1.5 text-xs font-mono font-bold uppercase tracking-wider text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded-lg transition-colors border border-rose-200 dark:border-rose-900/40"
+              >
+                Clear
+              </button>
+            </div>
           </div>
         ) : activeTab === 'camera' ? (
           <div className="w-full max-w-md aspect-[3/4] bg-slate-900 rounded-lg overflow-hidden relative shadow-inner flex items-center justify-center">
@@ -358,9 +436,10 @@ export default function ScannerView() {
              )}
           </div>
         ) : activeTab === 'upload' ? (
-          <div className="w-full max-w-md h-64 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl flex flex-col items-center justify-center bg-white dark:bg-slate-900 shadow-sm transition-colors hover:border-emerald-400 dark:hover:border-emerald-500">
+          <div className="w-full max-w-md h-64 border-2 border-dashed border-slate-350 dark:border-slate-750 rounded-xl flex flex-col items-center justify-center bg-white dark:bg-slate-900 shadow-sm transition-colors hover:border-emerald-400 dark:hover:border-emerald-500">
              <Upload className="w-10 h-10 text-slate-400 mb-3" />
-             <p className="text-slate-600 dark:text-slate-400 text-sm mb-4">Select an image of the job flyer</p>
+             <p className="text-slate-600 dark:text-slate-400 text-sm mb-1 font-medium">Upload or Drop Flyer Image</p>
+             <p className="text-slate-400 text-[10px] font-mono mb-4">PNG, JPG, or WEBP formats</p>
              <label className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2.5 rounded-lg font-medium cursor-pointer transition-colors shadow-sm">
                Choose File
                <input type="file" accept="image/png, image/jpeg, image/webp" className="hidden" onChange={handleFileUpload} />
@@ -378,10 +457,10 @@ export default function ScannerView() {
         ) : (
           <div className="w-full max-w-md flex flex-col gap-4">
             {!batchFile ? (
-              <div className="h-64 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl flex flex-col items-center justify-center bg-white dark:bg-slate-900 shadow-sm transition-colors hover:border-emerald-400 dark:hover:border-emerald-500 p-6">
+              <div className="h-64 border-2 border-dashed border-slate-350 dark:border-slate-750 rounded-xl flex flex-col items-center justify-center bg-white dark:bg-slate-900 shadow-sm transition-colors hover:border-emerald-400 dark:hover:border-emerald-500 p-6">
                 <FileSpreadsheet className="w-10 h-10 text-slate-400 mb-3" />
-                <p className="text-slate-600 dark:text-slate-400 text-sm mb-1 text-center font-medium">Upload a CSV file containing job listings</p>
-                <p className="text-slate-400 text-xs mb-4 text-center">It will scan each row sequentially</p>
+                <p className="text-slate-600 dark:text-slate-400 text-sm mb-1 text-center font-medium">Upload or Drop CSV File</p>
+                <p className="text-slate-400 text-[10px] font-mono mb-4 text-center">Contains row-by-row job listings to analyze</p>
                 <label className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2.5 rounded-lg font-medium cursor-pointer transition-colors shadow-sm">
                   Choose CSV File
                   <input type="file" accept=".csv" className="hidden" onChange={handleCSVUpload} />
@@ -407,6 +486,46 @@ export default function ScannerView() {
                   </button>
                 </div>
 
+                {/* CSV Header Mapping Console */}
+                {csvMapping && (
+                  <div className="border border-slate-200 dark:border-slate-850 rounded-lg overflow-hidden bg-slate-50 dark:bg-slate-950 p-3 font-mono text-[10px]">
+                    <div className="text-[10px] font-bold text-slate-450 dark:text-slate-500 uppercase tracking-wider mb-2 pb-1.5 border-b border-slate-200 dark:border-slate-800">
+                      Terminal Column Mapping Console
+                    </div>
+                    <div className="grid grid-cols-2 gap-y-1.5 text-slate-700 dark:text-slate-350">
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0 animate-pulse"></span>
+                        <span className="font-bold text-slate-400 dark:text-slate-500">DESC/TEXT:</span>
+                      </div>
+                      <div className="text-emerald-600 dark:text-emerald-400 truncate">➔ '{csvMapping.text}'</div>
+
+                      <div className="flex items-center gap-1.5">
+                        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${csvMapping.jobTitle ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
+                        <span className="font-bold text-slate-400 dark:text-slate-500">JOB_TITLE:</span>
+                      </div>
+                      <div className="truncate text-slate-600 dark:text-slate-450">
+                        {csvMapping.jobTitle ? `➔ '${csvMapping.jobTitle}'` : '✕ [Auto-detected by AI]'}
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${csvMapping.sourceUrl ? 'bg-emerald-500' : 'bg-slate-400'}`}></span>
+                        <span className="font-bold text-slate-400 dark:text-slate-500">SOURCE_URL:</span>
+                      </div>
+                      <div className="truncate text-slate-600 dark:text-slate-450 font-semibold">
+                        {csvMapping.sourceUrl ? `➔ '${csvMapping.sourceUrl}'` : '✕ [Row Default: Unspecified]'}
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${csvMapping.postDate ? 'bg-emerald-500' : 'bg-slate-400'}`}></span>
+                        <span className="font-bold text-slate-400 dark:text-slate-500">POST_DATE:</span>
+                      </div>
+                      <div className="truncate text-slate-600 dark:text-slate-450 font-semibold">
+                        {csvMapping.postDate ? `➔ '${csvMapping.postDate}'` : '✕ [Row Default: Unspecified]'}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div className="space-y-2">
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide">
                     Batch Name
@@ -425,25 +544,57 @@ export default function ScannerView() {
         )}
       </div>
 
-      {/* Source & Ingestion Metadata Accordion */}
+      {/* Source & Ingestion Metadata Accordion with Summary Badges */}
       <div className="border-t border-slate-200 dark:border-slate-800 bg-slate-50/30 dark:bg-slate-900/10 w-full">
         <button
           type="button"
           onClick={() => setIsMetadataExpanded(prev => !prev)}
-          className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-slate-100 dark:hover:bg-slate-800/40 transition-colors border-b border-slate-150 dark:border-slate-800/60"
+          className="w-full px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between text-left hover:bg-slate-100 dark:hover:bg-slate-800/40 transition-colors border-b border-slate-150 dark:border-slate-800/60 gap-2"
         >
-          <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300">
+          <div className="flex items-center gap-2 text-slate-700 dark:text-slate-350">
             <Globe className="w-4 h-4 text-emerald-500 flex-shrink-0" />
             <span className="text-xs font-mono font-bold uppercase tracking-wider">Source & Ingestion Details</span>
-            <span className="text-[10px] text-slate-400 dark:text-slate-550 font-mono font-normal normal-case hidden sm:inline">
-              (Platform, URL, Method, Post Date)
-            </span>
           </div>
-          {isMetadataExpanded ? (
-            <ChevronUp className="w-4 h-4 text-slate-400" />
-          ) : (
-            <ChevronDown className="w-4 h-4 text-slate-400" />
-          )}
+          
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wide border ${
+              sourcePlatform !== 'unspecified' 
+                ? 'bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900/40'
+                : 'bg-slate-100 dark:bg-slate-900 text-slate-400 border-slate-200 dark:border-slate-800 text-slate-400 dark:text-slate-500'
+            }`}>
+              Platform: {sourcePlatform}
+            </span>
+
+            <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wide bg-slate-100 dark:bg-slate-900 text-slate-550 dark:text-slate-400 border border-slate-200 dark:border-slate-800">
+              Method: {ingestionMethod}
+            </span>
+
+            <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wide border ${
+              activeTab === 'batch'
+                ? 'bg-sky-50 dark:bg-sky-950/20 text-sky-600 dark:text-sky-400 border-sky-200 dark:border-sky-900/40'
+                : sourceUrl.trim()
+                ? 'bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900/40'
+                : 'bg-slate-100 dark:bg-slate-900 text-slate-400 border-slate-200 dark:border-slate-800 text-slate-450 dark:text-slate-500'
+            }`}>
+              URL: {activeTab === 'batch' ? 'PARSED' : sourceUrl.trim() ? 'SPECIFIED' : 'UNSPECIFIED'}
+            </span>
+
+            <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wide border ${
+              activeTab === 'batch'
+                ? 'bg-sky-50 dark:bg-sky-950/20 text-sky-600 dark:text-sky-400 border-sky-200 dark:border-sky-900/40'
+                : postDate.trim()
+                ? 'bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900/40'
+                : 'bg-slate-100 dark:bg-slate-900 text-slate-400 border-slate-200 dark:border-slate-800 text-slate-450 dark:text-slate-500'
+            }`}>
+              Date: {activeTab === 'batch' ? 'PARSED' : postDate.trim() ? 'SPECIFIED' : 'UNSPECIFIED'}
+            </span>
+
+            {isMetadataExpanded ? (
+              <ChevronUp className="w-4 h-4 text-slate-400 ml-1" />
+            ) : (
+              <ChevronDown className="w-4 h-4 text-slate-400 ml-1" />
+            )}
+          </div>
         </button>
 
         {isMetadataExpanded && (
@@ -456,7 +607,7 @@ export default function ScannerView() {
               <select
                 value={sourcePlatform}
                 onChange={(e) => setSourcePlatform(e.target.value)}
-                className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-md text-xs text-slate-800 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500 transition-all"
+                className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-md text-xs text-slate-800 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500 transition-all font-mono"
               >
                 <option value="unspecified">Unspecified</option>
                 <option value="Facebook">Facebook</option>
@@ -479,7 +630,7 @@ export default function ScannerView() {
               <select
                 value={ingestionMethod}
                 onChange={(e) => setIngestionMethod(e.target.value)}
-                className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-md text-xs text-slate-800 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500 transition-all"
+                className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-md text-xs text-slate-800 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500 transition-all font-mono"
               >
                 <option value="Analyst Upload">Analyst Upload</option>
                 <option value="Web Scraper">Web Scraper</option>
@@ -488,57 +639,78 @@ export default function ScannerView() {
               </select>
             </div>
 
-            {/* Source URL Input */}
-            <div className={`space-y-1.5 ${activeTab === 'batch' ? 'opacity-50' : ''}`}>
-              <label className="block text-[10px] font-mono font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider flex items-center gap-1">
-                <Link className="w-3 h-3 text-slate-400 flex-shrink-0" /> Source URL Link
-              </label>
-              <input
-                type="text"
-                disabled={activeTab === 'batch'}
-                value={activeTab === 'batch' ? 'Disabled - Multi-post batch' : sourceUrl}
-                onChange={(e) => setSourceUrl(e.target.value)}
-                placeholder={activeTab === 'batch' ? 'Parsed individually from CSV columns' : 'e.g. t.me/... or facebook.com/groups/...'}
-                className={`w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 transition-all font-mono ${activeTab === 'batch' ? 'cursor-not-allowed bg-slate-50 dark:bg-slate-950/40 select-none text-slate-450 dark:text-slate-500' : 'text-slate-800 dark:text-slate-350'}`}
-              />
-            </div>
+            {/* Source URL & Post Date Inputs */}
+            {activeTab === 'batch' ? (
+              <div className="sm:col-span-2 bg-blue-50/30 dark:bg-blue-950/10 border border-blue-200/50 dark:border-blue-900/30 p-3 rounded-lg flex items-start gap-2.5">
+                <AlertCircle className="w-4 h-4 text-sky-500 flex-shrink-0 mt-0.5 animate-pulse" />
+                <div className="font-mono text-[10px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                  <span className="font-bold text-sky-600 dark:text-sky-450 uppercase">Batch CSV Auto-Ingest:</span> Source URL and Original Post Date are parsed dynamically from each listing's corresponding CSV columns (if matching column names are found). Global options are disabled.
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-mono font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                    <Link className="w-3 h-3 text-slate-400 flex-shrink-0" /> Source URL Link
+                  </label>
+                  <input
+                    type="text"
+                    value={sourceUrl}
+                    onChange={(e) => setSourceUrl(e.target.value)}
+                    placeholder="e.g. t.me/... or facebook.com/groups/..."
+                    className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-md text-xs text-slate-800 dark:text-slate-350 focus:outline-none focus:ring-1 focus:ring-emerald-500 transition-all font-mono"
+                  />
+                </div>
 
-            {/* Post Date Input */}
-            <div className={`space-y-1.5 ${activeTab === 'batch' ? 'opacity-50' : ''}`}>
-              <label className="block text-[10px] font-mono font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider flex items-center gap-1">
-                <Calendar className="w-3 h-3 text-slate-400 flex-shrink-0" /> Post Date
-              </label>
-              <input
-                type="text"
-                disabled={activeTab === 'batch'}
-                value={activeTab === 'batch' ? 'Disabled - Multi-post batch' : postDate}
-                onChange={(e) => setPostDate(e.target.value)}
-                placeholder={activeTab === 'batch' ? 'Parsed individually from CSV columns' : 'e.g. YYYY-MM-DD or Unspecified'}
-                className={`w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 transition-all font-mono ${activeTab === 'batch' ? 'cursor-not-allowed bg-slate-50 dark:bg-slate-950/40 select-none text-slate-450 dark:text-slate-500' : 'text-slate-850 dark:text-slate-350'}`}
-              />
-            </div>
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-mono font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                    <Calendar className="w-3 h-3 text-slate-400 flex-shrink-0" /> Post Date
+                  </label>
+                  <input
+                    type="text"
+                    value={postDate}
+                    onChange={(e) => setPostDate(e.target.value)}
+                    placeholder="e.g. YYYY-MM-DD or Unspecified"
+                    className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-md text-xs text-slate-800 dark:text-slate-350 focus:outline-none focus:ring-1 focus:ring-emerald-500 transition-all font-mono"
+                  />
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>
-
-      {/* Action Button */}
-      <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+         {/* Action Button */}
+      <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col items-center gap-2">
         {activeTab === 'batch' ? (
-          <button 
-            onClick={startBatchProcess}
-            disabled={batchRows.length === 0 || isProcessingBatch}
-            className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 dark:disabled:bg-slate-800 dark:disabled:text-slate-500 text-white font-bold py-3.5 rounded-xl shadow-sm transition-all active:scale-[0.98] flex items-center justify-center gap-2"
-          >
-            <Play className="w-4 h-4 fill-current animate-pulse" /> Start Batch Scan ({batchRows.length} Items)
-          </button>
+          <>
+            <button 
+              onClick={startBatchProcess}
+              disabled={batchRows.length === 0 || isProcessingBatch}
+              className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 dark:disabled:bg-slate-800 dark:disabled:text-slate-500 text-white font-bold py-3.5 rounded-xl shadow-sm transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+            >
+              <Play className="w-4 h-4 fill-current animate-pulse" /> Start Batch Scan ({batchRows.length} Items)
+            </button>
+            {batchRows.length === 0 && (
+              <p className="text-[10px] font-mono text-slate-400 text-center uppercase tracking-wider">
+                Please upload or drop a CSV file to initialize batch scan
+              </p>
+            )}
+          </>
         ) : (
-          <button 
-            onClick={handleScan}
-            disabled={!capturedImage && !pastedText.trim()}
-            className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 dark:disabled:bg-slate-800 dark:disabled:text-slate-500 text-white font-bold py-3.5 rounded-xl shadow-sm transition-all active:scale-[0.98]"
-          >
-            Scan for Risks
-          </button>
+          <>
+            <button 
+              onClick={handleScan}
+              disabled={!capturedImage && !pastedText.trim()}
+              className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 dark:disabled:bg-slate-800 dark:disabled:text-slate-500 text-white font-bold py-3.5 rounded-xl shadow-sm transition-all active:scale-[0.98]"
+            >
+              Scan for Risks
+            </button>
+            {!capturedImage && !pastedText.trim() && (
+              <p className="text-[10px] font-mono text-slate-400 text-center uppercase tracking-wider">
+                Please {activeTab === 'camera' ? 'capture a photo' : activeTab === 'upload' ? 'upload / drop a flyer image' : 'paste description text'} to enable scanning
+              </p>
+            )}
+          </>
         )}
       </div>
 
@@ -716,10 +888,11 @@ function parseCSV(text) {
     lines.push(row);
   }
   
-  if (lines.length < 2) return [];
+  if (lines.length < 2) return { rows: [], mapping: null };
 
   // Parse headers
   const headers = lines[0].map(h => h.trim().toLowerCase());
+  const originalHeaders = lines[0].map(h => h.trim());
   
   // Find column indexes
   const titleIdx = headers.findIndex(h => (h.includes('title') || h.includes('role') || h === 'job') && !h.includes('desc') && !h.includes('text') && !h.includes('body') && !h.includes('post'));
@@ -765,5 +938,18 @@ function parseCSV(text) {
     });
   }
 
-  return parsedRows;
+  return {
+    rows: parsedRows,
+    mapping: {
+      text: descIdx !== -1 ? originalHeaders[descIdx] : (originalHeaders[0] || 'Column 1 (Fallback)'),
+      jobTitle: titleIdx !== -1 ? originalHeaders[titleIdx] : null,
+      location: locIdx !== -1 ? originalHeaders[locIdx] : null,
+      employer: empIdx !== -1 ? originalHeaders[empIdx] : null,
+      salary: salIdx !== -1 ? originalHeaders[salIdx] : null,
+      industry: indIdx !== -1 ? originalHeaders[indIdx] : null,
+      contact: conIdx !== -1 ? originalHeaders[conIdx] : null,
+      sourceUrl: urlIdx !== -1 ? originalHeaders[urlIdx] : null,
+      postDate: dateIdx !== -1 ? originalHeaders[dateIdx] : null,
+    }
+  };
 }

@@ -6,6 +6,7 @@ import SettingsView from './pages/SettingsView';
 import ReviewScan from './pages/ReviewScan';
 import DashboardView from './pages/DashboardView';
 import LoginView from './pages/LoginView';
+import TraffickerProfileView from './pages/TraffickerProfileView';
 import { AuthProvider, useAuth } from './context/AuthContext';
 
 function Layout({ children }) {
@@ -92,6 +93,7 @@ function App() {
             <Route path="/history" element={<HistoryView />} />
             <Route path="/dashboard" element={<DashboardView />} />
             <Route path="/settings" element={<SettingsView />} />
+            <Route path="/trafficker/:contactId" element={<TraffickerProfileView />} />
           </Routes>
         </Layout>
       </AuthProvider>

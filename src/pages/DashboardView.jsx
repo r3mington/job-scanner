@@ -3,6 +3,28 @@ import { supabase, mapDbToRecord } from '../utils/supabaseClient';
 import { BarChart3, AlertTriangle, ShieldAlert, CheckCircle2, TrendingUp, Users, MapPin, PhoneCall, Loader2, Award } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
+export const getCleanContactValue = (val) => {
+  if (!val) return null;
+  const str = val.trim();
+  
+  // Telegram usernames
+  const tgUserMatch = str.match(/(?:t\.me\/|tg:\/\/resolve\?domain=)([a-zA-Z0-9_]{5,32})/i);
+  const tgRawUser = str.match(/@([a-zA-Z0-9_]{5,32})/);
+  if (tgUserMatch) return `Telegram: @${tgUserMatch[1]}`;
+  if (tgRawUser) return `Telegram: @${tgRawUser[1]}`;
+  
+  // WhatsApp numbers
+  const waMatch = str.match(/(?:wa\.me\/|api\.whatsapp\.com\/send\?phone=)([0-9]+)/i);
+  if (waMatch) return `WhatsApp: +${waMatch[1]}`;
+  
+  // Emails
+  const emailMatch = str.match(/([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9_-]+)/);
+  if (emailMatch) return `Email: ${emailMatch[1]}`;
+
+  if (str.length > 0) return str;
+  return null;
+};
+
 export default function DashboardView() {
   const navigate = useNavigate();
   const [scans, setScans] = useState(null);
@@ -75,28 +97,6 @@ export default function DashboardView() {
 
   // Recruiter Network Hubs (Shared contacts)
   const contactMap = {};
-  
-  const getCleanContactValue = (val) => {
-    if (!val) return null;
-    const str = val.trim();
-    
-    // Telegram usernames
-    const tgUserMatch = str.match(/(?:t\.me\/|tg:\/\/resolve\?domain=)([a-zA-Z0-9_]{5,32})/i);
-    const tgRawUser = str.match(/@([a-zA-Z0-9_]{5,32})/);
-    if (tgUserMatch) return `Telegram: @${tgUserMatch[1]}`;
-    if (tgRawUser) return `Telegram: @${tgRawUser[1]}`;
-    
-    // WhatsApp numbers
-    const waMatch = str.match(/(?:wa\.me\/|api\.whatsapp\.com\/send\?phone=)([0-9]+)/i);
-    if (waMatch) return `WhatsApp: +${waMatch[1]}`;
-    
-    // Emails
-    const emailMatch = str.match(/([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9_-]+)/);
-    if (emailMatch) return `Email: ${emailMatch[1]}`;
-
-    if (str.length > 0) return str;
-    return null;
-  };
 
   scans.forEach(scan => {
     const contactMethod = scan.extractedData?.contact_method;
@@ -248,14 +248,18 @@ export default function DashboardView() {
           <div className="space-y-3 flex-1 overflow-y-auto max-h-64 pr-1">
             {networkHubs.length > 0 ? (
               networkHubs.map(hub => (
-                <div key={hub.contact} className="p-2.5 rounded-lg border border-purple-100/40 dark:border-purple-900/10 bg-purple-50/20 dark:bg-purple-950/5 flex items-center justify-between">
+                <div 
+                  key={hub.contact} 
+                  onClick={() => navigate(`/trafficker/${encodeURIComponent(hub.contact)}`)}
+                  className="p-2.5 rounded-lg border border-purple-100/40 dark:border-purple-900/10 bg-purple-50/20 dark:bg-purple-950/5 flex items-center justify-between hover:bg-purple-100/50 dark:hover:bg-purple-950/15 cursor-pointer transition-all active:scale-[0.99] group"
+                >
                   <div className="min-w-0 pr-2">
-                    <div className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate flex items-center gap-1">
+                    <div className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate flex items-center gap-1 group-hover:text-purple-650 dark:group-hover:text-purple-400 transition-colors">
                       <PhoneCall className="w-3.5 h-3.5 text-purple-500 flex-shrink-0" /> {hub.contact}
                     </div>
                     <div className="text-[10px] text-slate-400 mt-0.5">Avg Connected Risk: <span className="font-bold text-red-500">{hub.avgRisk}%</span></div>
                   </div>
-                  <span className="text-[10px] font-extrabold bg-purple-600 text-white px-2 py-0.5 rounded-full flex-shrink-0">
+                  <span className="text-[10px] font-extrabold bg-purple-600 group-hover:bg-purple-700 text-white px-2 py-0.5 rounded-full flex-shrink-0 transition-colors">
                     {hub.count} Jobs
                   </span>
                 </div>

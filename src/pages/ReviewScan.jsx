@@ -2,9 +2,10 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { supabase, mapRecordToDb, mapDbToRecord, uploadBase64Image } from '../utils/supabaseClient';
 import { calculateRiskScore, getRiskLevel, RISK_FLAGS } from '../utils/scoring';
-import { ShieldAlert, CheckCircle, AlertTriangle, Save, ArrowLeft, Loader2, MapPin, TrendingUp, BrainCircuit, Columns, Copy, X, MessageSquare, ChevronDown, ChevronUp, Eye, EyeOff, Image as ImageIcon, FileText, PhoneCall, Layers } from 'lucide-react';
+import { ShieldAlert, CheckCircle, AlertTriangle, Save, ArrowLeft, Loader2, MapPin, TrendingUp, BrainCircuit, Columns, Copy, X, MessageSquare, ChevronDown, ChevronUp, Eye, EyeOff, Image as ImageIcon, FileText, PhoneCall, Layers, Globe } from 'lucide-react';
 import { analyzeJobPosting } from '../services/geminiService';
 import { getMedianSalary } from '../utils/countryMedians';
+import { getCleanContactValue } from './DashboardView';
 import { useAuth } from '../context/AuthContext';
 import { calculateSimilarity, computeWordDiff } from '../utils/similarity';
 
@@ -1728,21 +1729,34 @@ export default function ReviewScan() {
                     </a>
                  )}
                  {key === 'contact_method' && formData[key] && (() => {
-                     const deepLink = getContactDeepLink(formData[key]);
-                     if (!deepLink) return null;
-                     return (
-                       <a 
-                         href={deepLink.url}
-                         className={`text-xs flex items-center gap-1 font-semibold px-2 py-0.5 rounded transition-colors ${
-                           deepLink.platform === 'Telegram' 
-                             ? 'bg-sky-50 text-sky-600 hover:bg-sky-100 dark:bg-sky-950/30 dark:text-sky-400 dark:hover:bg-sky-900/40' 
-                             : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:text-emerald-400 dark:hover:bg-emerald-900/40'
-                         }`}
-                       >
-                         {deepLink.platform === 'Telegram' ? '✈️' : '💬'} Open {deepLink.platform} ({deepLink.label})
-                       </a>
-                     );
-                  })()}
+                      const deepLink = getContactDeepLink(formData[key]);
+                      const cleanContact = getCleanContactValue ? getCleanContactValue(formData[key]) : formData[key];
+                      return (
+                        <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                          {deepLink && (
+                            <a 
+                              href={deepLink.url}
+                              className={`text-[10px] flex items-center gap-1 font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded border transition-colors ${
+                                deepLink.platform === 'Telegram' 
+                                  ? 'bg-sky-50 dark:bg-sky-950/20 text-sky-655 dark:text-sky-400 border-sky-200 dark:border-sky-900/40 hover:bg-sky-100' 
+                                  : 'bg-emerald-50 dark:bg-emerald-950/20 text-emerald-655 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900/40 hover:bg-emerald-100'
+                              }`}
+                            >
+                              Open {deepLink.platform}
+                            </a>
+                          )}
+                          {cleanContact && (
+                            <button
+                              type="button"
+                              onClick={() => navigate(`/trafficker/${encodeURIComponent(cleanContact)}`)}
+                              className="text-[10px] flex items-center gap-1 font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded border bg-purple-50 dark:bg-purple-950/20 text-purple-600 dark:text-purple-400 border-purple-200 dark:border-purple-900/40 hover:bg-purple-100 transition-colors"
+                            >
+                              Dossier Profile ➔
+                            </button>
+                          )}
+                        </div>
+                      );
+                   })()}
                </div>
                <input
                  type="text"

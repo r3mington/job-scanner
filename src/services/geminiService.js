@@ -166,3 +166,65 @@ export async function analyzeJobPosting(apiKey, modelName, { text, imageBase64 }
     throw error;
   }
 }
+
+export async function generateTraffickerSummary(apiKey, modelName, { contactMethod, scansData }) {
+  if (!apiKey) {
+    throw new Error('Gemini API key is required');
+  }
+
+  const selectedModel = modelName || 'gemini-2.5-flash';
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${apiKey}`;
+
+  const textPayload = `You are a professional threat intelligence analyst. 
+Analyze this recruiter/trafficker profile and their history of job postings to create a threat intelligence summary.
+
+CONTACT METHOD/HANDLE: ${contactMethod}
+TOTAL ADS DETECTED: ${scansData.length}
+
+POSTED ADS DETAILS:
+${scansData.map((scan, i) => `
+AD #${i+1}:
+Job Title: ${scan.jobTitle || 'Unknown Title'}
+Employer: ${scan.employer || 'Unknown Employer'}
+Risk Score: ${scan.riskScore}% (${scan.riskLevel || 'Suspicious'})
+Target Location: ${scan.locationCountry || 'Unknown'}
+Languages: ${scan.detectedLanguage || 'English'}
+Red Flags: ${(scan.activeFlags || []).join(', ')}
+Original Text: ${scan.originalText || ''}
+`).join('\n---\n')}
+
+Provide a ~120 to 150 word summary of this recruiter's profile. Synthesize their target demographic, geographical hubs, common tactics (e.g. compound isolation, upfront fees), and overall risk level. Output ONLY plain text summary without formatting.`;
+
+  const payload = {
+    contents: [{
+      parts: [{ text: textPayload }]
+    }],
+    generationConfig: {
+      temperature: 0.2
+    }
+  };
+
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error?.message || 'Failed to generate summary');
+    }
+
+    const data = await response.json();
+    if (!data.candidates || data.candidates.length === 0) {
+      throw new Error('No response returned from Gemini API.');
+    }
+    return data.candidates[0].content.parts[0].text;
+  } catch (error) {
+    console.error('Gemini Profile Summary Error:', error);
+    throw error;
+  }
+}

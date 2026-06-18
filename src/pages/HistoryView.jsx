@@ -3,6 +3,7 @@ import { supabase, mapDbToRecord } from '../utils/supabaseClient';
 import { Search, ChevronRight, ChevronDown, AlertTriangle, Briefcase, MapPin, Folder, Trash2, Globe, DollarSign, Languages, FileText, ShieldAlert } from 'lucide-react';
 import { format } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
+import { getCleanContactValue } from './DashboardView';
 import NetworkGraphView from '../components/NetworkGraphView';
 import { calculateSimilarity } from '../utils/similarity';
 
@@ -245,8 +246,8 @@ export default function HistoryView() {
                             <h3 className="font-bold text-slate-900 dark:text-slate-100 truncate text-base">
                               {group.batchName}
                             </h3>
-                            <span className="text-xs text-slate-500 whitespace-nowrap pt-1">
-                              {format(new Date(group.timestamp), 'MMM d, yyyy')}
+                            <span className="text-xs text-slate-400 dark:text-slate-500 font-mono whitespace-nowrap pt-1">
+                              {format(new Date(group.timestamp), 'yyyy-MM-dd HH:mm')}
                             </span>
                           </div>
                           <div className="flex items-center justify-between">
@@ -346,22 +347,12 @@ export default function HistoryView() {
                                   )}
                                 </div>
 
-                                {/* Flags */}
-                                {scan.activeFlags?.length > 0 && (
+                                {/* Recruiter Contact Handle */}
+                                {scan.extractedData?.contact_method && (
                                   <div className="mt-2 flex flex-wrap gap-1">
-                                    {scan.activeFlags.slice(0, 1).map((flag, idx) => (
-                                      <span 
-                                        key={idx} 
-                                        className="text-[8px] font-mono font-bold tracking-wider px-1.5 py-0.5 rounded border border-red-500/20 text-red-500 dark:text-red-400 dark:border-red-500/15 bg-red-500/5 uppercase"
-                                      >
-                                        {flag.replace(/_/g, ' ')}
-                                      </span>
-                                    ))}
-                                    {scan.activeFlags.length > 1 && (
-                                      <span className="text-[8px] font-mono font-bold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800/40 text-slate-450 border border-slate-200 dark:border-slate-800 uppercase">
-                                        +{scan.activeFlags.length - 1} MORE
-                                      </span>
-                                    )}
+                                    <span className="text-[8px] font-mono font-bold tracking-wider px-1.5 py-0.5 rounded border border-purple-500/20 text-purple-650 dark:text-purple-400 dark:border-purple-500/15 bg-purple-500/5 uppercase">
+                                      CONTACT: {getCleanContactValue(scan.extractedData.contact_method) || scan.extractedData.contact_method}
+                                    </span>
                                   </div>
                                 )}
                               </div>
@@ -437,7 +428,7 @@ export default function HistoryView() {
                           {scan.jobTitle || 'Unknown Position'}
                         </h3>
                         <span className="text-xs text-slate-400 dark:text-slate-500 font-mono whitespace-nowrap pt-0.5">
-                          {format(new Date(scan.timestamp), 'yyyy-MM-dd')}
+                          {format(new Date(scan.timestamp), 'yyyy-MM-dd HH:mm')}
                         </span>
                       </div>
                       
@@ -487,22 +478,12 @@ export default function HistoryView() {
                       )}
                     </div>
 
-                    {/* Flags */}
-                    {scan.activeFlags?.length > 0 && (
+                    {/* Recruiter Contact Handle */}
+                    {scan.extractedData?.contact_method && (
                       <div className="mt-2.5 flex flex-wrap gap-1">
-                        {scan.activeFlags.slice(0, 2).map((flag, idx) => (
-                          <span 
-                            key={idx} 
-                            className="text-[9px] font-mono font-bold tracking-wider px-1.5 py-0.5 rounded border border-red-500/20 text-red-500 dark:text-red-400 dark:border-red-500/15 bg-red-500/5 uppercase"
-                          >
-                            {flag.replace(/_/g, ' ')}
-                          </span>
-                        ))}
-                        {scan.activeFlags.length > 2 && (
-                          <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800/40 text-slate-450 border border-slate-200 dark:border-slate-800 uppercase">
-                            +{scan.activeFlags.length - 2} MORE
-                          </span>
-                        )}
+                        <span className="text-[9px] font-mono font-bold tracking-wider px-1.5 py-0.5 rounded border border-purple-500/20 text-purple-650 dark:text-purple-400 dark:border-purple-500/15 bg-purple-500/5 uppercase">
+                          CONTACT: {getCleanContactValue(scan.extractedData.contact_method) || scan.extractedData.contact_method}
+                        </span>
                       </div>
                     )}
                   </div>
