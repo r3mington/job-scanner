@@ -253,9 +253,9 @@ export default function ScannerView() {
           userId: user?.id || null,
           normalizedText: result.normalized_text || '',
           sourcePlatform: sourcePlatform || 'unspecified',
-          sourceUrl: sourceUrl || 'unspecified',
+          sourceUrl: row.source_url || 'unspecified',
           ingestionMethod: ingestionMethod || 'Analyst Upload',
-          postDate: postDate || 'unspecified'
+          postDate: row.post_date || 'unspecified'
         };
 
         const { error: dbErr } = await supabase.from('scans').insert(mapRecordToDb(record));
@@ -489,30 +489,32 @@ export default function ScannerView() {
             </div>
 
             {/* Source URL Input */}
-            <div className="space-y-1.5">
+            <div className={`space-y-1.5 ${activeTab === 'batch' ? 'opacity-50' : ''}`}>
               <label className="block text-[10px] font-mono font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider flex items-center gap-1">
                 <Link className="w-3 h-3 text-slate-400 flex-shrink-0" /> Source URL Link
               </label>
               <input
                 type="text"
-                value={sourceUrl}
+                disabled={activeTab === 'batch'}
+                value={activeTab === 'batch' ? 'Disabled - Multi-post batch' : sourceUrl}
                 onChange={(e) => setSourceUrl(e.target.value)}
-                placeholder="e.g. t.me/... or facebook.com/groups/..."
-                className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-md text-xs text-slate-800 dark:text-slate-350 focus:outline-none focus:ring-1 focus:ring-emerald-500 transition-all font-mono"
+                placeholder={activeTab === 'batch' ? 'Parsed individually from CSV columns' : 'e.g. t.me/... or facebook.com/groups/...'}
+                className={`w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 transition-all font-mono ${activeTab === 'batch' ? 'cursor-not-allowed bg-slate-50 dark:bg-slate-950/40 select-none text-slate-450 dark:text-slate-500' : 'text-slate-800 dark:text-slate-350'}`}
               />
             </div>
 
             {/* Post Date Input */}
-            <div className="space-y-1.5">
+            <div className={`space-y-1.5 ${activeTab === 'batch' ? 'opacity-50' : ''}`}>
               <label className="block text-[10px] font-mono font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider flex items-center gap-1">
                 <Calendar className="w-3 h-3 text-slate-400 flex-shrink-0" /> Post Date
               </label>
               <input
                 type="text"
-                value={postDate}
+                disabled={activeTab === 'batch'}
+                value={activeTab === 'batch' ? 'Disabled - Multi-post batch' : postDate}
                 onChange={(e) => setPostDate(e.target.value)}
-                placeholder="e.g. YYYY-MM-DD or Unspecified"
-                className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-md text-xs text-slate-800 dark:text-slate-350 focus:outline-none focus:ring-1 focus:ring-emerald-500 transition-all font-mono"
+                placeholder={activeTab === 'batch' ? 'Parsed individually from CSV columns' : 'e.g. YYYY-MM-DD or Unspecified'}
+                className={`w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 transition-all font-mono ${activeTab === 'batch' ? 'cursor-not-allowed bg-slate-50 dark:bg-slate-950/40 select-none text-slate-450 dark:text-slate-500' : 'text-slate-850 dark:text-slate-350'}`}
               />
             </div>
           </div>
@@ -727,6 +729,8 @@ function parseCSV(text) {
   const salIdx = headers.findIndex(h => h.includes('sal') || h.includes('wage') || h.includes('pay') || h.includes('rate'));
   const indIdx = headers.findIndex(h => h.includes('ind') || h.includes('sector'));
   const conIdx = headers.findIndex(h => h.includes('con') || h.includes('email') || h.includes('phone') || h.includes('link') || h.includes('method'));
+  const urlIdx = headers.findIndex(h => h === 'url' || h.includes('source_url') || h.includes('link'));
+  const dateIdx = headers.findIndex(h => h.includes('date') || h.includes('time') || h === 'post_date');
 
   const parsedRows = [];
   for (let j = 1; j < lines.length; j++) {
@@ -740,6 +744,8 @@ function parseCSV(text) {
     const salary = salIdx !== -1 ? (values[salIdx] || '') : '';
     const industry = indIdx !== -1 ? (values[indIdx] || '') : '';
     const contact = conIdx !== -1 ? (values[conIdx] || '') : '';
+    const sourceUrlVal = urlIdx !== -1 ? (values[urlIdx] || '') : '';
+    const postDateVal = dateIdx !== -1 ? (values[dateIdx] || '') : '';
 
     let fullTextToScan = textContent;
     if (descIdx === -1 && jobTitle) {
@@ -753,7 +759,9 @@ function parseCSV(text) {
       employer_identity: employer,
       salary_range: salary,
       industry: industry,
-      contact_method: contact
+      contact_method: contact,
+      source_url: sourceUrlVal,
+      post_date: postDateVal
     });
   }
 
