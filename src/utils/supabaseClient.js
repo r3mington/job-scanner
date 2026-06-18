@@ -35,7 +35,11 @@ export function mapRecordToDb(record) {
     batch_name: record.batchName,
     user_id: record.userId || record.user_id || null,
     normalized_text: record.normalizedText || null,
-    notes: record.notes || null
+    notes: record.notes || null,
+    source_platform: record.sourcePlatform || 'unspecified',
+    source_url: record.sourceUrl || 'unspecified',
+    ingestion_method: record.ingestionMethod || 'Analyst Upload',
+    post_date: record.postDate || 'unspecified'
   };
 }
 
@@ -65,7 +69,11 @@ export function mapDbToRecord(dbRecord) {
     batchName: dbRecord.batch_name,
     userId: dbRecord.user_id,
     normalizedText: dbRecord.normalized_text,
-    notes: dbRecord.notes || ''
+    notes: dbRecord.notes || '',
+    sourcePlatform: dbRecord.source_platform || 'unspecified',
+    sourceUrl: dbRecord.source_url || 'unspecified',
+    ingestionMethod: dbRecord.ingestion_method || 'Analyst Upload',
+    postDate: dbRecord.post_date || 'unspecified'
   };
 }
 

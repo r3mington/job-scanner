@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { Camera, Image as ImageIcon, FileText, Upload, X, FileSpreadsheet, Play, CheckCircle2, AlertCircle, Loader2, Download, Copy, ArrowRight } from 'lucide-react';
+import { Camera, Image as ImageIcon, FileText, Upload, X, FileSpreadsheet, Play, CheckCircle2, AlertCircle, Loader2, Download, Copy, ArrowRight, ChevronDown, ChevronUp, Globe, Link, Calendar } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { supabase, mapRecordToDb } from '../utils/supabaseClient';
 import { analyzeJobPosting } from '../services/geminiService';
@@ -12,6 +12,13 @@ export default function ScannerView() {
   const [activeTab, setActiveTab] = useState('camera'); // 'camera', 'upload', 'text', 'batch'
   const [capturedImage, setCapturedImage] = useState(null);
   const [pastedText, setPastedText] = useState('');
+  
+  // Metadata state
+  const [sourcePlatform, setSourcePlatform] = useState('unspecified');
+  const [sourceUrl, setSourceUrl] = useState('');
+  const [ingestionMethod, setIngestionMethod] = useState('Analyst Upload');
+  const [postDate, setPostDate] = useState('');
+  const [isMetadataExpanded, setIsMetadataExpanded] = useState(false);
   
   // Batch processing state
   const [batchFile, setBatchFile] = useState(null);
@@ -133,6 +140,10 @@ export default function ScannerView() {
     setBatchFile(null);
     setBatchRows([]);
     setBatchName('');
+    setSourcePlatform('unspecified');
+    setSourceUrl('');
+    setIngestionMethod('Analyst Upload');
+    setPostDate('');
     if (activeTab === 'camera') {
       startCamera();
     }
@@ -240,7 +251,11 @@ export default function ScannerView() {
           batchId: batchId,
           batchName: batchName,
           userId: user?.id || null,
-          normalizedText: result.normalized_text || ''
+          normalizedText: result.normalized_text || '',
+          sourcePlatform: sourcePlatform || 'unspecified',
+          sourceUrl: sourceUrl || 'unspecified',
+          ingestionMethod: ingestionMethod || 'Analyst Upload',
+          postDate: postDate || 'unspecified'
         };
 
         const { error: dbErr } = await supabase.from('scans').insert(mapRecordToDb(record));
@@ -271,7 +286,11 @@ export default function ScannerView() {
        state: { 
          image: capturedImage, 
          text: pastedText,
-         isExistingScan: false
+         isExistingScan: false,
+         sourcePlatform: sourcePlatform || 'unspecified',
+         sourceUrl: sourceUrl || 'unspecified',
+         ingestionMethod: ingestionMethod || 'Analyst Upload',
+         postDate: postDate || 'unspecified'
        } 
      });
   };
@@ -402,6 +421,100 @@ export default function ScannerView() {
                 </div>
               </div>
             )}
+          </div>
+        )}
+      </div>
+
+      {/* Source & Ingestion Metadata Accordion */}
+      <div className="border-t border-slate-200 dark:border-slate-800 bg-slate-50/30 dark:bg-slate-900/10 w-full">
+        <button
+          type="button"
+          onClick={() => setIsMetadataExpanded(prev => !prev)}
+          className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-slate-100 dark:hover:bg-slate-800/40 transition-colors border-b border-slate-150 dark:border-slate-800/60"
+        >
+          <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300">
+            <Globe className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+            <span className="text-xs font-mono font-bold uppercase tracking-wider">Source & Ingestion Details</span>
+            <span className="text-[10px] text-slate-400 dark:text-slate-550 font-mono font-normal normal-case hidden sm:inline">
+              (Platform, URL, Method, Post Date)
+            </span>
+          </div>
+          {isMetadataExpanded ? (
+            <ChevronUp className="w-4 h-4 text-slate-400" />
+          ) : (
+            <ChevronDown className="w-4 h-4 text-slate-400" />
+          )}
+        </button>
+
+        {isMetadataExpanded && (
+          <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-4 border-b border-slate-200 dark:border-slate-800 bg-white/40 dark:bg-slate-950/20">
+            {/* Source Platform Dropdown */}
+            <div className="space-y-1.5">
+              <label className="block text-[10px] font-mono font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                Source Platform
+              </label>
+              <select
+                value={sourcePlatform}
+                onChange={(e) => setSourcePlatform(e.target.value)}
+                className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-md text-xs text-slate-800 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500 transition-all"
+              >
+                <option value="unspecified">Unspecified</option>
+                <option value="Facebook">Facebook</option>
+                <option value="Telegram">Telegram</option>
+                <option value="WhatsApp">WhatsApp</option>
+                <option value="Line">Line</option>
+                <option value="WeChat">WeChat</option>
+                <option value="TikTok">TikTok</option>
+                <option value="LinkedIn">LinkedIn</option>
+                <option value="Craigslist">Craigslist</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+
+            {/* Ingestion Method Dropdown */}
+            <div className="space-y-1.5">
+              <label className="block text-[10px] font-mono font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                Ingestion Method
+              </label>
+              <select
+                value={ingestionMethod}
+                onChange={(e) => setIngestionMethod(e.target.value)}
+                className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-md text-xs text-slate-800 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500 transition-all"
+              >
+                <option value="Analyst Upload">Analyst Upload</option>
+                <option value="Web Scraper">Web Scraper</option>
+                <option value="API Feed">API Feed</option>
+                <option value="Community Tip Line">Community Tip Line</option>
+              </select>
+            </div>
+
+            {/* Source URL Input */}
+            <div className="space-y-1.5">
+              <label className="block text-[10px] font-mono font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                <Link className="w-3 h-3 text-slate-400 flex-shrink-0" /> Source URL Link
+              </label>
+              <input
+                type="text"
+                value={sourceUrl}
+                onChange={(e) => setSourceUrl(e.target.value)}
+                placeholder="e.g. t.me/... or facebook.com/groups/..."
+                className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-md text-xs text-slate-800 dark:text-slate-350 focus:outline-none focus:ring-1 focus:ring-emerald-500 transition-all font-mono"
+              />
+            </div>
+
+            {/* Post Date Input */}
+            <div className="space-y-1.5">
+              <label className="block text-[10px] font-mono font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                <Calendar className="w-3 h-3 text-slate-400 flex-shrink-0" /> Post Date
+              </label>
+              <input
+                type="text"
+                value={postDate}
+                onChange={(e) => setPostDate(e.target.value)}
+                placeholder="e.g. YYYY-MM-DD or Unspecified"
+                className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-md text-xs text-slate-800 dark:text-slate-350 focus:outline-none focus:ring-1 focus:ring-emerald-500 transition-all font-mono"
+              />
+            </div>
           </div>
         )}
       </div>

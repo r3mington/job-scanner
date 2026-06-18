@@ -320,6 +320,13 @@ export default function HistoryView() {
                                       <span>{formatSalary(scan.parsedSalaryUsd)}/mo</span>
                                     </span>
                                   )}
+                                  {scan.sourcePlatform && scan.sourcePlatform !== 'unspecified' && (
+                                    <span className="flex items-center gap-0.5">
+                                      <span className="px-1.5 py-0.5 border border-slate-200 dark:border-slate-805 text-[8px] font-mono font-bold text-slate-400 dark:text-slate-500 rounded uppercase bg-slate-50 dark:bg-slate-900/40">
+                                        {scan.sourcePlatform}
+                                      </span>
+                                    </span>
+                                  )}
                                   {scan.detectedLanguage && (
                                     <span className="flex items-center gap-0.5">
                                       <Globe className="w-3 h-3 text-slate-400 flex-shrink-0" />
@@ -452,6 +459,13 @@ export default function HistoryView() {
                         <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
                           <DollarSign className="w-3.5 h-3.5 flex-shrink-0" />
                           <span>{formatSalary(scan.parsedSalaryUsd)}/mo</span>
+                        </span>
+                      )}
+                      {scan.sourcePlatform && scan.sourcePlatform !== 'unspecified' && (
+                        <span className="flex items-center gap-1">
+                          <span className="px-1.5 py-0.5 border border-slate-200 dark:border-slate-805 text-[9px] font-mono font-bold text-slate-400 dark:text-slate-500 rounded uppercase bg-slate-50 dark:bg-slate-900/40">
+                            {scan.sourcePlatform}
+                          </span>
                         </span>
                       )}
                       {scan.detectedLanguage && (

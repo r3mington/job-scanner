@@ -185,6 +185,11 @@ export default function ReviewScan() {
   const [similarScans, setSimilarScans] = useState([]);
   const [comparisonTarget, setComparisonTarget] = useState(null);
   const [notes, setNotes] = useState('');
+  const [sourcePlatform, setSourcePlatform] = useState('unspecified');
+  const [sourceUrl, setSourceUrl] = useState('unspecified');
+  const [ingestionMethod, setIngestionMethod] = useState('Analyst Upload');
+  const [postDate, setPostDate] = useState('unspecified');
+  const [isSourceExpanded, setIsSourceExpanded] = useState(false);
   const [isNotesExpanded, setIsNotesExpanded] = useState(false);
   const [suspiciousSpans, setSuspiciousSpans] = useState([]);
   const [showHighlights, setShowHighlights] = useState(true);
@@ -546,11 +551,19 @@ export default function ReviewScan() {
       setTranslatedText(scanInput.translatedText || null);
       setNormalizedText(scanInput.normalizedText || '');
       setNotes(scanInput.notes || '');
+      setSourcePlatform(scanInput.sourcePlatform || 'unspecified');
+      setSourceUrl(scanInput.sourceUrl || 'unspecified');
+      setIngestionMethod(scanInput.ingestionMethod || 'Analyst Upload');
+      setPostDate(scanInput.postDate || 'unspecified');
       setSuspiciousSpans(scanInput.extractedData?.suspicious_spans || []);
       setPredictedPlaybook(scanInput.extractedData?.predicted_playbook || []);
       setLoading(false);
     } else {
       // New scan - call Gemini API
+      setSourcePlatform(scanInput.sourcePlatform || 'unspecified');
+      setSourceUrl(scanInput.sourceUrl || 'unspecified');
+      setIngestionMethod(scanInput.ingestionMethod || 'Analyst Upload');
+      setPostDate(scanInput.postDate || 'unspecified');
       performScan();
     }
   }, [scanInput, navigate]);
@@ -696,7 +709,11 @@ export default function ReviewScan() {
         translatedText: translatedText,
         userId: user?.id || null,
         normalizedText: normalizedText || '',
-        notes: notes || ''
+        notes: notes || '',
+        sourcePlatform: sourcePlatform || 'unspecified',
+        sourceUrl: sourceUrl || 'unspecified',
+        ingestionMethod: ingestionMethod || 'Analyst Upload',
+        postDate: postDate || 'unspecified'
       };
 
       const mappedRecord = mapRecordToDb(record);
@@ -1589,6 +1606,100 @@ export default function ReviewScan() {
               rows={4}
               className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-300 focus:ring-1 focus:ring-emerald-500/50 focus:border-emerald-500/30 transition-all outline-none resize-y placeholder:text-slate-600 font-mono"
             />
+          </div>
+        )}
+      </div>
+
+      {/* Source & Ingestion Metadata Widget */}
+      <div className="rounded-2xl overflow-hidden border border-slate-800/80" style={{background:'#111318'}}>
+        <button
+          type="button"
+          onClick={() => setIsSourceExpanded(prev => !prev)}
+          className="w-full p-4 flex items-center justify-between text-left hover:bg-slate-800/30 transition-colors"
+        >
+          <div className="flex items-center gap-2">
+            <Globe className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+            <div>
+              <h3 className="font-bold text-slate-200 text-sm">Source & Ingestion Context</h3>
+              <p className="text-xs text-slate-650 mt-0.5">
+                Review platform, URL, ingestion method, and original post date
+              </p>
+            </div>
+          </div>
+          {isSourceExpanded ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
+        </button>
+
+        {isSourceExpanded && (
+          <div className="p-4 border-t border-slate-800 space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Source Platform */}
+              <div className="space-y-1.5">
+                <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider">
+                  Source Platform
+                </label>
+                <select
+                  value={sourcePlatform}
+                  onChange={(e) => setSourcePlatform(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 transition-all font-mono"
+                >
+                  <option value="unspecified">Unspecified</option>
+                  <option value="Facebook">Facebook</option>
+                  <option value="Telegram">Telegram</option>
+                  <option value="WhatsApp">WhatsApp</option>
+                  <option value="Line">Line</option>
+                  <option value="WeChat">WeChat</option>
+                  <option value="TikTok">TikTok</option>
+                  <option value="LinkedIn">LinkedIn</option>
+                  <option value="Craigslist">Craigslist</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+
+              {/* Ingestion Method */}
+              <div className="space-y-1.5">
+                <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider">
+                  Ingestion Method
+                </label>
+                <select
+                  value={ingestionMethod}
+                  onChange={(e) => setIngestionMethod(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 transition-all font-mono"
+                >
+                  <option value="Analyst Upload">Analyst Upload</option>
+                  <option value="Web Scraper">Web Scraper</option>
+                  <option value="API Feed">API Feed</option>
+                  <option value="Community Tip Line">Community Tip Line</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Source URL */}
+            <div className="space-y-1.5">
+              <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider">
+                Source URL Link
+              </label>
+              <input
+                type="text"
+                value={sourceUrl === 'unspecified' ? '' : sourceUrl}
+                onChange={(e) => setSourceUrl(e.target.value || 'unspecified')}
+                placeholder="Unspecified URL"
+                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-350 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 transition-all font-mono"
+              />
+            </div>
+
+            {/* Post Date */}
+            <div className="space-y-1.5">
+              <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider">
+                Post Date
+              </label>
+              <input
+                type="text"
+                value={postDate === 'unspecified' ? '' : postDate}
+                onChange={(e) => setPostDate(e.target.value || 'unspecified')}
+                placeholder="Unspecified Date (e.g. YYYY-MM-DD)"
+                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-350 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 transition-all font-mono"
+              />
+            </div>
           </div>
         )}
       </div>
