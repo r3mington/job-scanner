@@ -85,24 +85,24 @@ export default function SettingsView() {
     <div className="flex flex-col flex-1 p-4 max-w-lg w-full mx-auto my-4 space-y-6">
       
       {/* Gemini API Key Configuration Card */}
-      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
-        <div className="p-5 border-b border-slate-200 dark:border-slate-800">
-          <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-            <Key className="w-5 h-5 text-emerald-600" />
+      <div className="bg-[#111318] rounded border border-slate-800 overflow-hidden">
+        <div className="p-5 border-b border-slate-800">
+          <h2 className="text-xl font-bold text-slate-100 flex items-center gap-2 font-mono">
+            <Key className="w-5 h-5 text-amber-500" />
             Gemini API Configuration
           </h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">
-            VeritasRecruit requires a Gemini API key to extract risk parameters from job listings.
+          <p className="text-xs text-slate-400 mt-2 font-mono">
+            Sentinel AI requires a Gemini API key to extract risk parameters from job listings.
           </p>
         </div>
 
         <div className="p-5 flex flex-col gap-4">
           <div>
-            <label htmlFor="apiKey" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1 flex items-center justify-between">
+            <label htmlFor="apiKey" className="block text-xs font-bold text-slate-300 mb-2 flex items-center justify-between font-mono uppercase tracking-wider">
               <span>Google Gemini API Key</span>
               {isEnvConfigured && (
-                <span className="text-[10px] bg-emerald-50 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 px-2 py-0.5 rounded font-bold">
-                  Configured via Environment Variable
+                <span className="text-[10px] bg-amber-500/10 text-amber-550 px-2 py-0.5 rounded font-bold">
+                  Configured via Env
                 </span>
               )}
             </label>
@@ -112,21 +112,21 @@ export default function SettingsView() {
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
               placeholder={isEnvConfigured ? "Using system environment key..." : "AIzaSy..."}
-              className="w-full px-4 py-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none transition-shadow font-mono text-sm shadow-inner"
+              className="w-full px-4 py-3 rounded border border-slate-800 bg-[#0a0c12] text-slate-200 focus:outline-none focus:ring-1 focus:ring-amber-500 transition-shadow font-mono text-sm shadow-inner"
             />
           </div>
 
-          <div className="border-t border-slate-200 dark:border-slate-800 pt-4">
+          <div className="border-t border-slate-800 pt-4">
             <div className="flex items-center justify-between mb-2">
-              <label htmlFor="modelName" className="block text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                <Cpu className="w-4 h-4 text-emerald-600" /> AI Model
+              <label htmlFor="modelName" className="block text-xs font-bold text-slate-300 flex items-center gap-1.5 font-mono uppercase tracking-wider">
+                <Cpu className="w-4 h-4 text-amber-500" /> AI Model
               </label>
               <button 
                 onClick={fetchModels}
                 disabled={fetchingModels || (!apiKey.trim() && !envApiKey)}
-                className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 disabled:opacity-50"
+                className="text-xs font-bold text-amber-500 hover:text-amber-400 disabled:opacity-50 font-mono"
               >
-                {fetchingModels ? 'Fetching...' : 'Fetch Available Models'}
+                {fetchingModels ? '[ Fetching... ]' : '[ Fetch Available Models ]'}
               </button>
             </div>
             
@@ -134,7 +134,7 @@ export default function SettingsView() {
               id="modelName"
               value={modelName}
               onChange={(e) => setModelName(e.target.value)}
-              className="w-full px-4 py-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none transition-shadow text-sm shadow-inner"
+              className="w-full px-4 py-3 rounded border border-slate-800 bg-[#0a0c12] text-slate-200 focus:outline-none focus:ring-1 focus:ring-amber-500 transition-shadow text-sm font-mono"
             >
               {(availableModels.length > 0 ? availableModels : Array.from(new Set([modelName, 'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-1.5-flash-latest', 'gemini-2.5-flash', 'gemini-2.0-flash-exp']))).map(m => (
                 <option key={m} value={m}>{m}</option>
@@ -149,7 +149,7 @@ export default function SettingsView() {
         <button
           onClick={handleSave}
           disabled={!apiKey.trim() && !envApiKey}
-          className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:text-slate-500 dark:disabled:bg-slate-800 dark:disabled:text-slate-600 text-white font-bold py-3.5 rounded-xl shadow-sm transition-all active:scale-[0.98]"
+          className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 disabled:bg-slate-800 disabled:text-slate-650 text-[#0d1117] font-bold py-3.5 rounded transition-all active:scale-[0.98] font-mono text-sm"
         >
           <Save className="w-5 h-5" />
           {saved ? 'Saved Configurations!' : 'Save Settings'}

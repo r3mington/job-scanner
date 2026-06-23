@@ -228,3 +228,144 @@ Provide a ~120 to 150 word summary of this recruiter's profile. Synthesize their
     throw error;
   }
 }
+
+const POSTER_SYSTEM_INSTRUCTION = `You are an expert in anti-human trafficking, online scam syndicate recruitment, and community threat warning.
+You are tasked with generating the text content for an investigation poster or tactical intelligence report based on the provided job scan.
+You must output ONLY valid JSON matching this schema:
+{
+  "title": "string (The title of the poster/dossier, localized)",
+  "warningHeader": "string (A bold, high-impact danger statement or intelligence summary header, localized)",
+  "riskAssessment": "string (A ~80-120 word paragraph summarizing the danger/profile. Localized. If mode is 'victim', warn them of physical confinement, passport seizure, and forced cyber-scam labor. If 'analyst', outline operational risk, traffic routes, and demographic targeting)",
+  "redFlags": [
+    {
+      "flagName": "string (Localized name of the red flag)",
+      "indicatorText": "string (The matching snippet or text from the job post, in its original language or translation)",
+      "dangerExplanation": "string (Localized. If mode is 'victim', explain how it threatens their physical safety. If 'analyst', explain forensic implications)"
+    }
+  ],
+  "playbookWarning": "string (A ~60-80 word paragraph. Localized. If 'victim', outline how a victim is lured, transported, and trapped in a compound. If 'analyst', outline the step-by-step Modus Operandi and coercion timeline)",
+  "helpResources": [
+    {
+      "organization": "string (Official or localized name of embassy, hotline, or NGO)",
+      "contact": "string (Phone number, address, or link)",
+      "description": "string (Short localized description of assistance provided)"
+    }
+  ]
+}
+
+Ensure all textual values are written in the requested Target Language.
+Ensure the help resources list 2 to 3 real, relevant organizations (such as regional anti-trafficking tip lines, local police numbers, or key foreign embassies like Thai, Chinese, or ASEAN missions) based on the location and language.`;
+
+export async function generatePosterContent(apiKey, modelName, { mode, language, scanData }) {
+  if (!apiKey) {
+    throw new Error('Gemini API key is required');
+  }
+
+  const selectedModel = modelName || 'gemini-2.5-flash';
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${apiKey}`;
+
+  const flagsStr = (scanData.activeFlags || []).join(', ') || 'N/A';
+  
+  const spansStr = (scanData.suspiciousSpans || []).map(s => 
+    `  * [${s.red_flag}]: "${s.original_snippet || s.translated_snippet || ''}" - ${s.detailed_explanation || s.explanation || ''}`
+  ).join('\n');
+
+  const playbookStr = (scanData.predictedPlaybook || []).map(p => 
+    `  * ${p.phase}: Tactic: ${p.tactic} (Watch indicator: ${p.red_flag_indicator})`
+  ).join('\n');
+
+  const textPayload = `You are tasked with generating the content of an anti-scam/intelligence poster or dossier.
+  
+AUDIENCE MODE: ${mode} (victim = warn potential targets; analyst = forensic profile for investigators)
+TARGET LANGUAGE: ${language}
+
+SCAN PARAMETERS:
+- Job Title: ${scanData.jobTitle || 'N/A'}
+- Employer: ${scanData.employer || 'N/A'}
+- Salary Range: ${scanData.salaryRange || 'N/A'}
+- Physical Location: ${scanData.location || 'N/A'}
+- Estimated Salary (USD/yr equivalent): ${scanData.parsedSalaryUsd ? `$${scanData.parsedSalaryUsd.toLocaleString()}` : 'N/A'}
+- Assessed Risk Score: ${scanData.riskScore || 'N/A'}/100
+- Active Threat Flags: ${flagsStr}
+- AI Analysis Notes: ${scanData.aiReview || 'N/A'}
+- Job Ad Text Snippets with Flag Explanations:
+${spansStr}
+
+- Predicted Playbook / Escalation Stages:
+${playbookStr}
+
+Generate the structured JSON content for the poster in the Target Language (${language}) according to the system instructions.`;
+
+  const payload = {
+    systemInstruction: {
+      parts: [{ text: POSTER_SYSTEM_INSTRUCTION }]
+    },
+    contents: [{
+      parts: [{ text: textPayload }]
+    }],
+    generationConfig: {
+      responseMimeType: "application/json",
+      temperature: 0.2
+    }
+  };
+
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error?.message || 'Failed to generate poster content');
+    }
+
+    const data = await response.json();
+    
+    if (!data.candidates || data.candidates.length === 0) {
+      throw new Error('No candidates returned from Gemini API.');
+    }
+    
+    const candidate = data.candidates[0];
+    if (candidate.finishReason && candidate.finishReason !== 'STOP' && candidate.finishReason !== 'MAX_TOKENS') {
+      throw new Error(`API finished with reason: ${candidate.finishReason}. The content was likely blocked.`);
+    }
+
+    if (!candidate.content || !candidate.content.parts || candidate.content.parts.length === 0) {
+      throw new Error('API returned empty response content.');
+    }
+
+    const resultText = candidate.content.parts[0].text;
+    
+    let cleanText = resultText;
+    const firstBrace = cleanText.indexOf('{');
+    if (firstBrace !== -1) {
+      let depth = 0;
+      let lastBrace = -1;
+      for (let i = firstBrace; i < cleanText.length; i++) {
+        if (cleanText[i] === '{') {
+          depth++;
+        } else if (cleanText[i] === '}') {
+          depth--;
+          if (depth === 0) {
+            lastBrace = i;
+            break;
+          }
+        }
+      }
+      if (lastBrace !== -1) {
+        cleanText = cleanText.substring(firstBrace, lastBrace + 1);
+      }
+    }
+    
+    return JSON.parse(cleanText);
+  } catch (error) {
+    console.error('Gemini Poster Generation Error:', error);
+    throw error;
+  }
+}
+
+

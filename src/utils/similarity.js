@@ -46,12 +46,45 @@ function diceSimilarity(a, b) {
   return (2.0 * hits) / (s1.length - 1 + s2.length - 1);
 }
 
+// ---------------------------------------------------------------------------
+// Stop Words & Generic Job Terms (to avoid matching generic vocabulary)
+// ---------------------------------------------------------------------------
+export const STOP_WORDS = new Set([
+  'the', 'and', 'a', 'an', 'of', 'to', 'for', 'with', 'in', 'on', 'at', 'by',
+  'from', 'or', 'as', 'but', 'is', 'are', 'was', 'were', 'be', 'been', 'have',
+  'has', 'had', 'do', 'does', 'did', 'about', 'more', 'most', 'some', 'any',
+  'each', 'every', 'other', 'another', 'this', 'that', 'these', 'those', 'it',
+  'its', 'they', 'them', 'their', 'our', 'us', 'we', 'you', 'your'
+]);
+
+export const GENERIC_JOB_WORDS = new Set([
+  'job', 'work', 'position', 'requirements', 'haves', 'english', 'hiring',
+  'apply', 'now', 'details', 'company', 'location', 'salary', 'monthly',
+  'month', 'day', 'days', 'year', 'years', 'fluent', 'extra', 'candidate',
+  'experience', 'ability', 'skills', 'role', 'opportunity', 'benefits',
+  'office', 'team', 'preferred', 'requires', 'need', 'able', 'starting',
+  'translator', 'translation', 'chinese', 'language', 'resume', 'contact',
+  'cv', 'profile', 'applicant', 'recruitment', 'recruiter', 'industry',
+  'description', 'responsibilities'
+]);
+
+const cleanAlphanumeric = (w) => w.toLowerCase().replace(/[^a-z0-9]/g, '');
+
 /**
  * Word-level Jaccard similarity.
- * Less sensitive to length differences; rewards shared keywords.
+ * Ignores common stopwords and generic job advertisement vocabulary to prevent baseline score inflation.
  */
 function wordJaccard(a, b) {
-  const tokenize = (s) => new Set(s.split(/\s+/).filter(w => w.length > 2));
+  const tokenize = (s) => {
+    const tokens = new Set();
+    s.split(/\s+/).forEach(w => {
+      const cleaned = cleanAlphanumeric(w);
+      if (cleaned.length > 2 && !STOP_WORDS.has(cleaned) && !GENERIC_JOB_WORDS.has(cleaned)) {
+        tokens.add(cleaned);
+      }
+    });
+    return tokens;
+  };
   const setA = tokenize(a);
   const setB = tokenize(b);
   if (setA.size === 0 && setB.size === 0) return 1.0;
@@ -65,38 +98,48 @@ function wordJaccard(a, b) {
 
 /**
  * Key-entity matching bonus.
- * Extracts high-value identifiers (Telegram handles, phone numbers, salary
- * figures, specific domain names) and returns a bonus score (0–0.30) based
- * on how many are shared. Even one matching Telegram handle is a strong signal
- * that two ads originate from the same operation.
+ * Extracts high-value identifiers (Telegram handles, phone numbers, domain names).
+ * Reduces weight of generic 4-digit numbers to avoid inflating standard ad similarity.
  */
 function keyEntityBonus(a, b) {
   const extract = (s) => {
-    const entities = new Set();
+    const handles = new Set();
+    const phones = new Set();
+    const numbers = new Set();
+    
     // @handles (Telegram, WhatsApp usernames)
-    (s.match(/@[\w]{3,}/g) || []).forEach(m => entities.add(m.toLowerCase()));
-    // phone numbers (7+ consecutive digits, ignoring salary-style numbers)
-    (s.match(/\b\d{7,}\b/g) || []).forEach(m => entities.add(m));
-    // salary/numeric figures like 1100, 2000, 3000 (4-digit numbers)
-    (s.match(/\b\d{4}\b/g) || []).forEach(m => entities.add(m));
-    // domain names
-    (s.match(/\b[\w-]+\.(com|net|org|io|me)\b/gi) || []).forEach(m => entities.add(m.toLowerCase()));
-    return entities;
+    (s.match(/@[\w]{3,}/g) || []).forEach(m => handles.add(m.toLowerCase()));
+    // phone numbers (7+ consecutive digits)
+    (s.match(/\b\d{7,}\b/g) || []).forEach(m => phones.add(m));
+    // numeric figures (4-digit numbers)
+    (s.match(/\b\d{4}\b/g) || []).forEach(m => numbers.add(m));
+    
+    return { handles, phones, numbers };
   };
 
   const entA = extract(a);
   const entB = extract(b);
-  if (entA.size === 0 || entB.size === 0) return 0;
 
-  let matches = 0;
-  entA.forEach(e => { if (entB.has(e)) matches++; });
+  let bonus = 0;
 
-  // Each matching entity contributes, capped at 0.30
-  // First match is worth the most (strong signal), diminishing returns after
-  if (matches === 0) return 0;
-  if (matches === 1) return 0.15;
-  if (matches === 2) return 0.22;
-  return Math.min(0.30, 0.22 + (matches - 2) * 0.04);
+  // Social handles matching is a major match (+0.35)
+  let handleMatches = 0;
+  entA.handles.forEach(h => { if (entB.handles.has(h)) handleMatches++; });
+  if (handleMatches > 0) bonus += 0.35;
+
+  // Phone number matches (+0.30)
+  let phoneMatches = 0;
+  entA.phones.forEach(p => { if (entB.phones.has(p)) phoneMatches++; });
+  if (phoneMatches > 0) bonus += 0.30;
+
+  // Generic 4-digit numbers (like salary) contribute very little (+0.02 each, capped at +0.05)
+  let numberMatches = 0;
+  entA.numbers.forEach(n => { if (entB.numbers.has(n)) numberMatches++; });
+  if (numberMatches > 0) {
+    bonus += Math.min(0.05, numberMatches * 0.02);
+  }
+
+  return bonus;
 }
 
 // ---------------------------------------------------------------------------
@@ -107,16 +150,13 @@ function keyEntityBonus(a, b) {
  * Blended 3-signal similarity score.
  *
  * Signals:
- *  35% — Dice bigrams  (character-level structure)
- *  35% — Word Jaccard  (keyword/concept overlap)
- *  30% — Key entity bonus (shared @handles, numbers, domains)
- *
- * Returns a value between 0.0 and 1.0.
+ *  20% — Dice bigrams  (character-level structure, weighted lower to avoid baseline language inflation)
+ *  40% — Word Jaccard  (specific keyword/concept overlap, excluding generic job terms)
+ *  40% — Key entity bonus / exact matches
  */
 export function calculateSimilarity(str1, str2) {
   if (!str1 || !str2) return 0;
 
-  // Entity bonus must run on raw strings BEFORE normalization strips @ and digits
   const bonus = keyEntityBonus(str1, str2);
 
   const n1 = normalizeForCompare(str1);
@@ -127,8 +167,7 @@ export function calculateSimilarity(str1, str2) {
   const dice    = diceSimilarity(n1, n2);
   const jaccard = wordJaccard(n1, n2);
 
-  // Weighted blend — entity bonus is additive on top of text signals
-  const blended = 0.35 * dice + 0.35 * jaccard + bonus;
+  const blended = 0.20 * dice + 0.40 * jaccard + bonus;
   return Math.min(1.0, blended);
 }
 
@@ -137,7 +176,6 @@ export function calculateSimilarity(str1, str2) {
  * Returns an array of tokens with type: 'unchanged', 'added', or 'removed'.
  */
 export function computeWordDiff(oldStr, newStr) {
-  // Split strings keeping whitespace delimiters so formatting is preserved
   const oldWords = (oldStr || '').split(/(\s+)/);
   const newWords = (newStr || '').split(/(\s+)/);
 
@@ -175,3 +213,33 @@ export function computeWordDiff(oldStr, newStr) {
 
   return diff;
 }
+
+/**
+ * Identifies matching keywords (order-independent) between two text strings,
+ * ignoring common stopwords and generic job advertisement words.
+ */
+export function computeKeywordMatches(oldStr, newStr) {
+  const oldWords = (oldStr || '').split(/(\s+)/);
+  const newWords = (newStr || '').split(/(\s+)/);
+
+  const cleanOld = new Set(oldWords.map(w => cleanAlphanumeric(w)).filter(c => c.length > 2 && !STOP_WORDS.has(c) && !GENERIC_JOB_WORDS.has(c)));
+  const cleanNew = new Set(newWords.map(w => cleanAlphanumeric(w)).filter(c => c.length > 2 && !STOP_WORDS.has(c) && !GENERIC_JOB_WORDS.has(c)));
+
+  const shared = new Set(Array.from(cleanOld).filter(c => cleanNew.has(c)));
+
+  const oldResult = oldWords.map(w => {
+    const cleaned = cleanAlphanumeric(w);
+    const isMatch = cleaned.length > 2 && shared.has(cleaned);
+    return { value: w, isMatch };
+  });
+
+  const newResult = newWords.map(w => {
+    const cleaned = cleanAlphanumeric(w);
+    const isMatch = cleaned.length > 2 && shared.has(cleaned);
+    return { value: w, isMatch };
+  });
+
+  return { oldResult, newResult };
+}
+
+

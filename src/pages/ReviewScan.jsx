@@ -2,12 +2,12 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { supabase, mapRecordToDb, mapDbToRecord, uploadBase64Image } from '../utils/supabaseClient';
 import { calculateRiskScore, getRiskLevel, RISK_FLAGS } from '../utils/scoring';
-import { ShieldAlert, CheckCircle, AlertTriangle, Save, ArrowLeft, Loader2, MapPin, TrendingUp, BrainCircuit, Columns, Copy, X, MessageSquare, ChevronDown, ChevronUp, Eye, EyeOff, Image as ImageIcon, FileText, PhoneCall, Layers, Globe } from 'lucide-react';
-import { analyzeJobPosting } from '../services/geminiService';
+import { ShieldAlert, CheckCircle, AlertTriangle, Save, ArrowLeft, Loader2, MapPin, TrendingUp, BrainCircuit, Columns, Copy, X, MessageSquare, ChevronDown, ChevronUp, Eye, EyeOff, Image as ImageIcon, FileText, PhoneCall, Layers, Globe, HelpCircle } from 'lucide-react';
+import { analyzeJobPosting, generatePosterContent } from '../services/geminiService';
 import { getMedianSalary } from '../utils/countryMedians';
 import { getCleanContactValue } from './DashboardView';
 import { useAuth } from '../context/AuthContext';
-import { calculateSimilarity, computeWordDiff } from '../utils/similarity';
+import { calculateSimilarity, computeWordDiff, computeKeywordMatches, STOP_WORDS, GENERIC_JOB_WORDS } from '../utils/similarity';
 
 const BUBBLE_FLOAT_CLASSES = [
   'threat-bubble-1', 'threat-bubble-2', 'threat-bubble-3', 'threat-bubble-4',
@@ -185,6 +185,8 @@ export default function ReviewScan() {
   const [normalizedText, setNormalizedText] = useState('');
   const [similarScans, setSimilarScans] = useState([]);
   const [comparisonTarget, setComparisonTarget] = useState(null);
+  const [comparisonMode, setComparisonMode] = useState('normalized');
+  const [showMethodology, setShowMethodology] = useState(false);
   const [notes, setNotes] = useState('');
   const [sourcePlatform, setSourcePlatform] = useState('unspecified');
   const [sourceUrl, setSourceUrl] = useState('unspecified');
@@ -204,6 +206,429 @@ export default function ReviewScan() {
   const [expandedPlaybookRows, setExpandedPlaybookRows] = useState(new Set());
   const [scoreBarsVisible, setScoreBarsVisible] = useState(false);
   const [activeActionToast, setActiveActionToast] = useState(null);
+
+  // Localized Poster Generator States
+  const [isPosterModalOpen, setIsPosterModalOpen] = useState(false);
+  const [posterMode, setPosterMode] = useState('victim'); // 'victim' | 'analyst'
+  const [posterLanguage, setPosterLanguage] = useState('English');
+  const [customLanguage, setCustomLanguage] = useState('');
+  const [isGeneratingPoster, setIsGeneratingPoster] = useState(false);
+  const [generatedPosterData, setGeneratedPosterData] = useState(null);
+  const [posterError, setPosterError] = useState('');
+
+  const handleGeneratePoster = async () => {
+    try {
+      setIsGeneratingPoster(true);
+      setPosterError('');
+      setGeneratedPosterData(null);
+      
+      const apiKey = profile?.gemini_api_key || localStorage.getItem('gemini_api_key') || import.meta.env.VITE_GEMINI_API_KEY;
+      const modelName = profile?.gemini_model || localStorage.getItem('gemini_model');
+      
+      if (!apiKey) {
+        throw new Error('Please configure your Gemini API Key in Settings first.');
+      }
+      
+      const finalLanguage = posterLanguage === 'Other' ? customLanguage : posterLanguage;
+      if (!finalLanguage || finalLanguage.trim() === '') {
+        throw new Error('Please specify a target language.');
+      }
+      
+      const currentScoreResult = calculateRiskScore(activeFlags, {
+        parsedSalaryUsd,
+        locationCountry,
+        detectedLanguage,
+        contactMethod: formData.contact_method
+      });
+      const currentScore = currentScoreResult.score;
+
+      const responseData = await generatePosterContent(apiKey, modelName, {
+        mode: posterMode,
+        language: finalLanguage,
+        scanData: {
+          jobTitle: formData.job_title,
+          employer: formData.employer_identity,
+          salaryRange: formData.salary_range,
+          location: formData.location,
+          parsedSalaryUsd,
+          locationCountry,
+          riskScore: currentScore,
+          activeFlags,
+          ocrText,
+          translatedText,
+          suspiciousSpans,
+          predictedPlaybook
+        }
+      });
+      
+      setGeneratedPosterData(responseData);
+    } catch (err) {
+      console.error(err);
+      setPosterError(err.message || 'Failed to generate poster content.');
+    } finally {
+      setIsGeneratingPoster(false);
+    }
+  };
+
+  const handlePrintPoster = () => {
+    if (!generatedPosterData) return;
+    
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert('Failed to open print window. Please allow popups for this site.');
+      return;
+    }
+    
+    const isVictim = posterMode === 'victim';
+    const finalLanguage = posterLanguage === 'Other' ? customLanguage : posterLanguage;
+    const currentScoreResult = calculateRiskScore(activeFlags, {
+      parsedSalaryUsd,
+      locationCountry,
+      detectedLanguage,
+      contactMethod: formData.contact_method
+    });
+    const currentScore = currentScoreResult.score;
+
+    const victimStripeHtml = isVictim ? '<div class="victim-stripe">🚨 PUBLIC WARNING: RECRUITMENT THREAT INQUIRY</div>' : '';
+
+    const metadataHtml = !isVictim ? `
+      <div class="metadata-grid">
+        <div class="metadata-item">
+          <div class="metadata-label">Case Reference</div>
+          <div class="metadata-val">SENTINEL-SCAN-${(scanInput?.id || 'NEW').substring(0, 8).toUpperCase()}</div>
+        </div>
+        <div class="metadata-item">
+          <div class="metadata-label">Advertiser Handle</div>
+          <div class="metadata-val">${formData.contact_method || 'Unknown'}</div>
+        </div>
+        <div class="metadata-item">
+          <div class="metadata-label">Source Platform</div>
+          <div class="metadata-val">${sourcePlatform || 'Unspecified'}</div>
+        </div>
+        <div class="metadata-item">
+          <div class="metadata-label">Ingested By</div>
+          <div class="metadata-val">${ingestionMethod || 'Analyst Upload'}</div>
+        </div>
+      </div>
+    ` : '';
+
+    const flagsHtml = (generatedPosterData.redFlags || []).map(flag => 
+      '<div class="flag-card">' +
+        '<div class="flag-card-header">' +
+          '<span class="flag-badge"></span>' +
+          '<span>' + flag.flagName + '</span>' +
+        '</div>' +
+        (flag.indicatorText ? '<div class="flag-snippet">"' + flag.indicatorText + '"</div>' : '') +
+        '<div class="flag-desc">' + flag.dangerExplanation + '</div>' +
+      '</div>'
+    ).join('');
+
+    const resourcesHtml = (generatedPosterData.helpResources || []).map(res => 
+      '<div class="resource-card">' +
+        '<div class="resource-name">' + res.organization + '</div>' +
+        '<div class="resource-contact">' + res.contact + '</div>' +
+        '<div class="resource-desc">' + res.description + '</div>' +
+      '</div>'
+    ).join('');
+
+    const htmlContent = `
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Sentinel_${isVictim ? 'VICTIM_WARNING' : 'ANALYST_INTEL'}_${finalLanguage}</title>
+  <meta charset="utf-8">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=Roboto+Mono:wght@400;700&display=swap');
+    
+    @page {
+      size: A4;
+      margin: 12mm 15mm 15mm 15mm;
+    }
+    
+    body {
+      margin: 0;
+      font-family: 'Outfit', sans-serif;
+      color: #0f172a;
+      background: #ffffff;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+      line-height: 1.5;
+    }
+    
+    .poster-container {
+      border: ${isVictim ? '5px solid #ef4444' : '2px solid #1e293b'};
+      border-radius: 4px;
+      padding: 24px;
+      min-height: 260mm;
+      box-sizing: border-box;
+      position: relative;
+      background-color: #ffffff;
+    }
+    
+    .victim-stripe {
+      background: #ef4444;
+      color: white;
+      text-align: center;
+      padding: 10px;
+      font-weight: 800;
+      letter-spacing: 2px;
+      font-size: 14px;
+      margin: -24px -24px 24px -24px;
+      text-transform: uppercase;
+    }
+    
+    .header {
+      text-align: center;
+      margin-bottom: 24px;
+      border-bottom: 2px solid ${isVictim ? '#fee2e2' : '#cbd5e1'};
+      padding-bottom: 16px;
+    }
+    
+    .header h1 {
+      margin: 0 0 6px 0;
+      font-size: 26px;
+      font-weight: 800;
+      color: ${isVictim ? '#dc2626' : '#0f172a'};
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    
+    .header-badge {
+      display: inline-block;
+      background: ${isVictim ? '#fef2f2' : '#f8fafc'};
+      border: 1px solid ${isVictim ? '#fca5a5' : '#cbd5e1'};
+      color: ${isVictim ? '#dc2626' : '#334155'};
+      font-size: 11px;
+      font-weight: 800;
+      padding: 4px 14px;
+      border-radius: 4px;
+      font-family: 'Roboto Mono', monospace;
+      letter-spacing: 1px;
+    }
+    
+    .warning-section {
+      background: ${isVictim ? '#fff5f5' : '#f8fafc'};
+      border-left: 5px solid ${isVictim ? '#ef4444' : '#0f172a'};
+      padding: 16px;
+      margin-bottom: 24px;
+      border-radius: 0 6px 6px 0;
+    }
+    
+    .warning-title {
+      font-weight: 800;
+      font-size: 15px;
+      color: ${isVictim ? '#991b1b' : '#0f172a'};
+      text-transform: uppercase;
+      margin: 0 0 8px 0;
+      letter-spacing: 0.5px;
+    }
+    
+    .warning-body {
+      font-size: 12.5px;
+      color: #334155;
+      line-height: 1.6;
+    }
+    
+    .score-banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: ${isVictim ? '#fef2f2' : '#f1f5f9'};
+      border: 1px solid ${isVictim ? '#fca5a5' : '#e2e8f0'};
+      padding: 12px 20px;
+      border-radius: 6px;
+      margin-bottom: 24px;
+    }
+    
+    .score-title {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: ${isVictim ? '#991b1b' : '#475569'};
+    }
+    
+    .score-value {
+      font-size: 22px;
+      font-weight: 800;
+      font-family: 'Roboto Mono', monospace;
+      color: ${isVictim ? '#dc2626' : '#0f172a'};
+    }
+    
+    .section-title {
+      font-size: 14px;
+      font-weight: 800;
+      text-transform: uppercase;
+      color: ${isVictim ? '#991b1b' : '#1e293b'};
+      border-bottom: 1.5px solid ${isVictim ? '#fee2e2' : '#e2e8f0'};
+      padding-bottom: 6px;
+      margin-bottom: 16px;
+      letter-spacing: 0.5px;
+    }
+    
+    .flag-grid {
+      margin-bottom: 24px;
+    }
+    
+    .flag-card {
+      margin-bottom: 14px;
+      padding: 12px;
+      background: #fbfbfb;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+    }
+    
+    .flag-card-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 700;
+      font-size: 13px;
+      color: #0f172a;
+    }
+    
+    .flag-badge {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: ${isVictim ? '#ef4444' : '#1e293b'};
+    }
+    
+    .flag-snippet {
+      font-family: 'Roboto Mono', monospace;
+      font-size: 11px;
+      background: #f1f5f9;
+      padding: 6px 10px;
+      border-radius: 4px;
+      margin: 6px 0;
+      color: #334155;
+      font-style: italic;
+      word-break: break-all;
+    }
+    
+    .flag-desc {
+      font-size: 12px;
+      color: #475569;
+      line-height: 1.5;
+    }
+    
+    .playbook-container {
+      margin-bottom: 24px;
+      font-size: 12.5px;
+      line-height: 1.6;
+      color: #334155;
+    }
+    
+    .resources-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 40px;
+    }
+    
+    .resource-card {
+      border: 1px solid #e2e8f0;
+      background: #fafafa;
+      border-radius: 6px;
+      padding: 12px;
+      font-size: 11.5px;
+    }
+    
+    .resource-name {
+      font-weight: 700;
+      font-size: 12.5px;
+      color: #0f172a;
+      margin-bottom: 4px;
+    }
+    
+    .resource-contact {
+      font-family: 'Roboto Mono', monospace;
+      font-size: 11.5px;
+      color: #dc2626;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    
+    .resource-desc {
+      color: #64748b;
+      line-height: 1.45;
+    }
+    
+    .footer {
+      position: absolute;
+      bottom: 20px;
+      left: 24px;
+      right: 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 9.5px;
+      color: #94a3b8;
+      font-family: 'Roboto Mono', monospace;
+      border-top: 1px solid #e2e8f0;
+      padding-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="poster-container">
+    ${victimStripeHtml}
+    
+    <div class="header">
+      <h1>${generatedPosterData.title || (isVictim ? 'Safety Warning Poster' : 'Intelligence Profile Dossier')}</h1>
+      <div class="header-badge">${isVictim ? 'CRITICAL EXPLOITATION AND FORCED LABOR AWARENESS' : 'CONFIDENTIAL TACTICAL INTEL REPORT'}</div>
+    </div>
+    
+    <div class="warning-section">
+      <h3 class="warning-title">${generatedPosterData.warningHeader || 'Warning Alert'}</h3>
+      <div class="warning-body">${generatedPosterData.riskAssessment || ''}</div>
+    </div>
+    
+    <div class="score-banner">
+      <span class="score-title">Sentinel Assessment Score</span>
+      <span class="score-value">${currentScore}/100</span>
+    </div>
+    
+    ${metadataHtml}
+    
+    <div class="section-title">${isVictim ? 'Scam & Trafficking Indicators Detected' : 'Operational Flag Profile'}</div>
+    <div class="flag-grid">
+      ${flagsHtml}
+    </div>
+    
+    <div class="section-title">${isVictim ? 'How This Trap Operates (Lure to Confinement)' : 'Synthesized Campaign Modus Operandi'}</div>
+    <div class="playbook-container">
+      ${generatedPosterData.playbookWarning || ''}
+    </div>
+    
+    <div class="section-title">${isVictim ? 'Anti-Trafficking Contacts & Help Hotlines' : 'Key Enforcement Contacts & Task Forces'}</div>
+    <div class="resources-grid">
+      ${resourcesHtml}
+    </div>
+    
+    <div class="footer">
+      <span>SENTINEL CORE INTEL · SOURCE LANGUAGE: ${detectedLanguage}</span>
+      <span>EXPORTED ON: ${new Date().toLocaleDateString()}</span>
+    </div>
+  </div>
+  
+  <script>
+    window.onload = function() {
+      setTimeout(function() {
+        window.print();
+        setTimeout(function() { window.close(); }, 500);
+      }, 500);
+    }
+  </script>
+</body>
+</html>
+    `;
+    
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+  };
+
   const textContainerRef = useRef(null);
 
   useEffect(() => {
@@ -790,14 +1215,14 @@ export default function ReviewScan() {
   if (loading) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-6 bg-[#0a0f18] text-slate-300">
-        <div className="max-w-xl w-full border border-slate-800 rounded-2xl bg-[#0f1420] overflow-hidden shadow-2xl relative">
-          <div className="absolute top-0 left-0 w-full h-[2px] bg-emerald-500/80 animate-pulse" />
+        <div className="max-w-xl w-full border border-slate-800 rounded bg-[#0f1420] overflow-hidden shadow-2xl relative">
+          <div className="absolute top-0 left-0 w-full h-[2px] bg-amber-500/80 animate-pulse" />
           
           {/* Header */}
           <div className="px-6 py-4 border-b border-slate-800 bg-[#0c101a] flex justify-between items-center">
-            <h3 className="font-mono text-xs uppercase tracking-widest text-emerald-500 font-bold flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-              Veritas Scan Core: Active Audit
+            <h3 className="font-mono text-xs uppercase tracking-widest text-amber-500 font-bold flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping" />
+              Sentinel Scan Core: Active Audit
             </h3>
             <span className="font-mono text-[10px] text-slate-500">SYS_REV_v1.02</span>
           </div>
@@ -824,13 +1249,13 @@ export default function ReviewScan() {
               )}
 
               {/* Bounding Box Reticles */}
-              <div className="absolute top-4 left-4 w-6 h-6 border-t border-l border-emerald-500/60 animate-pulse" />
-              <div className="absolute top-4 right-4 w-6 h-6 border-t border-r border-emerald-500/60 animate-pulse" />
-              <div className="absolute bottom-4 left-4 w-6 h-6 border-b border-l border-emerald-500/60 animate-pulse" />
-              <div className="absolute bottom-4 right-4 w-6 h-6 border-b border-r border-emerald-500/60 animate-pulse" />
+              <div className="absolute top-4 left-4 w-6 h-6 border-t border-l border-amber-500/60 animate-pulse" />
+              <div className="absolute top-4 right-4 w-6 h-6 border-t border-r border-amber-500/60 animate-pulse" />
+              <div className="absolute bottom-4 left-4 w-6 h-6 border-b border-l border-amber-500/60 animate-pulse" />
+              <div className="absolute bottom-4 right-4 w-6 h-6 border-b border-r border-amber-500/60 animate-pulse" />
 
               {/* Glowing horizontal Laser Bar */}
-              <div className="absolute left-0 w-full h-[3px] bg-emerald-400 shadow-[0_0_10px_#10b981,0_0_20px_#10b981] animate-laser-sweep" />
+              <div className="absolute left-0 w-full h-[3px] bg-amber-400 shadow-[0_0_10px_#f59e0b,0_0_20px_#d97706] animate-laser-sweep" />
             </div>
 
             {/* Right: Tactical Steps Progress Log */}
@@ -845,14 +1270,14 @@ export default function ReviewScan() {
                       <div
                         key={idx}
                         className={`flex items-center justify-between transition-colors duration-300 ${
-                          isDone ? 'text-emerald-500/80' : isActive ? 'text-slate-200 font-bold' : 'text-slate-600'
+                          isDone ? 'text-amber-500/80' : isActive ? 'text-slate-200 font-bold' : 'text-slate-600'
                         }`}
                       >
                         <div className="flex items-center gap-2">
                           {isDone ? (
-                            <span className="text-[9px] bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20 text-emerald-400 font-bold">OK</span>
+                            <span className="text-[9px] bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20 text-amber-400 font-bold">OK</span>
                           ) : isActive ? (
-                            <span className="text-[9px] bg-emerald-500/20 px-1.5 py-0.5 rounded border border-emerald-500/30 text-emerald-400 animate-pulse font-bold">RUN</span>
+                            <span className="text-[9px] bg-amber-500/20 px-1.5 py-0.5 rounded border border-amber-500/30 text-amber-400 animate-pulse font-bold">RUN</span>
                           ) : (
                             <span className="text-[9px] bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800 text-slate-650 font-bold">WAIT</span>
                           )}
@@ -865,7 +1290,7 @@ export default function ReviewScan() {
               </div>
 
               {/* Live console message */}
-              <div className="p-3 bg-slate-950/80 border border-slate-900 rounded-lg text-[10px] text-emerald-500/90 leading-normal flex items-center gap-1.5">
+              <div className="p-3 bg-slate-950/80 border border-slate-900 rounded-lg text-[10px] text-amber-500/90 leading-normal flex items-center gap-1.5">
                 <span className="text-slate-600">&gt;</span> 
                 <span className="animate-pulse">SYS_AUDIT_LOG: {LOADING_STEPS[loadingStepIdx]}</span>
               </div>
@@ -903,17 +1328,19 @@ export default function ReviewScan() {
   const riskInfo = getRiskLevel(score);
 
   // Sticky intel bar derived values
-  const stickyScoreColor = score >= 60 ? 'text-red-400 bg-red-500/10 border-red-500/30' : score >= 30 ? 'text-amber-400 bg-amber-500/10 border-amber-500/30' : 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30';
+  const stickyScoreColor = score >= 60 ? 'text-red-400 bg-red-500/10 border-red-500/30' : score >= 30 ? 'text-amber-400 bg-amber-500/10 border-amber-500/30' : 'text-amber-400 bg-amber-500/10 border-amber-500/30';
 
   return (
     <div className="flex flex-col flex-1 p-4 max-w-4xl w-full mx-auto space-y-6">
       
       {/* Header */}
       <div className="flex items-center gap-4">
-        <button onClick={() => navigate(-1)} className="p-2 -ml-2 text-slate-500 hover:text-slate-900 dark:hover:text-white transition-colors">
+        <button onClick={() => navigate(-1)} className="p-2 -ml-2 text-slate-500 hover:text-amber-400 transition-colors">
           <ArrowLeft className="w-6 h-6" />
         </button>
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Review Analysis</h1>
+        <h1 className="font-mono text-sm uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
+          <span className="text-amber-500 font-bold">▸</span> Review Analysis
+        </h1>
       </div>
 
       {/* Sticky intel bar */}
@@ -935,7 +1362,7 @@ export default function ReviewScan() {
       </div>
 
       {/* Interactive Ad Analysis — Tactical threat card */}
-      <div className="rounded-xl overflow-hidden border border-slate-800" style={{background: '#111318'}}>
+      <div className="rounded overflow-hidden border border-slate-800" style={{background: '#111318'}}>
         {/* 1px amber classification stripe at very top */}
         <div className="h-px bg-amber-500/60 w-full" />
 
@@ -946,7 +1373,7 @@ export default function ReviewScan() {
               <BrainCircuit className="w-4 h-4 text-slate-500" />
               Threat Analysis
               {suspiciousSpans.length > 0 && (
-                <span className="ml-1 text-[10px] font-semibold text-slate-500 border border-slate-700 px-2 py-0.5 rounded-full tracking-widest">
+                <span className="ml-1 text-[9px] font-mono font-semibold text-slate-400 border border-slate-700 px-1.5 py-0.5 rounded-sm tracking-wider">
                   {suspiciousSpans.length} flagged
                 </span>
               )}
@@ -957,7 +1384,7 @@ export default function ReviewScan() {
           {/* Highlight Toggle — plain text switch */}
           <button
             onClick={() => setShowHighlights(prev => !prev)}
-            className="text-[11px] font-semibold text-slate-600 hover:text-slate-400 transition-colors border border-slate-800 hover:border-slate-700 px-3 py-1.5 rounded-lg"
+            className="text-[11px] font-semibold text-slate-400 hover:text-slate-200 transition-colors border border-slate-800 hover:border-slate-700 px-3 py-1.5 rounded"
           >
             {showHighlights ? 'Hide Highlights' : 'Show Highlights'}
           </button>
@@ -983,16 +1410,16 @@ export default function ReviewScan() {
               <span>Language: {detectedLanguage}</span>
             )}
           </div>
-          <div className="flex bg-slate-900/60 border border-slate-800 p-0.5 rounded-lg text-xs">
+          <div className="flex bg-slate-900/60 border border-slate-800 p-0.5 rounded text-xs">
             {['original', ...(isTranslated ? ['translation'] : []), 'normalized'].map(tab => (
               <button
                 key={tab}
                 type="button"
                 onClick={() => setActiveTabInput(tab)}
-                className={`px-3 py-1.5 rounded-md font-semibold capitalize transition-all ${
+                className={`px-3 py-1.5 rounded-sm font-semibold capitalize transition-all ${
                   activeTabInput === tab
                     ? 'bg-slate-800 text-slate-200 shadow-sm'
-                    : 'text-slate-600 hover:text-slate-400'
+                    : 'text-slate-500 hover:text-slate-400'
                 }`}
               >
                 {tab === 'translation' ? 'Translation' : tab.charAt(0).toUpperCase() + tab.slice(1)}
@@ -1204,18 +1631,18 @@ export default function ReviewScan() {
 
       {/* Trafficker Playbook — compact summary-first (Option C) */}
       {getPlaybookData().length > 0 && (
-        <div className="rounded-2xl overflow-hidden border border-slate-800/80" style={{background:'#111318'}}>
+        <div className="rounded overflow-hidden border border-slate-800/80" style={{background:'#111318'}}>
           {/* Collapsed summary bar — always visible */}
           <button
             type="button"
             onClick={() => setIsPlaybookExpanded(p => !p)}
-            className="w-full px-4 py-3 flex items-center justify-between gap-3 text-left hover:bg-red-500/5 dark:hover:bg-red-950/10 transition-colors"
+            className="w-full px-4 py-3 flex items-center justify-between gap-3 text-left hover:bg-red-950/10 transition-colors"
           >
             <div className="flex items-center gap-2.5 min-w-0">
               <ShieldAlert className="w-4 h-4 text-red-500 flex-shrink-0" />
-              <span className="text-sm text-slate-700 dark:text-slate-300 font-medium">
+              <span className="text-sm text-slate-300 font-medium">
                 <span className="font-bold text-red-500">{getPlaybookData().length} predicted exploitation stages</span>
-                <span className="text-slate-400 dark:text-slate-500 font-normal"> detected based on current indicators</span>
+                <span className="text-slate-400 font-normal"> detected based on current indicators</span>
               </span>
             </div>
             <span className="flex items-center gap-1 text-xs text-red-400 font-semibold flex-shrink-0 font-mono">
@@ -1228,7 +1655,7 @@ export default function ReviewScan() {
 
           {/* Slide-down panel */}
           {isPlaybookExpanded && (
-            <div className="border-t border-slate-200 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800/80">
+            <div className="border-t border-slate-800 divide-y divide-slate-800/80">
               {getPlaybookData().map((step, idx) => {
                 const isRowOpen = expandedPlaybookRows.has(idx);
                 // Extract a short stage label from the phase string e.g. "Stage 1: Contact" -> "Contact"
@@ -1256,7 +1683,7 @@ export default function ReviewScan() {
                         <span className={`text-[9px] font-bold uppercase tracking-widest font-mono ${
                           isHighSeverity ? 'text-red-400' : 'text-amber-400'
                         }`}>{stageLabel}</span>
-                        <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5 leading-relaxed">{step.tactic}</p>
+                        <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">{step.tactic}</p>
                       </div>
 
                       {/* Per-row details toggle */}
@@ -1276,7 +1703,7 @@ export default function ReviewScan() {
                     {/* Inline indicator detail */}
                     {isRowOpen && (
                       <div className="px-4 pb-3 ml-[calc(3px+12px+20px+12px)]">
-                        <p className="text-[11px] text-amber-500/90 dark:text-amber-400/80 leading-relaxed bg-amber-500/5 border border-amber-500/15 rounded-lg px-3 py-2">
+                        <p className="text-[11px] text-amber-400/90 leading-relaxed bg-amber-500/5 border border-amber-500/15 rounded px-3 py-2">
                           {step.red_flag_indicator}
                         </p>
                       </div>
@@ -1291,9 +1718,9 @@ export default function ReviewScan() {
 
 
       {/* Take Action Operational Dashboard */}
-      <div className="rounded-2xl overflow-hidden border border-slate-800/80 p-5" style={{background:'#111318'}}>
-        <div className="border-b border-slate-100 dark:border-slate-800 pb-3 mb-4">
-          <h3 className="font-bold text-slate-800 dark:text-slate-200">Take Action</h3>
+      <div className="rounded overflow-hidden border border-slate-800/80 p-5" style={{background:'#111318'}}>
+        <div className="border-b border-slate-800 pb-3 mb-4">
+          <h3 className="font-bold text-slate-200">Take Action</h3>
           <p className="text-xs text-slate-500 mt-1">Operational next steps and evidence-gathering tools for analysts.</p>
         </div>
 
@@ -1303,32 +1730,61 @@ export default function ReviewScan() {
             return (
               <div 
                 key={action.id} 
-                className="bg-slate-50/50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 rounded-xl p-4 flex flex-col justify-between transition-all duration-350 hover:scale-[1.02] hover:shadow-[0_0_15px_rgba(16,185,129,0.06)] hover:border-emerald-500/30 group"
+                className="bg-[#0a0c12] border border-slate-800 rounded p-4 flex flex-col justify-between hover:border-amber-500/40 transition-colors duration-200 group"
               >
                 <div>
                   <div className="flex items-center justify-between">
-                    <div className="p-2 bg-slate-100 dark:bg-slate-950 rounded-lg text-slate-600 dark:text-slate-400 group-hover:text-emerald-500 group-hover:bg-emerald-500/5 transition-all duration-300">
-                      <Icon className="w-5 h-5 group-hover:scale-110 transition-transform duration-300" />
+                    <div className="p-2 bg-slate-950 border border-slate-800 rounded text-slate-400 group-hover:text-amber-500 transition-colors">
+                      <Icon className="w-5 h-5 transition-transform duration-300" />
                     </div>
-                    <span className="text-[9px] font-black font-mono tracking-wider bg-slate-100 dark:bg-slate-950 text-slate-500 dark:text-slate-400 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-800/80">
+                    <span className="text-[9px] font-bold font-mono tracking-wider bg-slate-950 text-slate-400 px-2 py-0.5 rounded border border-slate-850">
                       {action.badge}
                     </span>
                   </div>
-                  <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200 mt-3 select-text leading-snug">
+                  <h4 className="text-sm font-bold text-slate-200 mt-3 select-text leading-snug">
                     {action.title}
                   </h4>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 leading-relaxed select-text">
+                  <p className="text-xs text-slate-450 mt-2 leading-relaxed select-text">
                     {action.description}
                   </p>
                 </div>
                 
                 <button
                   type="button"
-                  onClick={() => setActiveActionToast({
-                    title: action.title,
-                    description: "This action workflow is configured. Functional integrations will be added in a future update."
-                  })}
-                  className="mt-4 w-full py-2 bg-slate-100 hover:bg-emerald-500/10 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/30 text-slate-600 hover:text-emerald-500 dark:text-slate-400 dark:hover:text-emerald-400 text-xs font-mono font-bold rounded-lg transition-all duration-200 tracking-wider flex items-center justify-center gap-1.5 active:scale-95"
+                  onClick={() => {
+                    if (action.id === 'poster') {
+                      setIsPosterModalOpen(true);
+                      setPosterError('');
+                    } else if (action.id === 'contact') {
+                      navigate('/decoy-contact', {
+                        state: {
+                          scanId: scanInput?.id || 'NEW',
+                          jobTitle: formData.job_title,
+                          employer: formData.employer_identity,
+                          contactMethod: formData.contact_method,
+                          locationCountry: locationCountry,
+                          location: formData.location,
+                          parsedSalaryUsd: parsedSalaryUsd,
+                          activeFlags: activeFlags,
+                          ocrText: ocrText,
+                          translatedText: translatedText,
+                          suspiciousSpans: suspiciousSpans,
+                          predictedPlaybook: predictedPlaybook,
+                          extractedData: {
+                            ...formData,
+                            suspicious_spans: suspiciousSpans,
+                            predicted_playbook: predictedPlaybook
+                          }
+                        }
+                      });
+                    } else {
+                      setActiveActionToast({
+                        title: action.title,
+                        description: "This action workflow is configured. Functional integrations will be added in a future update."
+                      });
+                    }
+                  }}
+                  className="mt-4 w-full py-2 bg-slate-950 hover:bg-amber-500/10 border border-slate-850 hover:border-amber-500/30 text-slate-400 hover:text-amber-400 text-xs font-mono font-bold rounded transition-colors duration-200 tracking-wider flex items-center justify-center gap-1.5"
                 >
                   {action.ctaText}
                 </button>
@@ -1340,10 +1796,10 @@ export default function ReviewScan() {
 
       {/* Floating Action Feedback Toast */}
       {activeActionToast && (
-        <div className="fixed bottom-4 right-4 z-50 max-w-sm bg-slate-900 border border-emerald-500/30 text-white rounded-xl shadow-2xl p-4 flex items-start gap-3 animate-fade-in">
-          <div className="w-2 h-2 rounded-full bg-emerald-500 mt-1.5 animate-pulse" />
+        <div className="fixed bottom-4 right-4 z-50 max-w-sm bg-[#111318] border border-amber-500/30 text-white rounded shadow-2xl shadow-black/80 p-4 flex items-start gap-3 animate-fade-in">
+          <div className="w-2 h-2 rounded-full bg-amber-500 mt-1.5 animate-pulse" />
           <div className="flex-1">
-            <h4 className="text-xs font-bold font-mono text-emerald-400 uppercase tracking-wider">{activeActionToast.title}</h4>
+            <h4 className="text-xs font-bold font-mono text-amber-400 uppercase tracking-wider">{activeActionToast.title}</h4>
             <p className="text-[11px] text-slate-400 mt-1">{activeActionToast.description}</p>
           </div>
           <button 
@@ -1358,16 +1814,16 @@ export default function ReviewScan() {
 
       {/* Collapsible reference flyer image box */}
       {(scanInput?.image || scanInput?.originalImage) && (
-        <div className="rounded-2xl overflow-hidden border border-slate-800/80" style={{background:'#111318'}}>
+        <div className="rounded overflow-hidden border border-slate-800/80" style={{background:'#111318'}}>
           <button
             type="button"
             onClick={() => setIsImageExpanded(!isImageExpanded)}
-            className="w-full p-4 flex items-center justify-between text-left hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors"
+            className="w-full p-4 flex items-center justify-between text-left hover:bg-slate-800/30 transition-colors"
           >
             <div className="flex items-center gap-2">
               <ImageIcon className="w-5 h-5 text-slate-500" />
               <div>
-                <h4 className="font-bold text-slate-800 dark:text-slate-200 text-sm">Original Flyer Reference Image</h4>
+                <h4 className="font-bold text-slate-200 text-sm">Original Flyer Reference Image</h4>
                 <p className="text-xs text-slate-500 mt-0.5">Click to view the raw uploaded image flyer</p>
               </div>
             </div>
@@ -1375,11 +1831,11 @@ export default function ReviewScan() {
           </button>
           
           {isImageExpanded && (
-            <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/30 flex justify-center">
+            <div className="p-4 border-t border-slate-800 bg-[#0a0c12] flex justify-center">
               <img
                 src={scanInput.image || scanInput.originalImage}
                 alt="Raw Flyer"
-                className="w-full max-w-sm mx-auto rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 object-contain max-h-96"
+                className="w-full max-w-sm mx-auto rounded border border-slate-800 object-contain max-h-96"
               />
             </div>
           )}
@@ -1390,46 +1846,46 @@ export default function ReviewScan() {
 
       {/* Similar Job Postings Section */}
       {similarScans.length > 0 && (
-        <div className="rounded-2xl overflow-hidden border border-slate-800/80" style={{background:'#111318'}}>
+        <div className="rounded overflow-hidden border border-slate-800/80" style={{background:'#111318'}}>
           <div className="p-4 border-b border-slate-800 flex items-center justify-between">
             <div>
-              <h3 className="font-bold text-slate-800 dark:text-slate-200">Similar Job Ads Detected</h3>
+              <h3 className="font-bold text-slate-200">Similar Job Ads Detected</h3>
               <p className="text-xs text-slate-500 mt-1">Found potential matches or template re-use in your history.</p>
             </div>
-            <span className="bg-amber-50 dark:bg-amber-950 text-amber-600 dark:text-amber-400 text-xs px-2.5 py-1 rounded-full font-bold">
+            <span className="bg-amber-950 text-amber-400 text-[10px] font-mono px-2 py-0.5 rounded border border-amber-800/60 font-bold">
               {similarScans.length} similar ad{similarScans.length > 1 ? 's' : ''}
             </span>
           </div>
-          <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-60 overflow-y-auto">
+          <div className="divide-y divide-slate-800 max-h-60 overflow-y-auto">
             {similarScans.map((scan) => {
               const pct = Math.round(scan.similarity * 100);
               return (
-                <div key={scan.id} className="p-4 flex items-center justify-between hover:bg-slate-50/50 dark:hover:bg-slate-800/20 transition-colors">
+                <div key={scan.id} className="p-4 flex items-center justify-between hover:bg-slate-850/20 transition-colors">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="font-semibold text-slate-900 dark:text-white truncate">
+                      <span className="font-semibold text-slate-200 truncate">
                         {scan.jobTitle || 'Unknown Job'}
                       </span>
-                      <span className="text-xs text-slate-400 truncate">
+                      <span className="text-xs text-slate-450 truncate">
                         ({scan.employer || 'Unknown Employer'})
                       </span>
                     </div>
-                    <p className="text-xs text-slate-500 mt-0.5">
+                    <p className="text-xs text-slate-550 mt-0.5">
                       Scanned on {new Date(scan.timestamp).toLocaleDateString()}
                     </p>
                   </div>
                   <div className="flex items-center gap-4">
-                    <span className={`text-xs font-bold px-2 py-1 rounded ${
-                      pct >= 80 ? 'bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400' :
-                      pct >= 60 ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400' :
-                      'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                    <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-sm border ${
+                      pct >= 80 ? 'bg-red-950/40 text-red-400 border-red-900/30' :
+                      pct >= 60 ? 'bg-amber-950/40 text-amber-400 border-amber-900/30' :
+                      'bg-slate-900 text-slate-400 border-slate-800'
                     }`}>
                       {pct}% Match
                     </span>
                     <button
                       type="button"
                       onClick={() => setComparisonTarget(scan)}
-                      className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold rounded-lg transition-colors flex items-center gap-1"
+                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold font-mono rounded transition-colors flex items-center gap-1"
                     >
                       <Columns className="w-3.5 h-3.5" />
                       Compare Diff
@@ -1456,13 +1912,13 @@ export default function ReviewScan() {
         const fillPct = Math.min(score, 100) / 100;
         const fillLen = fillPct * arcLen;
         const dashOffset = arcLen - fillLen;
-        const scoreColor = score >= 60 ? '#ef4444' : score >= 30 ? '#f59e0b' : '#10b981';
-        const scoreGlow = score >= 60 ? 'rgba(239,68,68,0.35)' : score >= 30 ? 'rgba(245,158,11,0.30)' : 'rgba(16,185,129,0.30)';
-        const scoreBorder = score >= 60 ? 'border-red-800/40' : score >= 30 ? 'border-amber-800/40' : 'border-emerald-800/40';
+        const scoreColor = score >= 60 ? '#e5534b' : score >= 30 ? '#f0b429' : '#3fb950';
+        const scoreGlow = score >= 60 ? 'rgba(229,83,75,0.35)' : score >= 30 ? 'rgba(240,180,41,0.30)' : 'rgba(63,185,80,0.30)';
+        const scoreBorder = score >= 60 ? 'border-red-800/40' : score >= 30 ? 'border-amber-800/40' : 'border-amber-800/40';
         // rotation so arc starts at bottom-left
         const rotation = 150;
         return (
-          <div className={`rounded-2xl overflow-hidden border ${scoreBorder}`} style={{background:'#111318'}}>
+          <div className={`rounded overflow-hidden border ${scoreBorder}`} style={{background:'#111318'}}>
             {/* Gauge hero */}
             <div className="px-5 pt-5 pb-3 flex items-center gap-6">
               {/* SVG Radial Arc */}
@@ -1568,7 +2024,7 @@ export default function ReviewScan() {
 
       {/* AI Review Widget */}
       {aiReview && (
-        <div className="rounded-2xl overflow-hidden border border-indigo-900/40" style={{background:'#111318'}}>
+        <div className="rounded overflow-hidden border border-indigo-900/40" style={{background:'#111318'}}>
           <div className="p-4 border-b border-indigo-900/30 bg-indigo-500/5 flex items-center gap-2">
              <BrainCircuit className="w-4 h-4 text-indigo-400" />
              <h3 className="font-bold text-slate-200 text-sm">AI Scam Analysis</h3>
@@ -1580,14 +2036,14 @@ export default function ReviewScan() {
       )}
 
       {/* Analyst Comments & Notes Widget */}
-      <div className="rounded-2xl overflow-hidden border border-slate-800/80" style={{background:'#111318'}}>
+      <div className="rounded overflow-hidden border border-slate-800/80" style={{background:'#111318'}}>
         <button
           type="button"
           onClick={() => setIsNotesExpanded(prev => !prev)}
           className="w-full p-4 flex items-center justify-between text-left hover:bg-slate-800/30 transition-colors"
         >
           <div className="flex items-center gap-2">
-            <MessageSquare className="w-4 h-4 text-emerald-500" />
+            <MessageSquare className="w-4 h-4 text-amber-500" />
             <div>
               <h3 className="font-bold text-slate-200 text-sm">Analyst Notes & Case Comments</h3>
               <p className="text-xs text-slate-600 mt-0.5">
@@ -1605,21 +2061,21 @@ export default function ReviewScan() {
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Enter details about associated syndicates, Telegram channels, recruiter identities, or general investigation notes..."
               rows={4}
-              className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-300 focus:ring-1 focus:ring-emerald-500/50 focus:border-emerald-500/30 transition-all outline-none resize-y placeholder:text-slate-600 font-mono"
+              className="w-full p-3 bg-slate-950 border border-slate-800 rounded text-sm text-slate-300 focus:ring-1 focus:ring-amber-500/50 focus:border-amber-500/30 transition-all outline-none resize-y placeholder:text-slate-600 font-mono"
             />
           </div>
         )}
       </div>
 
       {/* Source & Ingestion Metadata Widget */}
-      <div className="rounded-2xl overflow-hidden border border-slate-800/80" style={{background:'#111318'}}>
+      <div className="rounded overflow-hidden border border-slate-800/80" style={{background:'#111318'}}>
         <button
           type="button"
           onClick={() => setIsSourceExpanded(prev => !prev)}
           className="w-full p-4 flex items-center justify-between text-left hover:bg-slate-800/30 transition-colors"
         >
           <div className="flex items-center gap-2">
-            <Globe className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+            <Globe className="w-4 h-4 text-amber-500 flex-shrink-0" />
             <div>
               <h3 className="font-bold text-slate-200 text-sm">Source & Ingestion Context</h3>
               <p className="text-xs text-slate-650 mt-0.5">
@@ -1641,7 +2097,7 @@ export default function ReviewScan() {
                 <select
                   value={sourcePlatform}
                   onChange={(e) => setSourcePlatform(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 transition-all font-mono"
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-sm text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-amber-500/50 transition-all font-mono"
                 >
                   <option value="unspecified">Unspecified</option>
                   <option value="Facebook">Facebook</option>
@@ -1664,7 +2120,7 @@ export default function ReviewScan() {
                 <select
                   value={ingestionMethod}
                   onChange={(e) => setIngestionMethod(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 transition-all font-mono"
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-sm text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-amber-500/50 transition-all font-mono"
                 >
                   <option value="Analyst Upload">Analyst Upload</option>
                   <option value="Web Scraper">Web Scraper</option>
@@ -1684,7 +2140,7 @@ export default function ReviewScan() {
                 value={sourceUrl === 'unspecified' ? '' : sourceUrl}
                 onChange={(e) => setSourceUrl(e.target.value || 'unspecified')}
                 placeholder="Unspecified URL"
-                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-350 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 transition-all font-mono"
+                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-sm text-xs text-slate-350 focus:outline-none focus:ring-1 focus:ring-amber-500/50 transition-all font-mono"
               />
             </div>
 
@@ -1698,7 +2154,7 @@ export default function ReviewScan() {
                 value={postDate === 'unspecified' ? '' : postDate}
                 onChange={(e) => setPostDate(e.target.value || 'unspecified')}
                 placeholder="Unspecified Date (e.g. YYYY-MM-DD)"
-                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-350 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 transition-all font-mono"
+                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-sm text-xs text-slate-350 focus:outline-none focus:ring-1 focus:ring-amber-500/50 transition-all font-mono"
               />
             </div>
           </div>
@@ -1706,7 +2162,7 @@ export default function ReviewScan() {
       </div>
 
       {/* Extracted Data Form */}
-      <div className="rounded-2xl overflow-hidden border border-slate-800/80" style={{background:'#111318'}}>
+      <div className="rounded overflow-hidden border border-slate-800/80" style={{background:'#111318'}}>
         <div className="p-4 border-b border-slate-800">
            <h3 className="font-bold text-slate-200 text-sm">Extracted Details</h3>
            <p className="text-xs text-slate-600 mt-1">Tap fields to correct any inaccuracies.</p>
@@ -1739,7 +2195,7 @@ export default function ReviewScan() {
                               className={`text-[10px] flex items-center gap-1 font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded border transition-colors ${
                                 deepLink.platform === 'Telegram' 
                                   ? 'bg-sky-50 dark:bg-sky-950/20 text-sky-655 dark:text-sky-400 border-sky-200 dark:border-sky-900/40 hover:bg-sky-100' 
-                                  : 'bg-emerald-50 dark:bg-emerald-950/20 text-emerald-655 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900/40 hover:bg-emerald-100'
+                                  : 'bg-amber-50 dark:bg-amber-950/20 text-amber-655 dark:text-amber-400 border-amber-200 dark:border-amber-900/40 hover:bg-amber-100'
                               }`}
                             >
                               Open {deepLink.platform}
@@ -1762,7 +2218,7 @@ export default function ReviewScan() {
                  type="text"
                  value={formData[key] || ''}
                  onChange={(e) => setFormData({...formData, [key]: e.target.value})}
-                 className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all outline-none"
+                 className="w-full px-3 py-2 bg-[#0a0c12] border border-slate-800 rounded-sm text-sm text-slate-300 focus:ring-1 focus:ring-amber-500/50 focus:border-amber-500/30 transition-all outline-none font-mono"
                />
                
                {/* Salary Delta Logic */}
@@ -1776,7 +2232,7 @@ export default function ReviewScan() {
                    const isHigh = percentDiff > 50; // Arbitrary threshold for "too good to be true"
                    
                    return (
-                     <div className={`mt-2 text-xs flex items-start gap-1.5 p-2 rounded-lg border ${isHigh ? 'bg-amber-50 dark:bg-amber-900/10 border-amber-200 dark:border-amber-800/30 text-amber-700 dark:text-amber-400' : 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'}`}>
+                     <div className={`mt-2 text-xs flex items-start gap-1.5 p-2 rounded border ${isHigh ? 'bg-amber-950/20 border-amber-900/30 text-amber-400 font-mono' : 'bg-slate-900/50 border-slate-800 text-slate-400'}`}>
                        <TrendingUp className="w-4 h-4 flex-shrink-0 mt-0.5" />
                        <div>
                          Estimated at <strong>${parsedSalaryUsd.toLocaleString()} USD/yr</strong>.<br/>
@@ -1799,27 +2255,27 @@ export default function ReviewScan() {
                 type="text"
                 value={detectedLanguage}
                 readOnly
-                className="w-full px-3 py-2 bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-500 dark:text-slate-400 outline-none cursor-not-allowed"
+                className="w-full px-3 py-2 bg-[#0a0c12]/40 border border-slate-855 rounded-sm text-sm text-slate-500 outline-none cursor-not-allowed font-mono"
               />
             </div>
          </div>
        </div>
 
       {/* Risk Flags Override */}
-      <div className="rounded-2xl overflow-hidden border border-slate-800/80 mb-6" style={{background:'#111318'}}>
+      <div className="rounded overflow-hidden border border-slate-800/80 mb-6" style={{background:'#111318'}}>
         <div className="p-4 border-b border-slate-800">
            <h3 className="font-bold text-slate-200 text-sm">Risk Indicators</h3>
            <p className="text-xs text-slate-600 mt-1">Check triggers you've discovered to recalculate the score.</p>
         </div>
-        <div className="p-2 divide-y divide-slate-100 dark:divide-slate-800/50">
+        <div className="p-2 divide-y divide-slate-850/30">
            {Object.keys(RISK_FLAGS).map(flag => (
-             <label key={flag} className="flex items-center justify-between p-3 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 rounded-lg transition-colors">
-               <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{flag}</span>
+             <label key={flag} className="flex items-center justify-between p-2.5 cursor-pointer hover:bg-slate-900/50 rounded-none transition-colors border-b border-slate-850/30 last:border-0">
+               <span className="text-sm font-medium text-slate-300">{flag}</span>
                <input
                  type="checkbox"
                  checked={activeFlags.includes(flag)}
                  onChange={() => handleFlagToggle(flag)}
-                 className="w-5 h-5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 bg-slate-100 dark:bg-slate-800 dark:border-slate-600"
+                 className="w-4 h-4 rounded-sm border-slate-800 text-amber-600 focus:ring-amber-500/40 bg-slate-950 cursor-pointer"
                />
              </label>
            ))}
@@ -1828,13 +2284,13 @@ export default function ReviewScan() {
 
       {/* Raw OCR Text */}
       {ocrText && (
-        <div className="rounded-2xl overflow-hidden border border-slate-800/80 mb-6" style={{background:'#111318'}}>
+        <div className="rounded overflow-hidden border border-slate-800/80 mb-6" style={{background:'#111318'}}>
           <div className="p-4 border-b border-slate-800">
              <h3 className="font-bold text-slate-200 text-sm">Image OCR Output</h3>
-             <p className="text-xs text-slate-600 mt-1">Full text extracted from the image by the AI.</p>
+             <p className="text-xs text-slate-500 mt-1">Full text extracted from the image by the AI.</p>
           </div>
-          <div className="p-4 bg-slate-50 dark:bg-slate-950">
-             <div className="text-sm font-mono text-slate-700 dark:text-slate-300 whitespace-pre-wrap">
+          <div className="p-4 bg-[#0a0c12]">
+             <div className="text-sm font-mono text-slate-300 whitespace-pre-wrap">
                {ocrText}
              </div>
           </div>
@@ -1846,98 +2302,582 @@ export default function ReviewScan() {
         <button 
           onClick={handleSave}
           disabled={saving}
-          className="pointer-events-auto bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg rounded-full px-6 py-3 font-bold flex items-center gap-2 active:scale-95 transition-all"
+          className="pointer-events-auto bg-amber-600 hover:bg-amber-700 text-slate-900 shadow-xl shadow-black/80 rounded px-5 py-2.5 font-mono text-xs uppercase tracking-wider font-bold flex items-center gap-2 transition-colors border border-amber-500/25"
         >
-          {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
           Save to History
         </button>
       </div>
 
       {/* Side-by-Side Diff Modal */}
-      {comparisonTarget && (
+      {comparisonTarget && (() => {
+        const oldText = comparisonTarget.normalizedText || '';
+        const newText = normalizedTextVal;
+        
+        const extractHandles = (s) => new Set((s.match(/@[\w]{3,}/g) || []).map(m => m.toLowerCase()));
+        const sharedHandles = Array.from(extractHandles(comparisonTarget.originalText || '')).filter(h => extractHandles(scanInput?.text || scanInput?.originalText || ocrText || '').has(h));
+
+        const extractPhones = (s) => new Set(s.match(/\b\d{7,}\b/g) || []);
+        const sharedPhones = Array.from(extractPhones(comparisonTarget.originalText || '')).filter(p => extractPhones(scanInput?.text || scanInput?.originalText || ocrText || '').has(p));
+
+        const extractNumbers = (s) => new Set(s.match(/\b\d{4}\b/g) || []);
+        const sharedNumbers = Array.from(extractNumbers(comparisonTarget.originalText || '')).filter(n => extractNumbers(scanInput?.text || scanInput?.originalText || ocrText || '').has(n));
+
+        const clean = (w) => w.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const tokenize = (s) => new Set(s.split(/\s+/).map(clean).filter(c => c.length > 2 && !STOP_WORDS.has(c) && !GENERIC_JOB_WORDS.has(c)));
+        const sharedKeywords = Array.from(tokenize(oldText)).filter(k => tokenize(newText).has(k));
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-fade-in">
+            <div className="bg-[#111318] w-full max-w-5xl h-[85vh] rounded border border-slate-800 shadow-2xl flex flex-col overflow-hidden animate-scale-in">
+              {/* Modal Header */}
+              <div className="p-4 border-b border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#0c0f16]">
+                <div>
+                  <h3 className="font-mono text-xs uppercase tracking-widest text-slate-200 flex items-center gap-2">
+                    <Columns className="w-5 h-5 text-amber-600" />
+                    Side-by-Side Ad Comparison
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Comparing current ad with historical scan from {new Date(comparisonTarget.timestamp).toLocaleDateString()} ({Math.round(comparisonTarget.similarity * 100)}% match)
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowMethodology(!showMethodology)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold font-mono border transition-all ${
+                      showMethodology
+                        ? 'bg-amber-950/35 text-amber-400 border-amber-800/50 shadow-inner'
+                        : 'bg-slate-800 hover:bg-slate-750 text-slate-350 border-slate-700 shadow-sm'
+                    }`}
+                  >
+                    <HelpCircle className="w-3.5 h-3.5" />
+                    Explain Match
+                  </button>
+                  <div className="flex bg-slate-950 p-0.5 rounded text-xs border border-slate-800">
+                    <button
+                      type="button"
+                      onClick={() => setComparisonMode('original')}
+                      className={`px-3 py-1.5 rounded-sm font-semibold transition-all ${
+                        comparisonMode === 'original'
+                          ? 'bg-slate-800 text-slate-200 shadow-sm'
+                          : 'text-slate-500 hover:text-slate-300'
+                      }`}
+                    >
+                      Original Ads
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setComparisonMode('normalized')}
+                      className={`px-3 py-1.5 rounded-sm font-semibold transition-all ${
+                        comparisonMode === 'normalized'
+                          ? 'bg-slate-800 text-slate-200 shadow-sm'
+                          : 'text-slate-500 hover:text-slate-300'
+                      }`}
+                    >
+                      Clean English (Normalized)
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setComparisonTarget(null);
+                    }}
+                    className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-slate-200 rounded transition-colors"
+                  >
+                    <X className="w-6 h-6" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Methodology Explanation Panel */}
+              {showMethodology && (
+                <div className="bg-[#0a0c12] px-6 py-5 border-b border-slate-800 space-y-4 font-mono text-xs select-none">
+                  <div className="flex justify-between items-start">
+                    <h4 className="font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5 text-[11px]">
+                      <BrainCircuit className="w-4 h-4 text-amber-500" />
+                      Forensic Matchmaking Report
+                    </h4>
+                    <button 
+                      type="button" 
+                      onClick={() => setShowMethodology(false)}
+                      className="text-slate-500 hover:text-slate-300 text-[10px] uppercase font-bold"
+                    >
+                      Hide
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-slate-400">
+                    {/* Column 1: Math Formula */}
+                    <div className="space-y-2 p-3 bg-slate-950/40 rounded border border-slate-800/60">
+                      <span className="font-bold text-slate-400 uppercase block text-[10px] tracking-wide">Algorithm Scoring Model</span>
+                      <div className="space-y-1.5 leading-normal">
+                        <div className="flex justify-between">
+                          <span>Dice Character Overlap:</span>
+                          <span className="font-bold">20%</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Specific Jaccard Keyword:</span>
+                          <span className="font-bold">40%</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Critical Entity Match Bonus:</span>
+                          <span className="font-bold">40%</span>
+                        </div>
+                        <div className="border-t border-slate-800 pt-1.5 flex justify-between text-amber-400 font-bold">
+                          <span>Combined Match Score:</span>
+                          <span>{Math.round(comparisonTarget.similarity * 100)}%</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Column 2: Critical Identifiers matched */}
+                    <div className="space-y-2 p-3 bg-slate-950/40 rounded border border-slate-800/60">
+                      <span className="font-bold text-slate-400 uppercase block text-[10px] tracking-wide">Critical Signatures Matched</span>
+                      <div className="space-y-1.5">
+                        {sharedHandles.length > 0 ? (
+                          sharedHandles.map(h => (
+                            <div key={h} className="text-amber-400 font-bold flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-550" />
+                              Handle: {h} (+35% match signal)
+                            </div>
+                          ))
+                        ) : (
+                          <div className="text-slate-600">No matching social handles.</div>
+                        )}
+                        {sharedPhones.length > 0 ? (
+                          sharedPhones.map(p => (
+                            <div key={p} className="text-amber-400 font-bold flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-550" />
+                              Phone: {p} (+30% match signal)
+                            </div>
+                          ))
+                        ) : (
+                          <div className="text-slate-600">No matching phone numbers.</div>
+                        )}
+                        {sharedNumbers.length > 0 && (
+                          <div className="text-slate-450 flex items-start gap-1.5 pt-1">
+                            <span className="w-1.5 h-1.5 rounded bg-slate-600 mt-1.5" />
+                            <div>
+                              <span>Shared figures:</span>
+                              <span className="font-bold text-slate-350 block">{sharedNumbers.join(', ')}</span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Column 3: Semantic keywords matched */}
+                    <div className="space-y-2 p-3 bg-slate-950/40 rounded border border-slate-800/60">
+                      <span className="font-bold text-slate-400 uppercase block text-[10px] tracking-wide">Scam Context Indicators</span>
+                      <div className="leading-normal">
+                        {sharedKeywords.length > 0 ? (
+                          <div>
+                            <span>Shared indicators:</span>
+                            <div className="flex flex-wrap gap-1 mt-1.5">
+                              {sharedKeywords.map(k => (
+                                <span key={k} className="px-1.5 py-0.5 rounded bg-amber-550/5 border border-amber-500/25 text-amber-400 font-bold text-[10px]">
+                                  {k}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="text-slate-600">No shared non-generic keywords.</div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Notice alert for clean English comparison */}
+              {comparisonMode === 'normalized' && !showMethodology && (
+                <div className="bg-amber-950/20 px-4 py-2 border-b border-slate-800 text-[11px] text-amber-400/80 flex items-center gap-1.5 font-mono select-none">
+                  <span className="w-1.5 h-1.5 rounded bg-amber-550 animate-pulse flex-shrink-0" />
+                  Comparing clean, English-translated semantic profiles. Obfuscations (spaces, symbols, leet-speak) are resolved to reveal underlying matches.
+                </div>
+              )}
+
+              {/* Modal Content - Side by Side Scrollable Panels */}
+              <div className="flex-1 overflow-hidden grid grid-cols-2 divide-x divide-slate-800">
+                {/* Left Panel: Historical Ad */}
+                <div className="flex flex-col h-full overflow-hidden">
+                  <div className="p-3 bg-slate-950/40 border-b border-slate-800 flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-500 uppercase">Historical Scan</span>
+                    <span className="text-[10px] bg-slate-900 text-slate-400 px-2 py-0.5 rounded border border-slate-800 font-mono truncate max-w-[200px]">
+                      {comparisonTarget.jobTitle || 'Unknown'}
+                    </span>
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-4 font-sans text-sm leading-relaxed text-slate-350 bg-[#0a0c12] whitespace-pre-wrap select-text">
+                    {(() => {
+                      const textOld = comparisonMode === 'normalized' 
+                        ? (comparisonTarget.normalizedText || '') 
+                        : (comparisonTarget.originalText || comparisonTarget.ocrText || '');
+                      const textNew = comparisonMode === 'normalized'
+                        ? (normalizedTextVal)
+                        : (scanInput?.text || scanInput?.originalText || ocrText || '');
+                      
+                      if (comparisonMode === 'normalized') {
+                        const { oldResult } = computeKeywordMatches(textOld, textNew);
+                        return oldResult.map((d, index) => (
+                          <span 
+                            key={index} 
+                            className={d.isMatch ? 'bg-amber-950/45 text-amber-300 font-bold px-0.5 rounded border-b border-amber-800/60' : ''}
+                          >
+                            {d.value}
+                          </span>
+                        ));
+                      }
+
+                      const diffs = computeWordDiff(textOld, textNew);
+                      return diffs
+                        .filter(d => d.type !== 'added')
+                        .map((d, index) => (
+                          <span 
+                            key={index} 
+                            className={d.type === 'removed' ? 'bg-red-950/60 text-red-300 font-bold px-0.5 rounded border-b border-red-800' : ''}
+                          >
+                            {d.value}
+                          </span>
+                        ));
+                    })()}
+                  </div>
+                </div>
+
+                {/* Right Panel: Current Ad */}
+                <div className="flex flex-col h-full overflow-hidden">
+                  <div className="p-3 bg-slate-950/40 border-b border-slate-800 flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-500 uppercase">Current Scan</span>
+                    <span className="text-[10px] bg-amber-950/30 text-amber-400 px-2 py-0.5 rounded border border-amber-900/30 font-mono truncate max-w-[200px]">
+                      {formData.job_title || 'Current'}
+                    </span>
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-4 font-sans text-sm leading-relaxed text-slate-350 bg-[#0a0c12] whitespace-pre-wrap select-text">
+                    {(() => {
+                      const textOld = comparisonMode === 'normalized' 
+                        ? (comparisonTarget.normalizedText || '') 
+                        : (comparisonTarget.originalText || comparisonTarget.ocrText || '');
+                      const textNew = comparisonMode === 'normalized'
+                        ? (normalizedTextVal)
+                        : (scanInput?.text || scanInput?.originalText || ocrText || '');
+
+                      if (comparisonMode === 'normalized') {
+                        const { newResult } = computeKeywordMatches(textOld, textNew);
+                        return newResult.map((d, index) => (
+                          <span 
+                            key={index} 
+                            className={d.isMatch ? 'bg-amber-950/45 text-amber-300 font-bold px-0.5 rounded border-b border-amber-800/60' : ''}
+                          >
+                            {d.value}
+                          </span>
+                        ));
+                      }
+
+                      const diffs = computeWordDiff(textOld, textNew);
+                      return diffs
+                        .filter(d => d.type !== 'removed')
+                        .map((d, index) => (
+                          <span 
+                            key={index} 
+                            className={d.type === 'added' ? 'bg-amber-950/60 text-amber-300 font-bold px-0.5 rounded border-b border-amber-800' : ''}
+                          >
+                            {d.value}
+                          </span>
+                        ));
+                    })()}
+                  </div>
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-4 border-t border-slate-800 bg-[#0c0f16] flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setComparisonTarget(null)}
+                  className="px-4 py-2 bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-200 text-xs font-mono font-bold rounded shadow-sm transition-colors"
+                >
+                  Close Comparison
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Localized Poster Generation Modal */}
+      {isPosterModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-fade-in">
-          <div className="bg-white dark:bg-slate-900 w-full max-w-5xl h-[85vh] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col overflow-hidden animate-scale-in">
+          <div className="bg-[#111318] w-full max-w-5xl h-[85vh] rounded border border-slate-800 shadow-2xl flex flex-col overflow-hidden animate-scale-in">
             {/* Modal Header */}
-            <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/50">
-              <div>
-                <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-2 text-lg">
-                  <Columns className="w-5 h-5 text-emerald-600" />
-                  Side-by-Side Ad Comparison
-                </h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Comparing current ad with historical scan from {new Date(comparisonTarget.timestamp).toLocaleDateString()} ({Math.round(comparisonTarget.similarity * 100)}% match)
-                </p>
+            <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-[#0c0f16]">
+              <div className="flex items-center gap-2">
+                <FileText className="w-5 h-5 text-amber-550" />
+                <div>
+                  <h3 className="font-mono text-xs uppercase tracking-widest text-slate-200">Generate Investigation Poster</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">Translate and format warning bulletins or intel reports for distribution.</p>
+                </div>
               </div>
               <button
                 type="button"
-                onClick={() => setComparisonTarget(null)}
-                className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg transition-colors"
+                onClick={() => {
+                  setIsPosterModalOpen(false);
+                  setGeneratedPosterData(null);
+                  setPosterError('');
+                }}
+                className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-slate-200 rounded transition-colors"
               >
                 <X className="w-6 h-6" />
               </button>
             </div>
 
-            {/* Modal Content - Side by Side Scrollable Panels */}
-            <div className="flex-1 overflow-hidden grid grid-cols-2 divide-x divide-slate-200 dark:divide-slate-800">
-              {/* Left Panel: Historical Ad */}
-              <div className="flex flex-col h-full overflow-hidden">
-                <div className="p-3 bg-slate-50/30 dark:bg-slate-900/30 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-500 uppercase">Historical Scan</span>
-                  <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-2 py-0.5 rounded font-mono truncate max-w-[200px]">
-                    {comparisonTarget.jobTitle || 'Unknown'}
-                  </span>
-                </div>
-                <div className="flex-1 overflow-y-auto p-4 font-sans text-sm leading-relaxed text-slate-700 dark:text-slate-300 bg-slate-50/10 dark:bg-slate-950/10 whitespace-pre-wrap select-text">
-                  {(() => {
-                    const diffs = computeWordDiff(comparisonTarget.originalText || comparisonTarget.ocrText || '', scanInput?.text || scanInput?.originalText || ocrText || '');
-                    return diffs
-                      .filter(d => d.type !== 'added')
-                      .map((d, index) => (
-                        <span 
-                          key={index} 
-                          className={d.type === 'removed' ? 'bg-red-100 dark:bg-red-950/60 text-red-700 dark:text-red-300 font-bold px-0.5 rounded border-b border-red-300 dark:border-red-800' : ''}
-                        >
-                          {d.value}
+            {/* Modal Content */}
+            <div className="flex-1 overflow-hidden flex flex-col md:flex-row">
+              {/* Left Settings Panel */}
+              <div className="w-full md:w-80 border-r border-slate-800 p-5 flex flex-col justify-between overflow-y-auto bg-[#0d1117]">
+                <div className="space-y-6">
+                  {/* Mode Selector */}
+                  <div className="space-y-2.5">
+                    <label className="block text-xs font-mono font-bold text-slate-500 uppercase tracking-wider">Poster Target Audience</label>
+                    <div className="grid grid-cols-1 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPosterMode('victim');
+                          setGeneratedPosterData(null);
+                        }}
+                        className={`px-4 py-3 rounded border text-left flex flex-col gap-1 transition-all ${
+                          posterMode === 'victim'
+                            ? 'bg-red-550/10 border-red-500/50 text-red-200 shadow-[0_0_10px_rgba(229,83,75,0.1)]'
+                            : 'bg-slate-950/40 border-slate-800 text-slate-400 hover:border-slate-700'
+                        }`}
+                      >
+                        <span className="font-bold text-sm flex items-center gap-1.5">
+                          <ShieldAlert className="w-4 h-4" /> Potential Victim
                         </span>
-                      ));
-                  })()}
+                        <span className="text-[10px] opacity-80 leading-normal">Focuses on physical safety warning, plain language red flags, and rescue contacts.</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPosterMode('analyst');
+                          setGeneratedPosterData(null);
+                        }}
+                        className={`px-4 py-3 rounded border text-left flex flex-col gap-1 transition-all ${
+                          posterMode === 'analyst'
+                            ? 'bg-slate-850/30 border-slate-650 text-slate-200'
+                            : 'bg-slate-950/40 border-slate-800 text-slate-400 hover:border-slate-700'
+                        }`}
+                      >
+                        <span className="font-bold text-sm flex items-center gap-1.5">
+                          <BrainCircuit className="w-4 h-4" /> Security Analyst
+                        </span>
+                        <span className="text-[10px] opacity-80 leading-normal">Focuses on technical Modus Operandi, network identifiers, and forensic indicator grids.</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Language Selector */}
+                  <div className="space-y-2.5">
+                    <label className="block text-xs font-mono font-bold text-slate-500 uppercase tracking-wider">Target Translation Language</label>
+                    <select
+                      value={posterLanguage}
+                      onChange={(e) => {
+                        setPosterLanguage(e.target.value);
+                        setGeneratedPosterData(null);
+                      }}
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-sm text-sm text-slate-300 focus:outline-none focus:ring-1 focus:ring-amber-500/50 transition-all font-mono"
+                    >
+                      <option value="English">English</option>
+                      <option value="Simplified Chinese">简体中文 (Simplified Chinese)</option>
+                      <option value="Traditional Chinese">繁體中文 (Traditional Chinese)</option>
+                      <option value="Thai">ไทย (Thai)</option>
+                      <option value="Khmer">ភាសាខ្មែរ (Khmer)</option>
+                      <option value="Burmese">緬甸語 (Burmese)</option>
+                      <option value="Lao">ພາສາລາວ (Lao)</option>
+                      <option value="Vietnamese">Tiếng Việt (Vietnamese)</option>
+                      <option value="Malay">Bahasa Melayu (Malay)</option>
+                      <option value="Filipino">Tagalog (Filipino)</option>
+                      <option value="Indonesian">Indonesia (Indonesian)</option>
+                      <option value="Other">Other...</option>
+                    </select>
+
+                    {posterLanguage === 'Other' && (
+                      <input
+                        type="text"
+                        value={customLanguage}
+                        onChange={(e) => {
+                          setCustomLanguage(e.target.value);
+                          setGeneratedPosterData(null);
+                        }}
+                        placeholder="Enter language name (e.g. Spanish)"
+                        className="w-full mt-2 px-3 py-2 bg-slate-950 border border-slate-800 rounded-sm text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-amber-500/50 transition-all font-mono animate-fade-in"
+                      />
+                    )}
+                  </div>
+                </div>
+
+                <div className="pt-6 border-t border-slate-800 mt-6 space-y-3">
+                  {posterError && (
+                    <div className="p-3 rounded bg-red-950/20 border border-red-900/30 text-xs text-red-400 font-mono leading-normal">
+                      Error: {posterError}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleGeneratePoster}
+                    disabled={isGeneratingPoster}
+                    className="w-full py-3 bg-amber-600 hover:bg-amber-700 disabled:bg-slate-850 disabled:text-slate-600 text-slate-900 font-mono text-xs uppercase tracking-wider font-bold rounded transition-all shadow-md flex items-center justify-center gap-2"
+                  >
+                    {isGeneratingPoster ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Generating Copy...
+                      </>
+                    ) : (
+                      <>
+                        <BrainCircuit className="w-4 h-4" />
+                        Generate Poster Copy
+                      </>
+                    )}
+                  </button>
                 </div>
               </div>
 
-              {/* Right Panel: Current Ad */}
-              <div className="flex flex-col h-full overflow-hidden">
-                <div className="p-3 bg-slate-50/30 dark:bg-slate-900/30 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-500 uppercase">Current Scan</span>
-                  <span className="text-[10px] bg-emerald-50 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 px-2 py-0.5 rounded font-mono truncate max-w-[200px]">
-                    {formData.job_title || 'Current'}
-                  </span>
-                </div>
-                <div className="flex-1 overflow-y-auto p-4 font-sans text-sm leading-relaxed text-slate-700 dark:text-slate-300 bg-slate-50/10 dark:bg-slate-950/10 whitespace-pre-wrap select-text">
-                  {(() => {
-                    const diffs = computeWordDiff(comparisonTarget.originalText || comparisonTarget.ocrText || '', scanInput?.text || scanInput?.originalText || ocrText || '');
-                    return diffs
-                      .filter(d => d.type !== 'removed')
-                      .map((d, index) => (
-                        <span 
-                          key={index} 
-                          className={d.type === 'added' ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-bold px-0.5 rounded border-b border-emerald-300 dark:border-emerald-800' : ''}
-                        >
-                          {d.value}
-                        </span>
-                      ));
-                  })()}
-                </div>
+              {/* Right Preview Panel */}
+              <div className="flex-1 overflow-y-auto p-6 bg-slate-950 flex flex-col">
+                {generatedPosterData ? (
+                  <div className="flex-1 flex flex-col">
+                    {/* Preview controls bar */}
+                    <div className="flex items-center justify-between mb-4 bg-[#0c0f16] border border-slate-800 rounded p-3">
+                      <span className="text-xs text-slate-400 font-mono">
+                        Previewing <strong className="text-white">{posterMode.toUpperCase()}</strong> poster in <strong className="text-white">{posterLanguage === 'Other' ? customLanguage : posterLanguage}</strong>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handlePrintPoster}
+                        className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-slate-900 text-xs font-mono font-bold rounded transition-all shadow-md flex items-center gap-1.5 border border-amber-500/25"
+                      >
+                        <FileText className="w-4 h-4" /> Download PDF / Print
+                      </button>
+                    </div>
+
+                    {/* Styled Poster Content Wrapper */}
+                    <div className={`flex-1 border rounded p-6 select-text overflow-hidden bg-[#0d1117] ${
+                      posterMode === 'victim'
+                        ? 'border-red-500/30 text-slate-200'
+                        : 'border-slate-800 text-slate-355'
+                    }`} style={{ minHeight: '400px' }}>
+                      {/* Inner warning badge */}
+                      {posterMode === 'victim' && (
+                        <div className="bg-red-500 text-white text-center py-1.5 px-4 font-mono font-bold tracking-widest text-[10px] rounded-sm mb-5 uppercase">
+                          🚨 HUMAN TRAFFICKING & LABOR EXPLOITATION WARNING 🚨
+                        </div>
+                      )}
+                      
+                      {/* Document title */}
+                      <h2 className={`text-xl font-bold tracking-tight mb-2 ${
+                        posterMode === 'victim' ? 'text-red-400' : 'text-slate-100'
+                      }`}>
+                        {generatedPosterData.title}
+                      </h2>
+                      
+                      {/* System indicator banner */}
+                      <div className="text-[10px] font-mono text-slate-500 border-b border-slate-800 pb-3 mb-4 flex justify-between">
+                        <span>SYS-REF: SENTINEL-POSTER-{posterMode.toUpperCase()}</span>
+                        <span>LANG: {posterLanguage === 'Other' ? customLanguage : posterLanguage}</span>
+                      </div>
+
+                      {/* Warning Header Panel */}
+                      <div className={`p-4 rounded border mb-5 ${
+                        posterMode === 'victim'
+                          ? 'bg-red-500/5 border-red-500/20 text-red-200/90'
+                          : 'bg-slate-950/60 border-slate-800 text-slate-400'
+                      }`}>
+                        <div className="font-bold text-xs font-mono uppercase tracking-wider mb-1.5">
+                          {posterMode === 'victim' ? '⚠️ WARNING ALERT' : '🛡️ THREAT ASSESSMENT'}
+                        </div>
+                        <p className="text-xs leading-relaxed font-sans">{generatedPosterData.warningHeader}</p>
+                        <p className="text-xs leading-relaxed font-sans mt-2">{generatedPosterData.riskAssessment}</p>
+                      </div>
+
+                      {/* Red Flags List */}
+                      <div className="space-y-4 mb-5">
+                        <h4 className="text-xs font-bold uppercase tracking-wider font-mono text-slate-400">
+                          {posterMode === 'victim' ? '🚩 Scam Indicators in this Posting:' : '🔎 Forensic Signal Audits:'}
+                        </h4>
+                        {(generatedPosterData.redFlags || []).map((flag, idx) => (
+                          <div key={idx} className="p-3 bg-slate-950/40 border border-slate-800 rounded">
+                            <div className="flex items-center gap-1.5 mb-1.5">
+                              <span className={`w-1.5 h-1.5 rounded-sm ${posterMode === 'victim' ? 'bg-red-500' : 'bg-slate-450'}`}></span>
+                              <span className="text-xs font-bold text-slate-200">{flag.flagName}</span>
+                            </div>
+                            {flag.indicatorText && (
+                              <div className="font-mono text-[10px] text-slate-400 bg-slate-950 px-2 py-1 rounded border border-slate-900 mb-1.5 italic">
+                                "{flag.indicatorText}"
+                              </div>
+                            )}
+                            <p className="text-xs text-slate-400 leading-relaxed font-sans">{flag.dangerExplanation}</p>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Modus Operandi Playbook */}
+                      <div className="p-4 bg-slate-950/60 border border-slate-800 rounded mb-5">
+                        <h4 className="text-xs font-bold uppercase tracking-wider font-mono text-slate-400 mb-2">
+                          {posterMode === 'victim' ? '💀 What Happens Next (Tactic Progression)' : '🛠️ Syndicate Playbook Modus Operandi'}
+                        </h4>
+                        <p className="text-xs leading-relaxed text-slate-450 font-sans">{generatedPosterData.playbookWarning}</p>
+                      </div>
+
+                      {/* Help/Enforcement Resources */}
+                      <div className="space-y-3">
+                        <h4 className="text-xs font-bold uppercase tracking-wider font-mono text-slate-400">
+                          {posterMode === 'victim' ? '📞 Where to Report or Get Help:' : '🔗 Enforcement Channels & Resources:'}
+                        </h4>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {(generatedPosterData.helpResources || []).map((res, idx) => (
+                            <div key={idx} className="p-3 bg-slate-950/30 border border-slate-800 rounded text-xs">
+                              <div className="font-bold text-slate-200 mb-0.5">{res.organization}</div>
+                              <div className="font-mono text-red-400 font-bold mb-1.5">{res.contact}</div>
+                              <p className="text-slate-400 text-[11px] leading-relaxed font-sans">{res.description}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex-1 border border-dashed border-slate-800 rounded flex flex-col items-center justify-center p-6 text-center text-slate-500">
+                    <FileText className="w-12 h-12 text-slate-700 mb-3 animate-pulse" />
+                    {isGeneratingPoster ? (
+                      <div className="space-y-2">
+                        <p className="text-sm font-bold text-slate-350">Querying Sentinel Core System...</p>
+                        <p className="text-xs text-slate-600 max-w-sm">Generating poster translation, risk flags summary, and rescue resources via Gemini API.</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <p className="text-sm font-bold text-slate-350">No Poster Preview Generated</p>
+                        <p className="text-xs text-slate-600 max-w-sm">Choose target audience mode and target language in the settings panel on the left, then click Generate Poster Copy.</p>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
             {/* Modal Footer */}
-            <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex items-center justify-end gap-3">
+            <div className="p-4 border-t border-slate-800 bg-[#0c0f16] flex items-center justify-end">
               <button
                 type="button"
-                onClick={() => setComparisonTarget(null)}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 text-white text-sm font-bold rounded-xl shadow-sm transition-colors"
+                onClick={() => {
+                  setIsPosterModalOpen(false);
+                  setGeneratedPosterData(null);
+                  setPosterError('');
+                }}
+                className="px-5 py-2.5 bg-slate-800 hover:bg-slate-750 text-slate-200 text-xs font-mono font-bold rounded shadow-sm transition-colors border border-slate-700"
               >
-                Close Comparison
+                Close Modal
               </button>
             </div>
           </div>

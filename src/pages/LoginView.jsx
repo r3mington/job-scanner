@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { supabase } from '../utils/supabaseClient';
 import { Shield, Mail, Lock, Loader2, AlertCircle, LogIn, UserPlus, Database, Save } from 'lucide-react';
+import logo from '../assets/logo.png';
 
 export default function LoginView() {
   const activeUrl = import.meta.env.VITE_SUPABASE_URL || localStorage.getItem('supabase_url') || '';
@@ -77,15 +78,16 @@ export default function LoginView() {
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center p-4 min-h-[80vh]">
-      <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-xl overflow-hidden p-8 space-y-8">
+      <div className="w-full max-w-md bg-[#111318] border border-slate-800 rounded p-8 space-y-8 shadow-2xl animate-fade-in">
         
         {/* Branding header */}
-        <div className="text-center space-y-2">
-          <div className="mx-auto w-14 h-14 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 rounded-2xl flex items-center justify-center shadow-inner">
-            <Shield className="w-8 h-8" />
+        <div className="text-center space-y-4">
+          <div className="flex justify-center">
+            <div className="bg-[#0a0f18] p-5 rounded border border-slate-800 inline-block">
+              <img src={logo} alt="Sentinel AI Logo" className="h-10 w-auto object-contain" />
+            </div>
           </div>
-          <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">VeritasRecruit</h1>
-          <p className="text-xs text-slate-500 max-w-[280px] mx-auto">
+          <p className="text-xs text-slate-400 max-w-[280px] mx-auto font-mono">
             Securely detect risky job postings and human exploitation scams.
           </p>
         </div>
@@ -93,15 +95,15 @@ export default function LoginView() {
         {showSetup ? (
           /* Supabase Setup View */
           <form onSubmit={handleSetupSave} className="space-y-4">
-            <div className="p-3 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/30 rounded-xl flex items-start gap-2.5">
-              <Database className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
-              <div className="text-[11px] text-amber-800 dark:text-amber-400 font-semibold leading-relaxed">
+            <div className="p-3 bg-amber-550/10 border border-amber-500/20 rounded flex items-start gap-2.5">
+              <Database className="w-4 h-4 text-amber-550 mt-0.5 flex-shrink-0" />
+              <div className="text-[10px] text-amber-500 font-mono leading-relaxed">
                 Supabase Connection Required. Please configure your remote database details below to boot the application.
               </div>
             </div>
 
-            <div className="space-y-1">
-              <label htmlFor="sbUrl" className="block text-xs font-bold text-slate-500 uppercase tracking-wider">
+            <div className="space-y-1.5">
+              <label htmlFor="sbUrl" className="block text-xs font-bold text-slate-300 uppercase tracking-wider font-mono">
                 Supabase URL
               </label>
               <input
@@ -111,12 +113,12 @@ export default function LoginView() {
                 value={sbUrl}
                 onChange={(e) => setSbUrl(e.target.value)}
                 placeholder="https://xyz.supabase.co"
-                className="w-full px-4 py-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none transition-shadow text-sm"
+                className="w-full px-4 py-3 rounded border border-slate-800 bg-[#0a0c12] text-slate-200 focus:outline-none focus:ring-1 focus:ring-amber-500 text-sm font-mono"
               />
             </div>
 
-            <div className="space-y-1">
-              <label htmlFor="sbKey" className="block text-xs font-bold text-slate-500 uppercase tracking-wider">
+            <div className="space-y-1.5">
+              <label htmlFor="sbKey" className="block text-xs font-bold text-slate-300 uppercase tracking-wider font-mono">
                 Supabase Anon Key
               </label>
               <input
@@ -126,12 +128,12 @@ export default function LoginView() {
                 value={sbKey}
                 onChange={(e) => setSbKey(e.target.value)}
                 placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                className="w-full px-4 py-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-55 dark:bg-slate-950 text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none transition-shadow font-mono text-sm shadow-inner"
+                className="w-full px-4 py-3 rounded border border-slate-800 bg-[#0a0c12] text-slate-200 focus:outline-none focus:ring-1 focus:ring-amber-500 font-mono text-sm shadow-inner"
               />
             </div>
 
-            <div className="space-y-1">
-              <label htmlFor="sbBucket" className="block text-xs font-bold text-slate-500 uppercase tracking-wider">
+            <div className="space-y-1.5">
+              <label htmlFor="sbBucket" className="block text-xs font-bold text-slate-300 uppercase tracking-wider font-mono">
                 Storage Bucket Name
               </label>
               <input
@@ -141,14 +143,14 @@ export default function LoginView() {
                 value={sbBucket}
                 onChange={(e) => setSbBucket(e.target.value)}
                 placeholder="scans-images"
-                className="w-full px-4 py-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none transition-shadow text-sm"
+                className="w-full px-4 py-3 rounded border border-slate-800 bg-[#0a0c12] text-slate-200 focus:outline-none focus:ring-1 focus:ring-amber-500 text-sm font-mono"
               />
             </div>
 
             <button
               type="submit"
               disabled={setupSaving}
-              className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white font-bold py-3.5 rounded-xl shadow-sm transition-all active:scale-[0.98] mt-6 text-sm"
+              className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 disabled:bg-slate-800 disabled:text-slate-600 text-[#0d1117] font-bold py-3.5 rounded transition-all active:scale-[0.98] mt-6 text-sm font-mono"
             >
               {setupSaving ? (
                 <Loader2 className="w-5 h-5 animate-spin" />
@@ -164,9 +166,9 @@ export default function LoginView() {
                 <button
                   type="button"
                   onClick={() => setShowSetup(false)}
-                  className="text-xs font-bold text-slate-400 hover:text-slate-650 hover:underline transition-colors"
+                  className="text-xs font-bold text-amber-550 hover:text-amber-400 font-mono"
                 >
-                  Cancel and Back to Login
+                  [ Cancel and Back to Login ]
                 </button>
               </div>
             )}
@@ -178,7 +180,7 @@ export default function LoginView() {
               
               {/* Error Notification */}
               {error && (
-                <div className="flex items-start gap-2.5 bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-800/30 p-3.5 rounded-xl text-xs text-rose-700 dark:text-rose-400 font-medium">
+                <div className="flex items-start gap-2.5 bg-rose-500/10 border border-rose-550/20 p-3.5 rounded text-[11px] text-rose-400 font-mono">
                   <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
                   <span>{error}</span>
                 </div>
@@ -186,19 +188,19 @@ export default function LoginView() {
 
               {/* Success Notification */}
               {successMsg && (
-                <div className="flex items-start gap-2.5 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800/30 p-3.5 rounded-xl text-xs text-emerald-700 dark:text-emerald-400 font-medium">
-                  <Shield className="w-4 h-4 flex-shrink-0 mt-0.5 text-emerald-600" />
+                <div className="flex items-start gap-2.5 bg-[#3fb950]/10 border border-[#3fb950]/20 p-3.5 rounded text-[11px] text-[#3fb950] font-mono">
+                  <Shield className="w-4 h-4 flex-shrink-0 mt-0.5 text-[#3fb950]" />
                   <span>{successMsg}</span>
                 </div>
               )}
 
               {/* Email input */}
-              <div className="space-y-1">
-                <label htmlFor="email" className="block text-xs font-bold text-slate-500 uppercase tracking-wider">
+              <div className="space-y-1.5">
+                <label htmlFor="email" className="block text-xs font-bold text-slate-300 uppercase tracking-wider font-mono">
                   Email Address
                 </label>
                 <div className="relative">
-                  <Mail className="w-5 h-5 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <Mail className="w-5 h-5 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
                   <input
                     type="email"
                     id="email"
@@ -206,18 +208,18 @@ export default function LoginView() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="you@example.com"
-                    className="w-full pl-11 pr-4 py-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-55 dark:bg-slate-950 text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none transition-shadow text-sm"
+                    className="w-full pl-11 pr-4 py-3 rounded border border-slate-800 bg-[#0a0c12] text-slate-200 focus:outline-none focus:ring-1 focus:ring-amber-500 text-sm font-mono"
                   />
                 </div>
               </div>
 
               {/* Password input */}
-              <div className="space-y-1">
-                <label htmlFor="password" className="block text-xs font-bold text-slate-500 uppercase tracking-wider">
+              <div className="space-y-1.5">
+                <label htmlFor="password" className="block text-xs font-bold text-slate-300 uppercase tracking-wider font-mono">
                   Password
                 </label>
                 <div className="relative">
-                  <Lock className="w-5 h-5 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <Lock className="w-5 h-5 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
                   <input
                     type="password"
                     id="password"
@@ -225,7 +227,7 @@ export default function LoginView() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
-                    className="w-full pl-11 pr-4 py-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-55 dark:bg-slate-950 text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none transition-shadow text-sm"
+                    className="w-full pl-11 pr-4 py-3 rounded border border-slate-800 bg-[#0a0c12] text-slate-200 focus:outline-none focus:ring-1 focus:ring-amber-500 text-sm font-mono"
                   />
                 </div>
               </div>
@@ -234,7 +236,7 @@ export default function LoginView() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:text-slate-550 dark:disabled:bg-slate-800 dark:disabled:text-slate-650 text-white font-bold py-3.5 rounded-xl shadow-sm transition-all active:scale-[0.98] mt-6"
+                className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 disabled:bg-slate-800 disabled:text-slate-600 text-[#0d1117] font-bold py-3.5 rounded transition-all active:scale-[0.98] mt-6 font-mono text-sm"
               >
                 {loading ? (
                   <Loader2 className="w-5 h-5 animate-spin" />
@@ -258,14 +260,14 @@ export default function LoginView() {
                   setError('');
                   setSuccessMsg('');
                 }}
-                className="text-xs font-bold text-emerald-600 dark:text-emerald-450 hover:underline transition-colors block mx-auto"
+                className="text-xs font-bold text-amber-500 hover:text-amber-400 transition-colors block mx-auto font-mono"
               >
-                {isSignUp ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
+                {isSignUp ? '[ Already have an account? Sign In ]' : "[ Don't have an account? Sign Up ]"}
               </button>
 
               <button
                 onClick={() => setShowSetup(true)}
-                className="text-[10px] font-semibold text-slate-400 hover:text-slate-650 hover:underline transition-colors block mx-auto pt-2 border-t border-slate-100 dark:border-slate-800 w-full"
+                className="text-[10px] font-bold text-slate-500 hover:text-slate-400 hover:underline transition-colors block mx-auto pt-2 border-t border-slate-800 w-full font-mono uppercase tracking-wider"
               >
                 Configure Database Connection Settings
               </button>

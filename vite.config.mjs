@@ -10,8 +10,8 @@ export default defineConfig(({ command }) => ({
     command === 'build' && VitePWA({
       registerType: 'autoUpdate',
       manifest: {
-        name: 'VeritasRecruit',
-        short_name: 'VeritasRecruit',
+        name: 'Sentinel AI',
+        short_name: 'Sentinel AI',
         description: 'Risky Job Post Detector',
         theme_color: '#ffffff',
         icons: [

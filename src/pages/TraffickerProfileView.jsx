@@ -126,8 +126,8 @@ export default function TraffickerProfileView() {
   if (loading) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center py-20">
-        <Loader2 className="w-10 h-10 text-emerald-600 animate-spin mb-3" />
-        <p className="text-slate-500 text-sm font-mono">Loading recruiter threat dossier...</p>
+        <Loader2 className="w-10 h-10 text-amber-500 animate-spin mb-3" />
+        <p className="text-slate-400 text-sm font-mono">Loading recruiter threat dossier...</p>
       </div>
     );
   }
@@ -144,10 +144,10 @@ export default function TraffickerProfileView() {
 
   // Risk Classification
   const threatClass = avgRisk >= 80 
-    ? { label: 'CRITICAL RISK / HIGH DANGER', color: 'text-red-500 bg-red-500/10 border-red-500/30 glow-red' }
+    ? { label: 'CRITICAL RISK / HIGH DANGER', color: 'text-red-500 bg-red-500/10 border-red-500/30' }
     : avgRisk >= 50
     ? { label: 'MODERATE TO HIGH RISK', color: 'text-amber-500 bg-amber-500/10 border-amber-500/30' }
-    : { label: 'SUSPECTED / LOW RISK', color: 'text-emerald-500 bg-emerald-500/10 border-emerald-500/30' };
+    : { label: 'SUSPECTED / LOW RISK', color: 'text-[#3fb950] bg-[#3fb950]/10 border-[#3fb950]/30' };
 
   // Heat map for locations
   const countryMap = {};
@@ -171,12 +171,12 @@ export default function TraffickerProfileView() {
       <div className="flex items-center gap-3">
         <button 
           onClick={() => navigate('/dashboard')}
-          className="p-2 border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800/40 rounded-xl transition-all"
+          className="p-2 border border-slate-800 hover:bg-[#1b2230]/40 rounded transition-all"
         >
-          <ArrowLeft className="w-4 h-4 text-slate-600 dark:text-slate-400" />
+          <ArrowLeft className="w-4 h-4 text-slate-400" />
         </button>
         <div>
-          <h1 className="text-xl font-black text-slate-800 dark:text-white truncate max-w-[400px]">
+          <h1 className="text-xl font-bold text-slate-100 truncate max-w-[400px] font-mono">
             Recruiter Dossier
           </h1>
           <p className="text-slate-500 text-xs font-mono truncate">{contactId}</p>
@@ -189,37 +189,37 @@ export default function TraffickerProfileView() {
         <div className="md:col-span-1 space-y-6">
           
           {/* Risk Card */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm space-y-4">
-            <div className={`p-2.5 rounded-lg border text-center font-mono text-xs font-bold uppercase tracking-wider ${threatClass.color}`}>
+          <div className="bg-[#111318] border border-slate-800 rounded p-4 space-y-4">
+            <div className={`p-2.5 rounded border text-center font-mono text-[10px] font-bold uppercase tracking-wider ${threatClass.color}`}>
               {threatClass.label}
             </div>
             
-            <div className="grid grid-cols-2 gap-4 pt-2 border-t border-slate-100 dark:border-slate-800/60 font-mono">
+            <div className="grid grid-cols-2 gap-4 pt-2 border-t border-slate-800 font-mono">
               <div className="text-center">
-                <span className="text-[10px] text-slate-400 block">Avg Risk</span>
-                <span className="text-xl font-black text-slate-800 dark:text-white">{avgRisk}%</span>
+                <span className="text-[10px] text-slate-500 block">Avg Risk</span>
+                <span className="text-xl font-bold text-slate-100">{avgRisk}%</span>
               </div>
               <div className="text-center">
-                <span className="text-[10px] text-slate-400 block">Linked Ads</span>
-                <span className="text-xl font-black text-slate-800 dark:text-white">{totalAds}</span>
+                <span className="text-[10px] text-slate-500 block">Linked Ads</span>
+                <span className="text-xl font-bold text-slate-100">{totalAds}</span>
               </div>
             </div>
 
-            <div className="space-y-1.5 pt-3 border-t border-slate-100 dark:border-slate-800/60 font-mono text-[10px] text-slate-500 dark:text-slate-400">
+            <div className="space-y-1.5 pt-3 border-t border-slate-800 font-mono text-[10px] text-slate-450">
               <div className="flex justify-between">
                 <span>First Spotted:</span>
-                <span className="font-semibold">{firstSpotted}</span>
+                <span className="font-semibold text-slate-300">{firstSpotted}</span>
               </div>
               <div className="flex justify-between">
                 <span>Last Activity:</span>
-                <span className="font-semibold">{lastSpotted}</span>
+                <span className="font-semibold text-slate-300">{lastSpotted}</span>
               </div>
             </div>
           </div>
 
           {/* OSINT Quick Links */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm space-y-3">
-            <h3 className="font-mono text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wide">
+          <div className="bg-[#111318] border border-slate-800 rounded p-4 space-y-3">
+            <h3 className="font-mono text-xs font-bold text-slate-500 uppercase tracking-wide">
               OSINT Integrations
             </h3>
             <div className="flex flex-col gap-2">
@@ -227,40 +227,40 @@ export default function TraffickerProfileView() {
                 href={osintGoogle} 
                 target="_blank" 
                 rel="noopener noreferrer"
-                className="flex items-center justify-between p-2.5 border border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-950/20 text-xs font-mono font-semibold rounded-xl text-slate-700 dark:text-slate-300"
+                className="flex items-center justify-between p-2.5 border border-slate-800 hover:bg-[#1b2230]/40 text-xs font-mono font-bold rounded text-slate-300"
               >
                 <span>Google Search Handle</span>
-                <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
+                <ExternalLink className="w-3.5 h-3.5 text-slate-500" />
               </a>
               {osintTelegram && (
                 <a 
                   href={osintTelegram} 
                   target="_blank" 
                   rel="noopener noreferrer"
-                  className="flex items-center justify-between p-2.5 border border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-950/20 text-xs font-mono font-semibold rounded-xl text-slate-700 dark:text-slate-300"
+                  className="flex items-center justify-between p-2.5 border border-slate-800 hover:bg-[#1b2230]/40 text-xs font-mono font-bold rounded text-slate-300"
                 >
                   <span>Open Telegram Chat</span>
-                  <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
+                  <ExternalLink className="w-3.5 h-3.5 text-slate-500" />
                 </a>
               )}
             </div>
           </div>
 
           {/* Location Breakdown */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm space-y-3">
-            <h3 className="font-mono text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wide">
+          <div className="bg-[#111318] border border-slate-800 rounded p-4 space-y-3">
+            <h3 className="font-mono text-xs font-bold text-slate-500 uppercase tracking-wide">
               Jurisdictions Matrix
             </h3>
             <div className="space-y-2.5">
               {locationsSorted.map(loc => (
                 <div key={loc.name} className="space-y-1 font-mono text-[10px]">
                   <div className="flex justify-between">
-                    <span className="font-bold text-slate-700 dark:text-slate-350">{loc.name}</span>
-                    <span className="text-slate-450">{loc.count} ({loc.percent}%)</span>
+                    <span className="font-bold text-slate-400">{loc.name}</span>
+                    <span className="text-slate-500">{loc.count} ({loc.percent}%)</span>
                   </div>
-                  <div className="w-full bg-slate-100 dark:bg-slate-800 h-1 rounded-full overflow-hidden">
+                  <div className="w-full bg-[#0a0c12] border border-slate-800 h-2 rounded overflow-hidden">
                     <div 
-                      className="bg-blue-500 h-full rounded-full"
+                      className="bg-amber-500 h-full rounded-sm"
                       style={{ width: `${loc.percent}%` }}
                     />
                   </div>
@@ -275,15 +275,15 @@ export default function TraffickerProfileView() {
         <div className="md:col-span-2 space-y-6">
           
           {/* AI Intelligence Report */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-4">
+          <div className="bg-[#111318] border border-slate-800 rounded p-5 space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="font-mono text-xs font-bold text-slate-450 dark:text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
-                <Globe className="w-4 h-4 text-emerald-500 animate-pulse" /> AI Threat Intelligence Profile
+              <h3 className="font-mono text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                <Globe className="w-4 h-4 text-amber-500 animate-pulse" /> AI Threat Intelligence Profile
               </h3>
               <button 
                 onClick={handleGenerateSummary}
                 disabled={generatingSummary || scans.length === 0}
-                className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-100 disabled:text-slate-400 dark:disabled:bg-slate-800 dark:disabled:text-slate-500 text-white font-mono text-[10px] font-bold uppercase tracking-wider rounded-lg transition-colors flex items-center gap-1"
+                className="px-2.5 py-1.5 bg-amber-500 hover:bg-amber-600 disabled:bg-slate-800 disabled:text-slate-600 text-[#0d1117] font-mono text-[10px] font-bold uppercase tracking-wider rounded transition-colors flex items-center gap-1"
               >
                 {generatingSummary ? (
                   <>
@@ -298,27 +298,27 @@ export default function TraffickerProfileView() {
             </div>
             
             {traffickerProfile.ai_summary ? (
-              <div className="p-3.5 bg-slate-950/80 border border-slate-850 rounded-xl font-mono text-[11.5px] leading-relaxed text-slate-350 shadow-inner">
+              <div className="p-3.5 bg-[#0a0c12] border border-slate-800 rounded font-mono text-[11.5px] leading-relaxed text-slate-300">
                 {traffickerProfile.ai_summary}
               </div>
             ) : (
-              <div className="p-6 border border-dashed border-slate-200 dark:border-slate-800/80 rounded-xl text-center">
-                <p className="text-xs text-slate-400 italic">No AI intelligence generated for this profile handle yet.</p>
+              <div className="p-6 border border-dashed border-slate-800 rounded text-center">
+                <p className="text-xs text-slate-500 italic">No AI intelligence generated for this profile handle yet.</p>
                 <p className="text-[10px] text-slate-500 mt-1">Click the button above to request a synthesis report from Gemini.</p>
               </div>
             )}
           </div>
 
           {/* Investigator Notes */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-4">
+          <div className="bg-[#111318] border border-slate-800 rounded p-5 space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="font-mono text-xs font-bold text-slate-450 dark:text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
-                <FileText className="w-4 h-4 text-purple-500" /> Investigator Case Notes
+              <h3 className="font-mono text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                <FileText className="w-4 h-4 text-amber-500" /> Investigator Case Notes
               </h3>
               <button 
                 onClick={handleSaveNotes}
                 disabled={savingNotes || notesText === traffickerProfile.notes}
-                className="px-2.5 py-1.5 bg-purple-600 hover:bg-purple-700 disabled:bg-slate-100 disabled:text-slate-400 dark:disabled:bg-slate-850 dark:disabled:text-slate-600 text-white font-mono text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all flex items-center gap-1"
+                className="px-2.5 py-1.5 bg-[#1b2230] border border-slate-850 hover:bg-[#1b2230]/80 disabled:opacity-50 text-slate-300 font-mono text-[10px] font-bold uppercase tracking-wider rounded transition-all flex items-center gap-1"
               >
                 <Save className="w-3 h-3" /> {savingNotes ? 'Saving...' : 'Save Notes'}
               </button>
@@ -329,40 +329,40 @@ export default function TraffickerProfileView() {
               onChange={(e) => setNotesText(e.target.value)}
               placeholder="Record cross-referenced identities, physical compounds, syndicate flags, phone logs, or any other threat information..."
               rows={4}
-              className="w-full p-3.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-800 dark:text-slate-300 focus:ring-1 focus:ring-purple-500 focus:border-purple-500 outline-none resize-none transition-all placeholder:italic"
+              className="w-full p-3.5 bg-[#0a0c12] border border-slate-800 rounded text-xs text-slate-200 focus:ring-1 focus:ring-amber-500 focus:border-amber-500 outline-none resize-none transition-all placeholder:italic font-mono"
             />
           </div>
 
           {/* Evidence Lock (Scans History) */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-3">
-            <h3 className="font-mono text-xs font-bold text-slate-450 dark:text-slate-500 uppercase tracking-wider">
+          <div className="bg-[#111318] border border-slate-800 rounded p-5 space-y-3">
+            <h3 className="font-mono text-xs font-bold text-slate-500 uppercase tracking-wider">
               Ingested Evidence Log
             </h3>
             
-            <div className="divide-y divide-slate-100 dark:divide-slate-800/60 max-h-96 overflow-y-auto pr-1">
+            <div className="divide-y divide-slate-800 max-h-96 overflow-y-auto pr-1">
               {scans.map(scan => (
                 <div key={scan.id} className="py-3 flex items-center justify-between gap-4">
                   <div className="min-w-0 flex-1">
-                    <p className="text-xs font-bold text-slate-800 dark:text-slate-250 truncate">
+                    <p className="text-xs font-bold text-slate-200 truncate font-mono">
                       {scan.jobTitle}
                     </p>
-                    <p className="text-[10px] text-slate-400 font-mono mt-0.5">
+                    <p className="text-[10px] text-slate-500 font-mono mt-0.5">
                       {new Date(scan.timestamp).toLocaleDateString()} • {scan.employer} • {scan.locationCountry || 'Remote'}
                     </p>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <span className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold ${
                       scan.riskScore >= 60 
-                        ? 'bg-red-50 text-red-600 dark:bg-red-950/20 dark:text-red-400' 
+                        ? 'bg-red-500/10 text-red-400' 
                         : scan.riskScore >= 30 
-                        ? 'bg-amber-50 text-amber-600 dark:bg-amber-950/20 dark:text-amber-400' 
-                        : 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/20 dark:text-emerald-400'
+                        ? 'bg-amber-500/10 text-amber-400' 
+                        : 'bg-[#3fb950]/10 text-[#3fb950]'
                     }`}>
                       {scan.riskScore}%
                     </span>
                     <button 
                       onClick={() => navigate('/review', { state: { scanId: scan.id, isExistingScan: true } })}
-                      className="px-2 py-1 border border-slate-200 dark:border-slate-850 hover:bg-slate-50 dark:hover:bg-slate-950/20 rounded-md text-[10px] font-mono font-bold uppercase text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-colors"
+                      className="px-2 py-1 border border-slate-800 hover:bg-[#1b2230]/40 text-slate-400 hover:text-slate-205 rounded text-[10px] font-mono font-bold uppercase transition-colors"
                     >
                       Review
                     </button>
