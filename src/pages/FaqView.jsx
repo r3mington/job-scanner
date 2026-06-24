@@ -20,16 +20,16 @@ export default function FaqView() {
       details: (
         <div className="space-y-3 leading-relaxed text-slate-350">
           <p>
-            Sentinel AI is designed as an <strong>analyst-first OSINT workspace</strong>. It runs on a modern web platform integrating a client-side React single-page application with a secure Supabase backend database layer.
+            Sentinel AI is structured as a decentralized, <strong>analyst-first OSINT workspace</strong> designed to minimize data leakage and maintain high performance. The application operates primarily inside the analyst's browser as a single-page application built on React 18, Tailwind CSS, and Vite. This client-side runtime communicates directly with cloud-hosted database and intelligence services, eliminating the need for complex intermediate servers.
           </p>
           <div className="p-3 bg-[#0a0c12] border border-slate-800 rounded font-mono text-[11px] text-slate-400 space-y-1.5">
-            <div><strong className="text-slate-300">Frontend:</strong> React 18 / Tailwind CSS / Vite (Bundled client-side runtime)</div>
-            <div><strong className="text-slate-300">Storage:</strong> Supabase PostgreSQL (Scan logs, extracted target metadata)</div>
-            <div><strong className="text-slate-300">Local Cache:</strong> IndexedDB / Dexie (Offline-first session caching)</div>
-            <div><strong className="text-slate-300">AI Services:</strong> Direct API connection to Gemini 1.5/2.5 endpoints</div>
+            <div><strong className="text-slate-300">Frontend Layer:</strong> React 18 SPA rendering interactive dashboards, real-time telemetry consoles, and network visualization graphs.</div>
+            <div><strong className="text-slate-300">Storage Layer:</strong> Supabase PostgreSQL instances storing scans, analyzed metadata, burner profiles, and audit log history.</div>
+            <div><strong className="text-slate-300">Local Caching:</strong> IndexedDB managed through Dexie.js, caching ongoing scans to prevent data loss during network disruptions.</div>
+            <div><strong className="text-slate-300">Cognitive Services:</strong> Direct HTTPS REST endpoints communicating with Google Gemini API gateways using JSON structured outputs.</div>
           </div>
           <p>
-            This architecture keeps operational costs minimal and lets analysts store target dossiers directly on their secure databases while maintaining fast scanning interfaces.
+            By executing processing logic directly in the browser (such as similarity checks and canvas image cropping) and using a cloud database for persistence, the platform scales efficiently. This prevents single points of failure and ensures analysts can run high-throughput sweeps while keeping operational infrastructure costs extremely low.
           </p>
         </div>
       )
@@ -42,13 +42,16 @@ export default function FaqView() {
       details: (
         <div className="space-y-3 leading-relaxed text-slate-350">
           <p>
-            The scanner uses advanced Google Gemini Large Language Models (LLMs) to perform OCR (Optical Character Recognition) and threat heuristics extraction.
+            Sentinel AI harnesses Google's state-of-the-art Gemini Large Language Models (LLMs) to perform high-precision Optical Character Recognition (OCR), entity extraction, and dialect analysis. To keep scans reliable and cost-effective, the app is optimized to handle rate limits (Resource Exhausted errors) and quota boundaries transparently.
           </p>
-          <ul className="list-disc pl-5 space-y-1">
-            <li><strong>Model Selection:</strong> Defaults to <code>gemini-2.5-flash</code> for fast extraction speed, with fallbacks to <code>gemini-1.5-flash</code> and <code>gemini-1.5-pro</code>.</li>
-            <li><strong>JSON Schema Routing:</strong> All prompts are sent via the <code>/v1beta/</code> REST endpoint to guarantee structure through <code>responseMimeType: "application/json"</code>.</li>
-            <li><strong>Fallback Cascade:</strong> If your API key hits rate limits (resource exhaust warnings), Sentinel automatically cycles through backup model variations without failing the active scan.</li>
+          <ul className="list-disc pl-5 space-y-2">
+            <li><strong>Model Tiering & Selection:</strong> The system defaults to <code>gemini-2.5-flash</code> for primary analyses due to its low latency and superior performance in structured JSON extraction. If more complex reasoning is required (e.g. detailed forensic analysis), the app supports manual or automatic escalation to high-reasoning models like <code>gemini-1.5-pro</code>.</li>
+            <li><strong>Structured Schema Routing:</strong> Unlike generic chatbots, Sentinel utilizes structured schemas. Prompts are routed through the <code>/v1beta/</code> REST API path, passing strict JSON schemas to the model parameters. This forces the model to return syntactically valid JSON matching our internal TypeScript interfaces, avoiding parser failures.</li>
+            <li><strong>Automated Fallback Cascades:</strong> To protect batch operations from API downtime or individual key rate limits, the system runs an automatic fallback chain. If a request fails, the service cycles through backup models (e.g., trying <code>gemini-2.5-flash</code>, then falling back to <code>gemini-1.5-flash</code>, <code>gemini-1.5-flash-latest</code>, or <code>gemini-1.5-pro</code>) in real-time.</li>
           </ul>
+          <p>
+            Additionally, the system tracks API calls through a visual telemetry console on the scanning screen, displaying connection metrics, attempts, warnings, and success logs. This makes it easy for analysts to diagnose API key health or quota limitations during bulk operations.
+          </p>
         </div>
       )
     },
@@ -60,24 +63,24 @@ export default function FaqView() {
       details: (
         <div className="space-y-3 leading-relaxed text-slate-350">
           <p>
-            The risk score is a composite metric representing the likelihood of a job posting being tied to human trafficking or forced labor rings.
+            The Risk Score is a composite mathematical representation of how likely a job advertisement is to be associated with human trafficking, forced labor, or financial scams. Rather than relying on simple keywords, the platform uses a multi-layered scoring matrix that evaluates base indicators alongside contextual anomalies.
           </p>
-          <div className="p-3 bg-[#0a0c12] border border-slate-800 rounded font-mono text-[11px] text-slate-400 space-y-2">
+          <div className="p-3 bg-[#0a0c12] border border-slate-800 rounded font-mono text-[11px] text-slate-400 space-y-3">
             <div>
-              <strong className="text-slate-300">1. Base Flag Weights:</strong>
-              <div className="text-slate-500 mt-0.5">Flags like "Passport Control" (+40), "Labor Abuse" (+25), and "Excessive Enticements" (+15) are summed.</div>
+              <strong className="text-slate-300">1. Base Threat Weights (Additive):</strong>
+              <div className="text-slate-500 mt-0.5">Every detected indicator has a pre-defined severity weight. For example, "Passport/ID Control" adds +40, "Labor Abuse & Restrictions" adds +25, and "Excessive Enticements" adds +15.</div>
             </div>
             <div>
-              <strong className="text-slate-300">2. Combo Multipliers:</strong>
-              <div className="text-slate-500 mt-0.5">High-danger combinations (e.g. Passport Control + Hostage-like Restrictions) trigger a 1.25× multiplier on base weights.</div>
+              <strong className="text-slate-300">2. Co-occurrence Combo Multipliers (Synergy):</strong>
+              <div className="text-slate-500 mt-0.5">When multiple critical flags appear together, they suggest an active threat campaign. If flags like "Passport Control" and "High Pressure / Restrictions" are present simultaneously, the base score is scaled by a combo multiplier (e.g., 1.25×), adding a compounding threat bonus.</div>
             </div>
             <div>
-              <strong className="text-slate-300">3. Context Additions:</strong>
-              <div className="text-slate-500 mt-0.5">Adds score modifiers for Salary Anomalies (+30 for excessive pay over local median), Telegram/WhatsApp contact risks (+10), and unknown employers (+5).</div>
+              <strong className="text-slate-300">3. Contextual Anomalies (Adjustments):</strong>
+              <div className="text-slate-500 mt-0.5">Calculates dynamic indicators like Local Salary Anomalies (+30 if the offered wage is &gt;150% above the country's median salary, or +15 if &gt;50%), suspicious messaging handles (+10 for Telegram/WhatsApp links), and employer anonymity (+5 for unverified companies).</div>
             </div>
           </div>
           <p>
-            The final score is capped at <strong>100% (High Risk)</strong>. High-risk indicators are colored red, medium yellow, and low green.
+            The raw score is capped at <strong>100% (High Risk)</strong>. Any changes made by an analyst—such as manually toggling red flags or updating employer notes—re-evaluate the score matrix in real-time, instantly refreshing the visual gauge on the review screen and updating database records.
           </p>
         </div>
       )
@@ -90,16 +93,16 @@ export default function FaqView() {
       details: (
         <div className="space-y-3 leading-relaxed text-slate-350">
           <p>
-            Human trafficking operations frequently reuse identical job templates across multiple messaging channels. Sentinel detects these duplicate networks automatically.
+            Recruitment networks frequently reuse exact job templates, flyers, and descriptions across hundreds of messaging channels (such as different Telegram chatrooms or WhatsApp groups). Sentinel AI identifies these interconnected networks by running real-time similarity audits.
           </p>
           <p>
-            The system employs a <strong>character n-gram Jaccard similarity algorithm</strong>. It tokenizes the normalized text of job postings into overlapping segments and measures the intersection ratio between them.
+            The system employs a **character n-gram Jaccard similarity algorithm**. When a job ad is parsed, the text is normalized (stripped of whitespace, punctuation, and capitalization) and broken down into overlapping character sequences of length N (n-grams). The similarity score represents the ratio of shared n-grams (intersection) to the total unique n-grams (union) between two postings.
           </p>
-          <p className="font-mono text-[11px] text-slate-400 bg-[#0a0c12] p-2.5 rounded border border-slate-800">
-            Jaccard Similarity = (Set A ∩ Set B) / (Set A ∪ Set B)
-          </p>
+          <div className="p-3 bg-[#0a0c12] border border-slate-800 rounded font-mono text-[11px] text-slate-400">
+            Formula: Similarity(A, B) = |n-grams(A) ∩ n-grams(B)| / |n-grams(A) ∪ n-grams(B)|
+          </div>
           <p>
-            Any similarity index greater than <strong>40%</strong> is flagged, letting analysts easily link separate advertisements to the same parent operation.
+            If the similarity between the current ad and a historical record exceeds **40%**, the system marks them as connected. The dashboard and connections graph automatically link these records, allowing analysts to trace burner phone handles or syndicate recruiters operating under multiple aliases.
           </p>
         </div>
       )
@@ -112,13 +115,16 @@ export default function FaqView() {
       details: (
         <div className="space-y-3 leading-relaxed text-slate-350">
           <p>
-            When gathering evidence, analysts must communicate with recruiters without exposing their identity. The <strong>Decoy Engagement Control</strong> helps automate this safely.
+            Interacting with suspected human trafficking recruiters requires high operational security (OpSec). The **Decoy Engagement Control** panel provides tools that allow analysts to safely converse with recruiters, extract location details, and document transaction channels.
           </p>
-          <ul className="list-disc pl-5 space-y-1">
-            <li><strong>Burner Personas:</strong> Randomly generates aged profiles, hometowns, and realistic backstories matching regional target demographics.</li>
-            <li><strong>Sanitized Resumes:</strong> Generates a full-length, professional PDF CV containing zero EXIF data, GPS coordinates, or tracking tags.</li>
-            <li><strong>Chat Blueprints:</strong> Structured outreach templates grouped by phase (Hook, Visa verification, and Location checks) to systematically extract recruiter handles and coordinates.</li>
+          <ul className="list-disc pl-5 space-y-2">
+            <li><strong>Synthetic Personas:</strong> To prevent target profiling, the system dynamically rolls randomized candidate identities complete with native regional names, ages, hometowns, and realistic background profiles designed to match typical target demographics.</li>
+            <li><strong>Sanitized PDF Resume Builder:</strong> Automatically generates custom PDF CVs using professional templates. The generator outputs clean binary files that strip out EXIF metadata, tracking identifiers, creation timestamps, and GPS headers, preventing recruiters from tracing back the analyst's workstation.</li>
+            <li><strong>Phased Conversation Blueprints:</strong> Organizes communication strategies into structured phases. Standard Outreach (establishing contact), Visa Audit (checking if passport withholding is mandatory), and Location Discovery (asking for compound transit details) help gather evidence systematically.</li>
           </ul>
+          <p>
+            By keeping the interaction structured and sanitizing all transmitted artifacts, analysts can trace payment wallets or alternative recruiter handles while keeping their true identity protected.
+          </p>
         </div>
       )
     },
@@ -130,10 +136,13 @@ export default function FaqView() {
       details: (
         <div className="space-y-3 leading-relaxed text-slate-350">
           <p>
-            Images and flyers distributed on WhatsApp or Telegram can often be traced back to original recruitment postings or social media accounts.
+            Recruiting materials are often distributed as graphics, memes, or screenshots in closed chat groups. Finding the original publisher of an image is a critical step in identifying human trafficking rings.
           </p>
           <p>
-            Sentinel includes built-in links to reverse search engines (Google Images, TinEye, Yandex). This lets analysts perform visual hashing matches to find initial publication sources, linked profiles, or warning posts from other monitoring networks.
+            Sentinel AI simplifies this process by integrating with reverse search indexes (including Google Images, TinEye, and Yandex). When a flyer is scanned, the tool calculates visual hash checks and generates search URLs.
+          </p>
+          <p>
+            This allows analysts to run visual checks to see if the flyer has been indexed on public forums, linked to specific social media profiles (Facebook, LinkedIn, Twitter), or previously reported on anti-trafficking advisory channels. This helps analysts map the distribution reach of specific campaigns.
           </p>
         </div>
       )
@@ -146,10 +155,18 @@ export default function FaqView() {
       details: (
         <div className="space-y-3 leading-relaxed text-slate-350">
           <p>
-            Recruiters sometimes capture screenshots or upload document attachments containing hidden EXIF/metadata structures.
+            Whenever a digital camera captures a photo or editing software saves a screenshot, hidden technical tags are embedded inside the image file structure. This information is called EXIF (Exchangeable Image File Format) metadata.
           </p>
           <p>
-            The **File Forensics** modal extracts binary tag directories from uploaded PNG and JPEG assets, reporting camera manufacturer details, editing software history, creation timestamps, and GPS coordinates. Identifying these details helps locate recruitment operations centers.
+            The **File Forensics** engine opens a binary stream of uploaded PNG or JPEG flyers to read these hidden sections directly inside the browser.
+          </p>
+          <ul className="list-disc pl-5 space-y-1">
+            <li><strong>GPS Coordinates:</strong> Extracts geographic latitude and longitude indicating exactly where the camera took the photo.</li>
+            <li><strong>Device Details:</strong> Retrieves details about camera models, phone manufacturers, and software build IDs.</li>
+            <li><strong>Software Footprints:</strong> Detects editing applications (such as Photoshop, Canva, or screenshot tools) used to modify the flyer, along with original creation timestamps.</li>
+          </ul>
+          <p>
+            This forensic evidence is displayed in a dedicated panel on the review screen, providing key location leads to help trace threat actors.
           </p>
         </div>
       )
@@ -162,10 +179,16 @@ export default function FaqView() {
       details: (
         <div className="space-y-3 leading-relaxed text-slate-350">
           <p>
-            Many recruitment operations are managed by foreign syndicates writing translation-assisted local copy.
+            Many recruitment ads target specific regional demographics but are written by foreign handlers. These handlers often rely on machine translation (such as Google Translate or DeepL) or have varying levels of local language fluency, which introduces unique dialect errors.
           </p>
           <p>
-            The **Dialect Analyzer** runs specialized prompts via Gemini to detect translation patterns, unnatural syntax structures, spelling/vocabulary mix-ups, and regional character choices. The tool outputs a likelihood profile indicating the recruiter's native language origin.
+            The **Language OSINT Dialect Analyzer** uses Gemini models to analyze the grammatical syntax, vocabulary choices, spelling errors, and idioms in the advertisement text.
+          </p>
+          <p>
+            The analyzer checks for literal word-for-word translations, unusual character choices (e.g. mixing Simplified Chinese symbols into regional scripts), or incorrect syntax. The system then outputs a probability profile highlighting the writer's native language origin.
+          </p>
+          <p>
+            This analysis is logged to the investigation notes to help identify the location of the threat syndicate's operators.
           </p>
         </div>
       )
