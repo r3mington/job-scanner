@@ -279,7 +279,18 @@ export default function ScannerView() {
         });
 
         const activeFlags = result.detected_red_flags || [];
-        const score = calculateRiskScore(activeFlags);
+        const scoreResult = calculateRiskScore(activeFlags, {
+          parsedSalaryUsd: result.parsed_salary_usd,
+          locationCountry: result.location_country,
+          detectedLanguage: result.detected_language,
+          contactMethod: result.contact_method,
+          suspiciousSpans: result.suspicious_spans || [],
+          predictedPlaybook: result.predicted_playbook || [],
+          obfuscationLevel: null, // Obfuscation level is analyzed interactively, keep as null for base import
+          sourcePlatform: sourcePlatform || 'unspecified',
+          employer: result.employer_identity
+        });
+        const score = scoreResult.score;
         const level = getRiskLevel(score);
 
         const record = {
