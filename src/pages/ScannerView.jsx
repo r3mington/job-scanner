@@ -1098,15 +1098,29 @@ function parseCSV(text) {
   const originalHeaders = lines[0].map(h => h.trim());
 
   // Find column indexes
-  const titleIdx = headers.findIndex(h => (h.includes('title') || h.includes('role') || h === 'job') && !h.includes('desc') && !h.includes('text') && !h.includes('body') && !h.includes('post'));
-  const descIdx = headers.findIndex(h => h.includes('desc') || h.includes('text') || h.includes('body') || h.includes('post'));
-  const locIdx = headers.findIndex(h => h.includes('loc') || h.includes('city') || h.includes('country') || h.includes('addr'));
-  const empIdx = headers.findIndex(h => h.includes('employer') || h.includes('company') || h.includes('org') || h.includes('firm'));
-  const salIdx = headers.findIndex(h => h.includes('sal') || h.includes('wage') || h.includes('pay') || h.includes('rate'));
-  const indIdx = headers.findIndex(h => h.includes('ind') || h.includes('sector'));
-  const conIdx = headers.findIndex(h => h.includes('con') || h.includes('email') || h.includes('phone') || h.includes('link') || h.includes('method'));
-  const urlIdx = headers.findIndex(h => h === 'url' || h.includes('source_url') || h.includes('link'));
-  const dateIdx = headers.findIndex(h => h.includes('date') || h.includes('time') || h === 'post_date');
+  let titleIdx = -1;
+  let descIdx = 0;
+  let locIdx = -1;
+  let empIdx = -1;
+  let salIdx = -1;
+  let indIdx = -1;
+  let conIdx = -1;
+  let urlIdx = -1;
+  let dateIdx = -1;
+
+  if (headers.length > 1) {
+    titleIdx = headers.findIndex(h => (h.includes('title') || h.includes('role') || h === 'job') && !h.includes('desc') && !h.includes('text') && !h.includes('body') && !h.includes('post'));
+    descIdx = headers.findIndex(h => h.includes('desc') || h.includes('text') || h.includes('body') || h.includes('post'));
+    if (descIdx === -1) descIdx = 0;
+
+    locIdx = headers.findIndex(h => h.includes('loc') || h.includes('city') || h.includes('country') || h.includes('addr'));
+    empIdx = headers.findIndex(h => h.includes('employer') || h.includes('company') || h.includes('org') || h.includes('firm'));
+    salIdx = headers.findIndex(h => h.includes('sal') || h.includes('wage') || h.includes('pay') || h.includes('rate'));
+    indIdx = headers.findIndex(h => h.includes('ind') || h.includes('sector'));
+    conIdx = headers.findIndex(h => h.includes('con') || h.includes('email') || h.includes('phone') || h.includes('link') || h.includes('method'));
+    urlIdx = headers.findIndex(h => h === 'url' || h.includes('source_url') || h.includes('link'));
+    dateIdx = headers.findIndex(h => h.includes('date') || h.includes('time') || h === 'post_date');
+  }
 
   const parsedRows = [];
   for (let j = 1; j < lines.length; j++) {
