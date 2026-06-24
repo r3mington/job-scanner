@@ -305,7 +305,9 @@ export default function ScannerView() {
             salary_range: result.salary_range || row.salary_range || '',
             location: result.location || row.location || '',
             industry: result.industry || row.industry || '',
-            contact_method: result.contact_method || row.contact_method || ''
+            contact_method: result.contact_method || row.contact_method || '',
+            suspicious_spans: result.suspicious_spans || [],
+            predicted_playbook: result.predicted_playbook || []
           },
           activeFlags: activeFlags,
           originalImage: null,
