@@ -22,28 +22,164 @@ export const RISK_FLAGS = {
   'Minimal Qualifications': { weight: 10, category: 'medium' }
 };
 
+/**
+ * Flag co-occurrence combos.
+ * When ALL flags in a combo are present, a multiplier is applied to the
+ * combined raw flag score before contextual bonuses are added.
+ * This reflects that certain combinations are textbook trafficking operations,
+ * not just additive bad signals.
+ */
+const DANGER_COMBOS = [
+  {
+    // Classic compound-confinement pattern
+    flags: ['Passport/ID Control', 'Housing Compound Isolation', 'Immediate Travel Pressure'],
+    multiplier: 1.4,
+    label: 'Compound Confinement Pattern'
+  },
+  {
+    // Cyber-scam compound recruiting pattern
+    flags: ['Suspect Location Hub', 'Encrypted Apps Migration', 'Minimal Qualifications'],
+    multiplier: 1.35,
+    label: 'Cyber-Scam Compound Pattern'
+  },
+  {
+    // Debt bondage recruitment
+    flags: ['Upfront Fees', 'Immediate Travel Pressure', 'Excessive Enticements'],
+    multiplier: 1.3,
+    label: 'Debt Bondage Recruitment Pattern'
+  },
+  {
+    // Full trafficking signature
+    flags: ['Passport/ID Control', 'Suspect Location Hub', 'Employer Anonymity'],
+    multiplier: 1.3,
+    label: 'Trafficking Signature Pattern'
+  }
+];
+
+/** Generic employer name patterns that suggest deliberate opacity */
+const EMPLOYER_OPACITY_TERMS = new Set([
+  'team', 'admin', 'hr', 'group', 'management', 'department', 'office',
+  'staff', 'agency', 'services', 'company', 'limited', 'ltd', 'inc',
+  'enterprise', 'enterprises', 'solutions', 'consulting', 'recruitment',
+  'unspecified', 'unknown', 'n/a', 'na', 'none'
+]);
+
+/**
+ * Score the contact method type.
+ * Telegram invite links (anonymous mass-invite) are the highest risk signal.
+ */
+function scoreContactMethod(contactMethod) {
+  if (!contactMethod) return { score: 0, label: null };
+  const m = contactMethod.toLowerCase();
+
+  // Telegram invite link  e.g. "Telegram Invite: abc123"
+  if (m.includes('telegram invite')) {
+    return { score: 20, label: 'Telegram Invite Link (anonymous mass-invite)' };
+  }
+  // Telegram @handle
+  if (m.includes('telegram')) {
+    return { score: 10, label: 'Telegram Handle' };
+  }
+  // WhatsApp
+  if (m.includes('whatsapp')) {
+    return { score: 5, label: 'WhatsApp Number' };
+  }
+  return { score: 0, label: null };
+}
+
+/**
+ * Score the source platform.
+ * Ads originating from encrypted/social platforms carry higher baseline risk.
+ */
+function scoreSourcePlatform(sourcePlatform) {
+  if (!sourcePlatform) return 0;
+  const p = sourcePlatform.toLowerCase();
+  if (p.includes('telegram')) return 10;
+  if (p.includes('whatsapp')) return 8;
+  if (p.includes('facebook') || p.includes('fb')) return 5;
+  if (p.includes('tiktok') || p.includes('instagram')) return 4;
+  return 0;
+}
+
+/**
+ * Employer opacity score.
+ * Short or generic employer strings suggest deliberate anonymity.
+ */
+function scoreEmployerOpacity(employer) {
+  if (!employer || employer.trim() === '') return { score: 8, label: 'Missing Employer Identity' };
+
+  const clean = employer.toLowerCase().trim();
+
+  // Very short (likely a codename or abbreviation)
+  if (clean.length < 8) return { score: 6, label: `Suspicious Employer Name (too short: "${employer}")` };
+
+  // Only numbers  e.g. "Company 8", "Road 8"
+  const words = clean.split(/\s+/);
+  const meaningfulWords = words.filter(w => !EMPLOYER_OPACITY_TERMS.has(w) && isNaN(w));
+  if (meaningfulWords.length === 0) {
+    return { score: 8, label: `Generic Employer Name ("${employer}")` };
+  }
+  if (meaningfulWords.length === 1 && clean.length < 20) {
+    return { score: 5, label: `Vague Employer Identity ("${employer}")` };
+  }
+  return { score: 0, label: null };
+}
+
 export function calculateRiskScore(activeFlags = [], contextInfo = null) {
-  let score = 0;
+  let rawFlagScore = 0;
   const details = [];
-  
-  // Calculate standard flags
+
+  // ── 1. Base flag weights ────────────────────────────────────────────────
   activeFlags.forEach(flag => {
     if (RISK_FLAGS[flag]) {
       const weight = RISK_FLAGS[flag].weight;
-      score += weight;
+      rawFlagScore += weight;
       details.push({ name: flag, weight });
     }
   });
 
-  if (contextInfo) {
-    const { parsedSalaryUsd, locationCountry, detectedLanguage, contactMethod } = contextInfo;
+  // ── 2. Co-occurrence combo multipliers ─────────────────────────────────
+  let appliedCombo = null;
+  let comboMultiplier = 1.0;
+  for (const combo of DANGER_COMBOS) {
+    if (combo.flags.every(f => activeFlags.includes(f))) {
+      if (combo.multiplier > comboMultiplier) {
+        comboMultiplier = combo.multiplier;
+        appliedCombo = combo;
+      }
+    }
+  }
+  let score = Math.round(rawFlagScore * comboMultiplier);
+  if (appliedCombo && comboMultiplier > 1.0) {
+    const bonus = score - rawFlagScore;
+    if (bonus > 0) {
+      details.push({
+        name: `Combo Multiplier: ${appliedCombo.label} (×${appliedCombo.multiplier})`,
+        weight: bonus,
+        isComboBonus: true
+      });
+    }
+  }
 
-    // 1. Calculate salary anomalies if values exist
+  if (contextInfo) {
+    const {
+      parsedSalaryUsd,
+      locationCountry,
+      detectedLanguage,
+      contactMethod,
+      suspiciousSpans,
+      predictedPlaybook,
+      obfuscationLevel,
+      sourcePlatform,
+      employer
+    } = contextInfo;
+
+    // ── 3. Salary anomalies ───────────────────────────────────────────────
     if (parsedSalaryUsd && locationCountry) {
       const median = getMedianSalary(locationCountry);
       if (median) {
         const percentDiff = Math.round(((parsedSalaryUsd - median) / median) * 100);
-        
+
         if (percentDiff >= 150) {
           score += 30;
           details.push({
@@ -59,10 +195,20 @@ export function calculateRiskScore(activeFlags = [], contextInfo = null) {
             isSalaryAnomaly: true
           });
         }
+
+        // Salary floor: suspiciously low for any skilled-sounding title
+        if (percentDiff <= -60) {
+          score += 10;
+          details.push({
+            name: `Salary Below Floor (${Math.abs(percentDiff)}% below local median)`,
+            weight: 10,
+            isSalaryAnomaly: true
+          });
+        }
       }
     }
 
-    // 2. Calculate Cross-Border & Language Incongruencies
+    // ── 4. Cross-border & language incongruencies ─────────────────────────
     if (locationCountry) {
       const { isLanguageIncongruent, isContactIncongruent, contactCountryName } = checkCrossBorderIncongruency(
         detectedLanguage,
@@ -87,6 +233,82 @@ export function calculateRiskScore(activeFlags = [], contextInfo = null) {
           isCrossBorderMismatch: true
         });
       }
+    }
+
+    // ── 5. Suspicious span density ────────────────────────────────────────
+    if (Array.isArray(suspiciousSpans) && suspiciousSpans.length > 0) {
+      const spanBonus = Math.min(25, suspiciousSpans.length * 3);
+      if (spanBonus > 0) {
+        score += spanBonus;
+        details.push({
+          name: `High Suspicious Span Density (${suspiciousSpans.length} flagged phrases)`,
+          weight: spanBonus,
+          isSpanDensity: true
+        });
+      }
+    }
+
+    // ── 6. Contact method type penalty ────────────────────────────────────
+    const contactScore = scoreContactMethod(contactMethod);
+    if (contactScore.score > 0) {
+      score += contactScore.score;
+      details.push({
+        name: `Contact Method Risk: ${contactScore.label}`,
+        weight: contactScore.score,
+        isContactRisk: true
+      });
+    }
+
+    // ── 7. Source platform weighting ──────────────────────────────────────
+    const platformScore = scoreSourcePlatform(sourcePlatform);
+    if (platformScore > 0) {
+      score += platformScore;
+      details.push({
+        name: `High-Risk Source Platform (${sourcePlatform})`,
+        weight: platformScore,
+        isPlatformRisk: true
+      });
+    }
+
+    // ── 8. Obfuscation level (from dialect analyzer) ──────────────────────
+    if (typeof obfuscationLevel === 'number' && obfuscationLevel > 0) {
+      let obfBonus = 0;
+      if (obfuscationLevel >= 7) obfBonus = 20;
+      else if (obfuscationLevel >= 4) obfBonus = 10;
+      if (obfBonus > 0) {
+        score += obfBonus;
+        details.push({
+          name: `Ad Obfuscation Detected (level ${obfuscationLevel}/10)`,
+          weight: obfBonus,
+          isObfuscation: true
+        });
+      }
+    }
+
+    // ── 9. Predicted playbook depth ───────────────────────────────────────
+    if (Array.isArray(predictedPlaybook)) {
+      let playbookBonus = 0;
+      if (predictedPlaybook.length >= 4) playbookBonus = 10;
+      else if (predictedPlaybook.length >= 3) playbookBonus = 5;
+      if (playbookBonus > 0) {
+        score += playbookBonus;
+        details.push({
+          name: `Multi-Stage Playbook Detected (${predictedPlaybook.length} escalation stages)`,
+          weight: playbookBonus,
+          isPlaybook: true
+        });
+      }
+    }
+
+    // ── 10. Employer opacity ──────────────────────────────────────────────
+    const employerRisk = scoreEmployerOpacity(employer);
+    if (employerRisk.score > 0) {
+      score += employerRisk.score;
+      details.push({
+        name: employerRisk.label,
+        weight: employerRisk.score,
+        isEmployerOpacity: true
+      });
     }
   }
 

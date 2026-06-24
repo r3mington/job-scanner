@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
 import { Shield, Database, Settings, BarChart3, LogOut, Loader2 } from 'lucide-react';
 import ScannerView from './pages/ScannerView';
-import Logo from './components/Logo';
+import logoImg from './assets/logo.png';
 import HistoryView from './pages/HistoryView';
 import SettingsView from './pages/SettingsView';
 import ReviewScan from './pages/ReviewScan';
@@ -40,11 +40,11 @@ function Layout({ children }) {
 
   return (
     <div className="flex min-h-screen bg-[#0d1117] text-slate-300 font-sans">
-      <aside className="w-64 border-r border-slate-800 bg-[#111318] flex flex-col justify-between hidden md:flex sticky top-0 h-screen p-5 flex-shrink-0">
-        <div className="space-y-6">
-          <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-            <Link to="/" className="flex items-center group">
-              <Logo height={57} showWordmark={true} className="transition-opacity group-hover:opacity-75" />
+      <aside className="w-64 border-r border-slate-800 bg-[#111318] flex flex-col justify-between hidden md:flex sticky top-0 h-screen pt-3 px-5 pb-5 flex-shrink-0">
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+          <Link to="/" className="block w-full">
+              <img src={logoImg} alt="Sentinel AI" className="w-full object-contain" />
             </Link>
           </div>
           <nav className="flex flex-col gap-1.5 font-mono text-xs uppercase tracking-wider">
@@ -99,9 +99,9 @@ function Layout({ children }) {
       <div className="flex-1 flex flex-col min-h-screen overflow-x-hidden">
         {/* Mobile Header (visible only on mobile) */}
         <header className="md:hidden bg-[#111318] border-b border-slate-800 sticky top-0 z-10 p-4 flex items-center justify-between shadow-sm">
-          <Link to="/" className="flex items-center group">
-            <Logo height={47} showWordmark={true} className="transition-opacity group-hover:opacity-75" />
-          </Link>
+          <Link to="/" className="block">
+              <img src={logoImg} alt="Sentinel AI" className="h-8 object-contain" />
+            </Link>
           <div className="flex items-center gap-2">
             <span className="text-xs text-slate-400 truncate max-w-[120px]">{user.email}</span>
             <button

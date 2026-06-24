@@ -252,6 +252,41 @@ function highlightWords(text, spans, showHighlights, isTranslationActive, hovere
   );
 }
 
+function CountUp({ end, duration = 1000, delay = 150 }) {
+  const [count, setCount] = useState(0);
+
+  useEffect(() => {
+    let startTimestamp = null;
+    let timer = null;
+
+    const step = (timestamp) => {
+      if (!startTimestamp) startTimestamp = timestamp;
+      const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+      
+      // easeOutQuad
+      const easedProgress = progress * (2 - progress);
+      setCount(Math.floor(easedProgress * end));
+
+      if (progress < 1) {
+        timer = requestAnimationFrame(step);
+      } else {
+        setCount(end);
+      }
+    };
+
+    const delayTimeout = setTimeout(() => {
+      timer = requestAnimationFrame(step);
+    }, delay);
+
+    return () => {
+      clearTimeout(delayTimeout);
+      if (timer) cancelAnimationFrame(timer);
+    };
+  }, [end, duration, delay]);
+
+  return <>{count}</>;
+}
+
 export default function ReviewScan() {
   const location = useLocation();
   const scanInput = location.state;
@@ -259,6 +294,8 @@ export default function ReviewScan() {
   const { user, profile } = useAuth();
   
   const [loading, setLoading] = useState(true);
+  const [recordDbId, setRecordDbId] = useState(scanInput?.id || null);
+  const [isExistingScan, setIsExistingScan] = useState(scanInput?.isExistingScan || false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   
@@ -448,7 +485,12 @@ export default function ReviewScan() {
       parsedSalaryUsd,
       locationCountry,
       detectedLanguage,
-      contactMethod: formData.contact_method
+      contactMethod: formData.contact_method,
+      suspiciousSpans,
+      predictedPlaybook,
+      obfuscationLevel: heuristicsResult?.obfuscationLevel ?? null,
+      sourcePlatform,
+      employer: formData.employer_identity
     });
     const currentScore = riskScoreResult.score;
 
@@ -772,7 +814,12 @@ export default function ReviewScan() {
         parsedSalaryUsd,
         locationCountry,
         detectedLanguage,
-        contactMethod: formData.contact_method
+        contactMethod: formData.contact_method,
+        suspiciousSpans,
+        predictedPlaybook,
+        obfuscationLevel: heuristicsResult?.obfuscationLevel ?? null,
+        sourcePlatform,
+        employer: formData.employer_identity
       });
       const currentScore = currentScoreResult.score;
 
@@ -819,7 +866,12 @@ export default function ReviewScan() {
       parsedSalaryUsd,
       locationCountry,
       detectedLanguage,
-      contactMethod: formData.contact_method
+      contactMethod: formData.contact_method,
+      suspiciousSpans,
+      predictedPlaybook,
+      obfuscationLevel: heuristicsResult?.obfuscationLevel ?? null,
+      sourcePlatform,
+      employer: formData.employer_identity
     });
     const currentScore = currentScoreResult.score;
 
@@ -1629,6 +1681,81 @@ export default function ReviewScan() {
       setNormalizedText(result.normalized_text || '');
       setSuspiciousSpans(result.suspicious_spans || []);
       setPredictedPlaybook(result.predicted_playbook || []);
+
+      // Auto-save to database
+      try {
+        const scoreResult = calculateRiskScore(result.detected_red_flags || [], {
+          parsedSalaryUsd: result.parsed_salary_usd,
+          locationCountry: result.location_country,
+          detectedLanguage: result.detected_language,
+          contactMethod: result.contact_method,
+          suspiciousSpans: result.suspicious_spans || [],
+          predictedPlaybook: result.predicted_playbook || [],
+          obfuscationLevel: null,
+          sourcePlatform: scanInput?.sourcePlatform || 'unspecified',
+          employer: result.employer_identity
+        });
+        const score = scoreResult.score;
+        const level = getRiskLevel(score);
+
+        let imageUrl = scanInput.image || null;
+        if (imageUrl && imageUrl.startsWith('data:image/')) {
+          try {
+            imageUrl = await uploadBase64Image(imageUrl);
+          } catch (uploadErr) {
+            console.error("Image upload failed during auto-save:", uploadErr);
+          }
+        }
+
+        const autoRecord = {
+          timestamp: Date.now(),
+          jobTitle: result.job_title || '',
+          employer: result.employer_identity || '',
+          riskScore: score,
+          riskLevel: level.label,
+          extractedData: {
+            job_title: result.job_title || '',
+            employer_identity: result.employer_identity || '',
+            salary_range: result.salary_range || '',
+            location: result.location || '',
+            industry: result.industry || '',
+            contact_method: result.contact_method || '',
+            suspicious_spans: result.suspicious_spans || [],
+            predicted_playbook: result.predicted_playbook || []
+          },
+          activeFlags: result.detected_red_flags || [],
+          originalImage: imageUrl,
+          originalText: scanInput.text || '',
+          ocrText: result.raw_ocr_text || null,
+          aiReview: result.ai_review || '',
+          parsedSalaryUsd: result.parsed_salary_usd || null,
+          locationCountry: result.location_country || null,
+          detectedLanguage: result.detected_language || 'English',
+          isTranslated: result.is_translated || false,
+          translatedText: result.translated_text || null,
+          userId: user?.id || null,
+          normalizedText: result.normalized_text || '',
+          notes: '',
+          sourcePlatform: sourcePlatform || 'unspecified',
+          sourceUrl: sourceUrl || 'unspecified',
+          ingestionMethod: ingestionMethod || 'Analyst Upload',
+          postDate: postDate || 'unspecified'
+        };
+
+        const { data: insertedData, error: dbErr } = await supabase
+          .from('scans')
+          .insert(mapRecordToDb(autoRecord))
+          .select();
+        
+        if (dbErr) throw dbErr;
+        
+        if (insertedData && insertedData.length > 0) {
+          setRecordDbId(insertedData[0].id);
+          setIsExistingScan(true);
+        }
+      } catch (autoSaveErr) {
+        console.error("Auto-save failed:", autoSaveErr);
+      }
     } catch (err) {
       console.error(err);
       setError(err.message || 'Verification scan failed. Please check your API key and network.');
@@ -1650,7 +1777,12 @@ export default function ReviewScan() {
         parsedSalaryUsd,
         locationCountry,
         detectedLanguage,
-        contactMethod: formData.contact_method
+        contactMethod: formData.contact_method,
+        suspiciousSpans,
+        predictedPlaybook,
+        obfuscationLevel: heuristicsResult?.obfuscationLevel ?? null,
+        sourcePlatform,
+        employer: formData.employer_identity
       });
       const score = scoreResult.score;
       const level = getRiskLevel(score);
@@ -1666,7 +1798,7 @@ export default function ReviewScan() {
       }
 
       const record = {
-        timestamp: scanInput.isExistingScan ? scanInput.timestamp : Date.now(),
+        timestamp: (scanInput.isExistingScan || isExistingScan) ? (scanInput.timestamp || Date.now()) : Date.now(),
         jobTitle: formData.job_title,
         employer: formData.employer_identity,
         riskScore: score,
@@ -1697,11 +1829,11 @@ export default function ReviewScan() {
 
       const mappedRecord = mapRecordToDb(record);
 
-      if (scanInput.isExistingScan && scanInput.id) {
+      if ((scanInput.isExistingScan || isExistingScan) && (scanInput.id || recordDbId)) {
         const { error: dbErr } = await supabase
           .from('scans')
           .update(mappedRecord)
-          .eq('id', scanInput.id);
+          .eq('id', scanInput.id || recordDbId);
         if (dbErr) throw dbErr;
       } else {
         const { error: dbErr } = await supabase
@@ -1908,7 +2040,12 @@ export default function ReviewScan() {
     parsedSalaryUsd,
     locationCountry,
     detectedLanguage,
-    contactMethod: formData.contact_method
+    contactMethod: formData.contact_method,
+    suspiciousSpans,
+    predictedPlaybook,
+    obfuscationLevel: heuristicsResult?.obfuscationLevel ?? null,
+    sourcePlatform,
+    employer: formData.employer_identity
   });
   const score = scoreResult.score;
   const scoreDetails = scoreResult.details;
@@ -1982,7 +2119,7 @@ export default function ReviewScan() {
                 3. Commit Case
               </div>
               <p className="text-slate-400 leading-relaxed text-[11px]">
-                Click `Save Scan` in the top sticky bar to save this scan profile to the database and finalize the audit.
+                Click `Update` in the top sticky bar to save this scan profile to the database and finalize the audit.
               </p>
             </div>
           </div>
@@ -2014,7 +2151,7 @@ export default function ReviewScan() {
             className="bg-amber-500 hover:bg-amber-600 disabled:bg-slate-800 disabled:text-slate-650 text-[#0d1117] font-bold px-3 py-1.5 rounded transition-all active:scale-[0.98] font-mono text-[10px] uppercase flex items-center gap-1.5 border border-amber-400/20"
           >
             {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-            {saving ? 'Saving...' : 'Save Scan'}
+            {saving ? 'Updating...' : 'Update'}
           </button>
         </div>
       </div>
@@ -2038,6 +2175,11 @@ export default function ReviewScan() {
         const scoreBorder = score >= 60 ? 'border-red-800/40' : score >= 30 ? 'border-amber-800/40' : 'border-amber-800/40';
         // rotation so arc starts at bottom-left
         const rotation = 150;
+        // tip coordinate calculation for the flare glow
+        const angleRad = ((rotation + fillPct * arcDeg) * Math.PI) / 180;
+        const flareX = (gaugeSize / 2) + r * Math.cos(angleRad);
+        const flareY = (gaugeSize / 2) + r * Math.sin(angleRad);
+
         return (
           <div className={`rounded overflow-hidden border ${scoreBorder}`} style={{background:'#111318'}}>
             {/* Gauge hero */}
@@ -2054,11 +2196,67 @@ export default function ReviewScan() {
                   style={{ position: 'absolute', top: 0, left: 0, overflow: 'visible' }}
                 >
                   <defs>
-                    <filter id="score-glow">
-                      <feGaussianBlur stdDeviation="4" result="blur"/>
-                      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+                    {/* Layered bloom filter: wide soft halo + tight bright core */}
+                    <filter id="score-glow" x="-40%" y="-40%" width="180%" height="180%">
+                      <feGaussianBlur in="SourceGraphic" stdDeviation="5" result="blur-wide"/>
+                      <feGaussianBlur in="SourceGraphic" stdDeviation="2" result="blur-tight"/>
+                      <feMerge>
+                        <feMergeNode in="blur-wide"/>
+                        <feMergeNode in="blur-tight"/>
+                        <feMergeNode in="SourceGraphic"/>
+                      </feMerge>
                     </filter>
+                    {/* Flare bloom: very soft spread for the tip corona */}
+                    <filter id="flare-bloom" x="-200%" y="-200%" width="500%" height="500%">
+                      <feGaussianBlur in="SourceGraphic" stdDeviation="8" result="outer"/>
+                      <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="inner"/>
+                      <feMerge>
+                        <feMergeNode in="outer"/>
+                        <feMergeNode in="inner"/>
+                        <feMergeNode in="SourceGraphic"/>
+                      </feMerge>
+                    </filter>
+                    <linearGradient id="high-risk-grad" x1="0%" y1="100%" x2="100%" y2="0%">
+                      <stop offset="0%" stopColor="#991b1b" />
+                      <stop offset="50%" stopColor="#ef4444" />
+                      <stop offset="100%" stopColor="#f87171" />
+                    </linearGradient>
+                    <linearGradient id="med-risk-grad" x1="0%" y1="100%" x2="100%" y2="0%">
+                      <stop offset="0%" stopColor="#b45309" />
+                      <stop offset="50%" stopColor="#f59e0b" />
+                      <stop offset="100%" stopColor="#fbbf24" />
+                    </linearGradient>
+                    <linearGradient id="low-risk-grad" x1="0%" y1="100%" x2="100%" y2="0%">
+                      <stop offset="0%" stopColor="#047857" />
+                      <stop offset="50%" stopColor="#10b981" />
+                      <stop offset="100%" stopColor="#34d399" />
+                    </linearGradient>
                   </defs>
+                  <style>{`
+                    @keyframes shimmer-sweep {
+                      0%   { stroke-dashoffset: ${arcLen}; }
+                      100% { stroke-dashoffset: -${arcLen}; }
+                    }
+                    @keyframes shimmer-sweep-slow {
+                      0%   { stroke-dashoffset: ${arcLen * 0.6}; opacity: 0; }
+                      15%  { opacity: 1; }
+                      85%  { opacity: 0.6; }
+                      100% { stroke-dashoffset: -${arcLen * 1.4}; opacity: 0; }
+                    }
+                    @keyframes corona-pulse {
+                      0%, 100% { r: 5px;   opacity: 0.55; }
+                      40%       { r: 8px;   opacity: 0.90; }
+                      70%       { r: 6.5px; opacity: 0.75; }
+                    }
+                    @keyframes corona-outer-pulse {
+                      0%, 100% { r: 10px; opacity: 0.10; }
+                      50%       { r: 16px; opacity: 0.25; }
+                    }
+                    @keyframes halo-breathe {
+                      0%, 100% { opacity: 0.06; stroke-width: ${strokeW + 4}px; }
+                      50%       { opacity: 0.14; stroke-width: ${strokeW + 10}px; }
+                    }
+                  `}</style>
                   {/* Track arc */}
                   <circle
                     cx={gaugeSize/2} cy={gaugeSize/2} r={r}
@@ -2074,22 +2272,88 @@ export default function ReviewScan() {
                   <circle
                     cx={gaugeSize/2} cy={gaugeSize/2} r={r}
                     fill="none"
-                    stroke={scoreColor}
+                    stroke={`url(#${score >= 60 ? 'high-risk-grad' : score >= 30 ? 'med-risk-grad' : 'low-risk-grad'})`}
                     strokeWidth={strokeW}
                     strokeDasharray={`${arcLen} ${gapLen}`}
                     strokeDashoffset={scoreBarsVisible ? dashOffset : arcLen}
                     strokeLinecap="round"
                     filter="url(#score-glow)"
                     transform={`rotate(${rotation} ${gaugeSize/2} ${gaugeSize/2})`}
-                    style={{ transition: 'stroke-dashoffset 1s cubic-bezier(0.34,1.56,0.64,1)', transitionDelay: '150ms' }}
+                    style={{ transition: 'stroke-dashoffset 1.2s cubic-bezier(0.34, 1.56, 0.64, 1)', transitionDelay: '150ms' }}
                   />
+                  {/* Ambient halo — wide breathable glow ring clipped to filled arc */}
+                  {scoreBarsVisible && (
+                    <circle
+                      cx={gaugeSize/2} cy={gaugeSize/2} r={r}
+                      fill="none"
+                      stroke={scoreColor}
+                      strokeDasharray={`${fillLen} ${gapLen + (arcLen - fillLen)}`}
+                      strokeLinecap="round"
+                      transform={`rotate(${rotation} ${gaugeSize/2} ${gaugeSize/2})`}
+                      style={{
+                        animation: 'halo-breathe 4s ease-in-out infinite',
+                        filter: `blur(6px)`,
+                        opacity: 0.12,
+                        strokeWidth: strokeW + 8,
+                      }}
+                    />
+                  )}
+                  {/* Fast shimmer spark streak */}
+                  {scoreBarsVisible && (
+                    <circle
+                      cx={gaugeSize/2} cy={gaugeSize/2} r={r}
+                      fill="none"
+                      stroke="rgba(255,255,255,0.30)"
+                      strokeWidth={strokeW - 4}
+                      strokeDasharray={`8 ${arcLen}`}
+                      strokeLinecap="round"
+                      transform={`rotate(${rotation} ${gaugeSize/2} ${gaugeSize/2})`}
+                      style={{ animation: 'shimmer-sweep 2.6s linear infinite' }}
+                    />
+                  )}
+                  {/* Slow wide shimmer bloom */}
+                  {scoreBarsVisible && (
+                    <circle
+                      cx={gaugeSize/2} cy={gaugeSize/2} r={r}
+                      fill="none"
+                      stroke={scoreColor}
+                      strokeWidth={strokeW + 2}
+                      strokeDasharray={`30 ${arcLen}`}
+                      strokeLinecap="round"
+                      transform={`rotate(${rotation} ${gaugeSize/2} ${gaugeSize/2})`}
+                      filter="url(#score-glow)"
+                      style={{ animation: 'shimmer-sweep-slow 5s ease-in-out infinite' }}
+                    />
+                  )}
+                  {/* Tip flare — outer corona (wide soft bloom) */}
+                  {scoreBarsVisible && (
+                    <circle
+                      cx={flareX}
+                      cy={flareY}
+                      fill={scoreColor}
+                      filter="url(#flare-bloom)"
+                      style={{ animation: 'corona-outer-pulse 3.5s ease-in-out infinite' }}
+                    />
+                  )}
+                  {/* Tip flare — inner bright core */}
+                  {scoreBarsVisible && (
+                    <circle
+                      cx={flareX}
+                      cy={flareY}
+                      fill="white"
+                      filter="url(#score-glow)"
+                      style={{ animation: 'corona-pulse 3s ease-in-out infinite' }}
+                    />
+                  )}
                   {/* Center score label */}
                   <text
                     x={gaugeSize/2} y={gaugeSize/2 + 2}
                     textAnchor="middle" dominantBaseline="middle"
                     fontSize="40" fontWeight="900" fontFamily="monospace"
                     fill="white"
-                  >{score}</text>
+                  >
+                    {scoreBarsVisible ? <CountUp end={score} /> : '0'}
+                  </text>
                   <text
                     x={gaugeSize/2} y={gaugeSize/2 + 26}
                     textAnchor="middle" dominantBaseline="middle"
