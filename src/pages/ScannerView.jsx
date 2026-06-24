@@ -12,19 +12,24 @@ export default function ScannerView() {
   const [activeTab, setActiveTab] = useState('camera'); // 'camera', 'upload', 'text', 'batch'
   const [capturedImage, setCapturedImage] = useState(null);
   const [pastedText, setPastedText] = useState('');
-  
+  const [isCameraActive, setIsCameraActive] = useState(false);
+  const [showBriefing, setShowBriefing] = useState(() => {
+    const saved = localStorage.getItem('sentinel_show_briefing');
+    return saved !== 'false';
+  });
+
   // Drag & drop state
   const [isDragging, setIsDragging] = useState(false);
   const [imageMeta, setImageMeta] = useState(null);
   const [csvMapping, setCsvMapping] = useState(null);
-  
+
   // Metadata state
   const [sourcePlatform, setSourcePlatform] = useState('unspecified');
   const [sourceUrl, setSourceUrl] = useState('');
   const [ingestionMethod, setIngestionMethod] = useState('Analyst Upload');
   const [postDate, setPostDate] = useState('');
   const [isMetadataExpanded, setIsMetadataExpanded] = useState(false);
-  
+
   // Batch processing state
   const [batchFile, setBatchFile] = useState(null);
   const [batchRows, setBatchRows] = useState([]);
@@ -37,7 +42,7 @@ export default function ScannerView() {
   const [shouldAbortBatch, setShouldAbortBatch] = useState(false);
   const [batchLogs, setBatchLogs] = useState([]);
   const [isBatchDone, setIsBatchDone] = useState(false);
-  
+
   const abortRef = useRef(false);
   const logsContainerRef = useRef(null);
 
@@ -59,7 +64,7 @@ export default function ScannerView() {
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(false);
-    
+
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       const file = e.dataTransfer.files[0];
       if (activeTab === 'upload') {
@@ -88,26 +93,30 @@ export default function ScannerView() {
     const time = new Date().toLocaleTimeString();
     setBatchLogs(prev => [...prev, { time, type, message }]);
   };
-  
+
   // Camera specific
   const videoRef = useRef(null);
   const [stream, setStream] = useState(null);
 
   const startCamera = async () => {
     try {
-      const mediaStream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: 'environment' } 
+      const mediaStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment' }
       });
       setStream(mediaStream);
-      if (videoRef.current) {
-        videoRef.current.srcObject = mediaStream;
-      }
     } catch (err) {
       console.error("Error accessing camera:", err);
       // Fallback to upload if camera fails
       setActiveTab('upload');
     }
   };
+
+  // Attach stream to video element when stream is ready and video DOM element mounts
+  useEffect(() => {
+    if (stream && videoRef.current) {
+      videoRef.current.srcObject = stream;
+    }
+  }, [stream]);
 
   const stopCamera = useCallback(() => {
     if (stream) {
@@ -128,11 +137,8 @@ export default function ScannerView() {
   // Handle tab change
   const handleTabChange = (tab) => {
     setActiveTab(tab);
-    if (tab === 'camera' && !capturedImage) {
-      startCamera();
-    } else {
-      stopCamera();
-    }
+    stopCamera();
+    setIsCameraActive(false);
   };
 
   const capturePhoto = () => {
@@ -171,7 +177,7 @@ export default function ScannerView() {
       setBatchFile(file);
       const fileNameWithoutExt = file.name.replace(/\.[^/.]+$/, "");
       setBatchName(fileNameWithoutExt || `Imported Batch ${new Date().toLocaleDateString()}`);
-      
+
       const reader = new FileReader();
       reader.onload = (event) => {
         const text = event.target.result;
@@ -196,6 +202,7 @@ export default function ScannerView() {
     setIngestionMethod('Analyst Upload');
     setPostDate('');
     if (activeTab === 'camera') {
+      setIsCameraActive(true);
       startCamera();
     }
   };
@@ -207,7 +214,7 @@ export default function ScannerView() {
 
   const startBatchProcess = async () => {
     if (batchRows.length === 0) return;
-    
+
     const apiKey = profile?.gemini_api_key || localStorage.getItem('gemini_api_key') || import.meta.env.VITE_GEMINI_API_KEY;
     const modelName = profile?.gemini_model || localStorage.getItem('gemini_model');
     if (!apiKey) {
@@ -239,7 +246,7 @@ export default function ScannerView() {
       const jobTitle = row.job_title || `Job Posting #${i + 1}`;
       const displayTitle = jobTitle.length > 60 ? jobTitle.substring(0, 60) + '...' : jobTitle;
       setCurrentProcessingName(displayTitle);
-      
+
       // Check for duplicate in database to avoid wasting API calls
       let isDuplicate = false;
       try {
@@ -333,386 +340,570 @@ export default function ScannerView() {
   };
 
   const handleScan = () => {
-     navigate('/review', { 
-       state: { 
-         image: capturedImage, 
-         text: pastedText,
-         isExistingScan: false,
-         sourcePlatform: sourcePlatform || 'unspecified',
-         sourceUrl: sourceUrl || 'unspecified',
-         ingestionMethod: ingestionMethod || 'Analyst Upload',
-         postDate: postDate || 'unspecified'
-       } 
-     });
+    navigate('/review', {
+      state: {
+        image: capturedImage,
+        text: pastedText,
+        isExistingScan: false,
+        sourcePlatform: sourcePlatform || 'unspecified',
+        sourceUrl: sourceUrl || 'unspecified',
+        ingestionMethod: ingestionMethod || 'Analyst Upload',
+        postDate: postDate || 'unspecified'
+      }
+    });
   };
 
   return (
-    <div className="flex flex-col flex-1 bg-[#111318] rounded border border-slate-800 overflow-hidden my-4">
-      
-      {/* Tabs - Pill style container */}
-      <div className="p-1.5 bg-[#0a0c12] border-b border-slate-800 flex gap-1.5 overflow-x-auto">
-        <button 
-          onClick={() => handleTabChange('camera')}
-          className={`flex-1 py-2 px-3 text-xs font-mono font-bold uppercase tracking-wider flex items-center justify-center gap-2 rounded transition-all whitespace-nowrap ${activeTab === 'camera' ? 'bg-[#1b2230] text-amber-500 border border-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
-        >
-          <Camera className="w-3.5 h-3.5 flex-shrink-0" /> Camera
-        </button>
-        <button 
-          onClick={() => handleTabChange('upload')}
-          className={`flex-1 py-2 px-3 text-xs font-mono font-bold uppercase tracking-wider flex items-center justify-center gap-2 rounded transition-all whitespace-nowrap ${activeTab === 'upload' ? 'bg-[#1b2230] text-amber-500 border border-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
-        >
-          <ImageIcon className="w-3.5 h-3.5 flex-shrink-0" /> Upload Image
-        </button>
-        <button 
-          onClick={() => handleTabChange('text')}
-          className={`flex-1 py-2 px-3 text-xs font-mono font-bold uppercase tracking-wider flex items-center justify-center gap-2 rounded transition-all whitespace-nowrap ${activeTab === 'text' ? 'bg-[#1b2230] text-amber-500 border border-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
-        >
-          <FileText className="w-3.5 h-3.5 flex-shrink-0" /> Paste Text
-        </button>
-        <button 
-          onClick={() => handleTabChange('batch')}
-          className={`flex-1 py-2 px-3 text-xs font-mono font-bold uppercase tracking-wider flex items-center justify-center gap-2 rounded transition-all whitespace-nowrap ${activeTab === 'batch' ? 'bg-[#1b2230] text-amber-500 border border-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
-        >
-          <FileSpreadsheet className="w-3.5 h-3.5 flex-shrink-0" /> Batch CSV
-        </button>
-      </div>
+    <div className="flex flex-col lg:flex-row flex-1 bg-[#111318] rounded border border-slate-800 overflow-hidden my-4">
 
-      {/* Content Area with Drag & Drop Listener */}
-      <div 
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-        className={`flex-1 p-4 flex flex-col items-center justify-center bg-[#0a0c12]/20 min-h-[400px] transition-all relative ${isDragging ? 'bg-amber-500/5' : ''}`}
-      >
-        
-        {/* Drag & Drop Overlay */}
-        {isDragging && (
-          <div className="absolute inset-4 border-2 border-dashed border-amber-550 bg-[#0d1117] rounded flex flex-col items-center justify-center z-15 animate-fade-in">
-            <Upload className="w-12 h-12 text-amber-500 animate-pulse mb-3" />
-            <p className="text-amber-500 font-mono text-sm font-bold uppercase tracking-wider">Drop File to Ingest</p>
-            <p className="text-slate-500 text-xs mt-1">Accepts {activeTab === 'upload' ? 'Images (PNG, JPG, WEBP)' : 'CSV Spreadsheet'}</p>
-          </div>
-        )}
+      {/* Left Column: Console Panel */}
+      <div className="flex-1 flex flex-col border-b lg:border-b-0 lg:border-r border-slate-800">
 
-        {capturedImage ? (
-          <div className="relative w-full max-w-md bg-[#111318] border border-slate-800 rounded p-4 space-y-4">
-            <div className="relative aspect-video w-full rounded overflow-hidden border border-slate-800">
-              <img src={capturedImage} alt="Captured" className="w-full h-full object-cover" />
+        {/* System Briefing / Onboarding Panel */}
+        <div className="bg-[#0a0c12] border-b border-slate-800 transition-all duration-300">
+          <button
+            type="button"
+            onClick={() => {
+              const nextState = !showBriefing;
+              setShowBriefing(nextState);
+              localStorage.setItem('sentinel_show_briefing', String(nextState));
+            }}
+            className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-[#1b2230]/30 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+              <h2 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-200">
+                System Briefing: Ingestion Terminal v1.0.4
+              </h2>
             </div>
-            
-            <div className="flex items-center justify-between border-t border-slate-800 pt-3">
-              <div className="min-w-0 flex-1 pr-4">
-                <p className="text-xs font-mono font-bold text-slate-300 truncate">
-                  {imageMeta?.name || 'Captured_Scan_Frame.jpg'}
-                </p>
-                <p className="text-[10px] text-slate-500 font-mono">
-                  {imageMeta?.size || 'Direct capture'} • {imageMeta?.type || 'image/jpeg'}
-                </p>
-              </div>
-              <button 
-                onClick={resetCapture}
-                className="px-3 py-1.5 text-xs font-mono font-bold uppercase tracking-wider text-rose-455 hover:bg-rose-500/10 rounded transition-colors border border-rose-500/25 bg-rose-500/5"
-              >
-                Clear
-              </button>
+            <div className="flex items-center gap-1.5 font-mono text-[10px] text-slate-500 uppercase">
+              <span>{showBriefing ? 'Hide Briefing' : 'Show Briefing'}</span>
+              {showBriefing ? (
+                <ChevronUp className="w-3.5 h-3.5" />
+              ) : (
+                <ChevronDown className="w-3.5 h-3.5" />
+              )}
             </div>
-          </div>
-        ) : activeTab === 'camera' ? (
-          <div className="w-full max-w-md aspect-[3/4] bg-[#0a0c12] rounded overflow-hidden relative border border-slate-800 flex items-center justify-center">
-             {stream ? (
-                <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover" />
-             ) : (
-                <div className="text-slate-550 text-sm font-mono">Requesting camera access...</div>
-             )}
-             
-             {stream && (
-                <div className="absolute bottom-8 left-0 right-0 flex justify-center">
-                  <button 
-                    onClick={capturePhoto}
-                    className="w-16 h-16 bg-[#1b2230] rounded-full border-4 border-amber-500 shadow-xl active:scale-95 transition-transform"
-                    aria-label="Take photo"
-                  />
+          </button>
+
+          {showBriefing && (
+            <div className="p-4 border-t border-slate-800/60 bg-[#0a0c12]/40 text-xs font-mono space-y-4 grid grid-cols-1 md:grid-cols-2 gap-4 md:space-y-0">
+              <div className="space-y-2">
+                <div className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">
+                  Console Overview
                 </div>
-             )}
-          </div>
-        ) : activeTab === 'upload' ? (
-          <div className="w-full max-w-md h-64 border-2 border-dashed border-slate-800 rounded flex flex-col items-center justify-center bg-[#111318] transition-colors hover:border-amber-500/40">
-             <Upload className="w-10 h-10 text-slate-500 mb-3" />
-             <p className="text-slate-400 text-sm mb-1 font-medium font-mono">Upload or Drop Flyer Image</p>
-             <p className="text-slate-500 text-[10px] font-mono mb-4">PNG, JPG, or WEBP formats</p>
-             <label className="bg-amber-500 hover:bg-amber-600 text-[#0d1117] px-6 py-2.5 rounded font-bold cursor-pointer transition-colors font-mono text-sm">
-               Choose File
-               <input type="file" accept="image/png, image/jpeg, image/webp" className="hidden" onChange={handleFileUpload} />
-             </label>
-          </div>
-        ) : activeTab === 'text' ? (
-          <div className="w-full max-w-md flex flex-col h-full min-h-[300px]">
-            <textarea 
-              className="w-full flex-1 p-4 rounded border border-slate-800 bg-[#0a0c12] text-slate-200 resize-none focus:ring-1 focus:ring-amber-550 focus:border-amber-500 outline-none text-sm font-mono"
-              placeholder="Paste the job description text here..."
-              value={pastedText}
-              onChange={(e) => setPastedText(e.target.value)}
-            />
-          </div>
-        ) : (
-          <div className="w-full max-w-md flex flex-col gap-4">
-            {!batchFile ? (
-              <div className="h-64 border-2 border-dashed border-slate-800 rounded flex flex-col items-center justify-center bg-[#111318] transition-colors hover:border-amber-500/40 p-6">
-                <FileSpreadsheet className="w-10 h-10 text-slate-500 mb-3" />
-                <p className="text-slate-400 text-sm mb-1 text-center font-medium font-mono">Upload or Drop CSV File</p>
-                <p className="text-slate-500 text-[10px] font-mono mb-4 text-center">Contains row-by-row job listings to analyze</p>
-                <label className="bg-amber-500 hover:bg-amber-600 text-[#0d1117] px-6 py-2.5 rounded font-bold cursor-pointer transition-colors font-mono text-sm">
-                  Choose CSV File
-                  <input type="file" accept=".csv" className="hidden" onChange={handleCSVUpload} />
-                </label>
-              </div>
-            ) : (
-              <div className="bg-[#111318] border border-slate-800 rounded p-5 space-y-4">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2.5 bg-amber-500/10 text-amber-550 rounded">
-                      <FileSpreadsheet className="w-6 h-6" />
-                    </div>
-                    <div className="min-w-0">
-                      <h4 className="font-bold text-slate-200 text-sm truncate max-w-[200px] font-mono">{batchFile.name}</h4>
-                      <p className="text-xs text-slate-500 font-mono">{batchRows.length} rows detected</p>
-                    </div>
+                <p className="text-slate-400 leading-relaxed">
+                  Sentinel AI scans suspect job advertisements to verify legitimacy and screen for human trafficking indicators.
+                  Ingest listings using the tabs below to run cross-referencing OSINT heuristic scoring.
+                </p>
+                <div className="grid grid-cols-2 gap-2 pt-1.5">
+                  <div className="border border-slate-800 bg-[#111318]/50 p-2 rounded">
+                    <div className="text-slate-500 font-bold text-[9px] uppercase">Active Heuristics</div>
+                    <div className="text-amber-500 font-bold text-[10px] mt-0.5">24 Core Indicators</div>
                   </div>
-                  <button 
-                    onClick={resetCapture}
-                    className="p-1.5 text-slate-500 hover:text-slate-300 transition-colors"
+                  <div className="border border-slate-800 bg-[#111318]/50 p-2 rounded">
+                    <div className="text-slate-500 font-bold text-[9px] uppercase">Target Threats</div>
+                    <div className="text-[#3fb950] font-bold text-[10px] mt-0.5">Labor & Fraud Rings</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">
+                  Core Scan Rules & Red Flags
+                </div>
+                <ul className="space-y-1 text-slate-400">
+                  <li className="flex items-start gap-2">
+                    <span className="text-amber-500/80">•</span>
+                    <span><strong>Employer Legitimacy:</strong> Unverifiable firms, generic domain emails.</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-amber-500/80">•</span>
+                    <span><strong>Financial Risk:</strong> High pay for basic roles, upfront fees.</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-amber-500/80">•</span>
+                    <span><strong>OpSec Red Flags:</strong> High-pressure hire timelines, document surrender prompts.</span>
+                  </li>
+                </ul>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Tabs - Pill style container */}
+        <div className="p-1.5 bg-[#0a0c12] border-b border-slate-800 flex gap-1.5 overflow-x-auto">
+          <button
+            type="button"
+            onClick={() => handleTabChange('camera')}
+            className={`flex-1 py-2 px-3 text-xs font-mono font-bold uppercase tracking-wider flex items-center justify-center gap-2 rounded transition-all whitespace-nowrap ${activeTab === 'camera' ? 'bg-[#1b2230] text-amber-500 border border-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
+          >
+            <Camera className="w-3.5 h-3.5 flex-shrink-0" /> Camera
+          </button>
+          <button
+            type="button"
+            onClick={() => handleTabChange('upload')}
+            className={`flex-1 py-2 px-3 text-xs font-mono font-bold uppercase tracking-wider flex items-center justify-center gap-2 rounded transition-all whitespace-nowrap ${activeTab === 'upload' ? 'bg-[#1b2230] text-amber-500 border border-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
+          >
+            <ImageIcon className="w-3.5 h-3.5 flex-shrink-0" /> Upload Image
+          </button>
+          <button
+            type="button"
+            onClick={() => handleTabChange('text')}
+            className={`flex-1 py-2 px-3 text-xs font-mono font-bold uppercase tracking-wider flex items-center justify-center gap-2 rounded transition-all whitespace-nowrap ${activeTab === 'text' ? 'bg-[#1b2230] text-amber-500 border border-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
+          >
+            <FileText className="w-3.5 h-3.5 flex-shrink-0" /> Paste Text
+          </button>
+          <button
+            type="button"
+            onClick={() => handleTabChange('batch')}
+            className={`flex-1 py-2 px-3 text-xs font-mono font-bold uppercase tracking-wider flex items-center justify-center gap-2 rounded transition-all whitespace-nowrap ${activeTab === 'batch' ? 'bg-[#1b2230] text-amber-500 border border-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 flex-shrink-0" /> Batch CSV
+          </button>
+        </div>
+
+        {/* Content Area with Drag & Drop Listener */}
+        <div
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          className={`flex-1 p-4 flex flex-col items-center justify-center bg-[#0a0c12]/20 min-h-[400px] transition-all relative ${isDragging ? 'bg-amber-500/5' : ''}`}
+        >
+
+          {/* Drag & Drop Overlay */}
+          {isDragging && (
+            <div className="absolute inset-4 border-2 border-dashed border-amber-500/20 bg-[#0d1117] rounded flex flex-col items-center justify-center z-15 animate-fade-in">
+              <Upload className="w-12 h-12 text-amber-500 animate-pulse mb-3" />
+              <p className="text-amber-500 font-mono text-sm font-bold uppercase tracking-wider">Drop File to Ingest</p>
+              <p className="text-slate-500 text-xs mt-1">Accepts {activeTab === 'upload' ? 'Images (PNG, JPG, WEBP)' : 'CSV Spreadsheet'}</p>
+            </div>
+          )}
+
+          {capturedImage ? (
+            <div className="relative w-full max-w-md bg-[#111318] border border-slate-800 rounded p-4 space-y-4">
+              <div className="relative aspect-video w-full rounded overflow-hidden border border-slate-800">
+                <img src={capturedImage} alt="Captured" className="w-full h-full object-cover" />
+              </div>
+
+              <div className="flex items-center justify-between border-t border-slate-800 pt-3">
+                <div className="min-w-0 flex-1 pr-4">
+                  <p className="text-xs font-mono font-bold text-slate-300 truncate">
+                    {imageMeta?.name || 'Captured_Scan_Frame.jpg'}
+                  </p>
+                  <p className="text-[10px] text-slate-500 font-mono">
+                    {imageMeta?.size || 'Direct capture'} • {imageMeta?.type || 'image/jpeg'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={resetCapture}
+                  className="px-3 py-1.5 text-xs font-mono font-bold uppercase tracking-wider text-rose-400 hover:bg-rose-500/10 rounded transition-colors border border-rose-500/25 bg-rose-500/5"
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+          ) : activeTab === 'camera' ? (
+            <>
+              {!isCameraActive ? (
+                <div className="w-full max-w-md aspect-[3/4] bg-[#0a0c12] rounded overflow-hidden relative border border-slate-800 flex flex-col items-center justify-center p-6 space-y-4">
+                  <div className="relative flex items-center justify-center w-24 h-24">
+                    <div className="absolute inset-0 rounded-full border border-dashed border-amber-500/25 animate-spin duration-10000"></div>
+                    <div className="absolute inset-2 rounded-full border border-slate-800"></div>
+                    <div className="absolute inset-4 rounded-full border border-amber-500/10"></div>
+                    <Camera className="w-8 h-8 text-amber-500/80 z-10" />
+                  </div>
+                  <div className="text-center space-y-1 max-w-[280px]">
+                    <h4 className="font-mono font-bold text-slate-300 text-xs uppercase tracking-wide">Camera Scanner Offline</h4>
+                    <p className="font-mono text-[10px] text-slate-500 leading-normal">
+                      Used for scanning physical flyers, recruiting cards, or street posters to perform live OCR text analysis.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsCameraActive(true);
+                      startCamera();
+                    }}
+                    className="bg-amber-500 hover:bg-amber-600 text-[#0d1117] px-5 py-2.5 rounded font-bold transition-all font-mono text-xs uppercase tracking-wider flex items-center gap-1.5 active:scale-95 shadow-lg shadow-amber-500/10"
                   >
-                    <X className="w-4 h-4" />
+                    <Camera className="w-3.5 h-3.5" /> Activate Scanner Camera
                   </button>
                 </div>
-
-                {/* CSV Header Mapping Console */}
-                {csvMapping && (
-                  <div className="border border-slate-800 rounded overflow-hidden bg-[#0a0c12] p-3 font-mono text-[10px]">
-                    <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 pb-1.5 border-b border-slate-800">
-                      Terminal Column Mapping Console
+              ) : (
+                <div className="w-full max-w-md aspect-[3/4] bg-[#0a0c12] rounded overflow-hidden relative border border-slate-800 flex items-center justify-center">
+                  {stream ? (
+                    <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="text-slate-555 text-sm font-mono flex flex-col items-center gap-2">
+                      <Loader2 className="w-6 h-6 text-amber-500 animate-spin" />
+                      <span>Requesting camera access...</span>
                     </div>
-                    <div className="grid grid-cols-2 gap-y-1.5 text-slate-300">
-                      <div className="flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded bg-amber-500 flex-shrink-0 animate-pulse"></span>
-                        <span className="font-bold text-slate-500">DESC/TEXT:</span>
-                      </div>
-                      <div className="text-amber-500 truncate">➔ '{csvMapping.text}'</div>
+                  )}
 
-                      <div className="flex items-center gap-1.5">
-                        <span className={`w-2 h-2 rounded flex-shrink-0 ${csvMapping.jobTitle ? 'bg-amber-500' : 'bg-slate-700'}`}></span>
-                        <span className="font-bold text-slate-500">JOB_TITLE:</span>
-                      </div>
-                      <div className="truncate text-slate-400">
-                        {csvMapping.jobTitle ? `➔ '${csvMapping.jobTitle}'` : '✕ [Auto-detected by AI]'}
-                      </div>
+                  {stream && (
+                    <div className="absolute bottom-8 left-0 right-0 flex justify-center">
+                      <button
+                        type="button"
+                        onClick={capturePhoto}
+                        className="w-16 h-16 bg-[#1b2230] rounded-full border-4 border-amber-500 shadow-xl active:scale-95 transition-transform"
+                        aria-label="Take photo"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          ) : activeTab === 'upload' ? (
+            <div className="w-full max-w-md h-64 border-2 border-dashed border-slate-800 rounded flex flex-col items-center justify-center bg-[#111318] transition-colors hover:border-amber-500/40 p-4">
+              <Upload className="w-10 h-10 text-slate-500 mb-3" />
+              <p className="text-slate-400 text-sm mb-1 font-medium font-mono text-center">Upload or Drop Flyer Image</p>
+              <p className="text-slate-500 text-[10px] font-mono mb-4 text-center leading-normal max-w-[280px]">
+                Upload screenshots of online ads, WhatsApp group flyers, or site snaps (PNG, JPG, WEBP).
+              </p>
+              <label className="bg-amber-500 hover:bg-amber-600 text-[#0d1117] px-6 py-2.5 rounded font-bold cursor-pointer transition-colors font-mono text-sm">
+                Choose File
+                <input type="file" accept="image/png, image/jpeg, image/webp" className="hidden" onChange={handleFileUpload} />
+              </label>
+            </div>
+          ) : activeTab === 'text' ? (
+            <div className="w-full max-w-md flex flex-col h-full min-h-[300px]">
+              <div className="text-[10px] font-mono text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <FileText className="w-3.5 h-3.5 text-amber-500" />
+                <span>Input Console: Paste raw posting or message details</span>
+              </div>
+              <textarea
+                className="w-full flex-1 p-4 rounded border border-slate-800 bg-[#0a0c12] text-slate-200 resize-none focus:ring-1 focus:ring-amber-550 focus:border-amber-500 outline-none text-sm font-mono"
+                placeholder="Paste the job description text here..."
+                value={pastedText}
+                onChange={(e) => setPastedText(e.target.value)}
+              />
+            </div>
+          ) : (
+            <div className="w-full max-w-md flex flex-col gap-4">
+              <div className="text-[10px] font-mono text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                <FileSpreadsheet className="w-3.5 h-3.5 text-amber-500" />
+                <span>Bulk Ingestion: Run high-throughput database sweeps</span>
+              </div>
 
-                      <div className="flex items-center gap-1.5">
-                        <span className={`w-2 h-2 rounded flex-shrink-0 ${csvMapping.sourceUrl ? 'bg-amber-500' : 'bg-slate-700'}`}></span>
-                        <span className="font-bold text-slate-500">SOURCE_URL:</span>
-                      </div>
-                      <div className="truncate text-slate-400 font-semibold">
-                        {csvMapping.sourceUrl ? `➔ '${csvMapping.sourceUrl}'` : '✕ [Row Default: Unspecified]'}
-                      </div>
+              <div className="p-3 bg-red-950/20 border border-red-900/60 rounded text-[10px] text-red-400 font-mono leading-relaxed text-center">
+                <p className="font-bold uppercase tracking-wider mb-1 flex items-center justify-center gap-1 text-red-500">
+                  <AlertCircle className="w-3.5 h-3.5" />
+                  Proof of Concept Notice
+                </p>
+                This import method is fully functional but might fail due to the numerous AI calls (associated cost) .
+              </div>
 
-                      <div className="flex items-center gap-1.5">
-                        <span className={`w-2 h-2 rounded flex-shrink-0 ${csvMapping.postDate ? 'bg-amber-500' : 'bg-slate-700'}`}></span>
-                        <span className="font-bold text-slate-500">POST_DATE:</span>
+              {!batchFile ? (
+                <div className="h-64 border-2 border-dashed border-slate-800 rounded flex flex-col items-center justify-center bg-[#111318] transition-colors hover:border-amber-500/40 p-6">
+                  <FileSpreadsheet className="w-10 h-10 text-slate-500 mb-3" />
+                  <p className="text-slate-400 text-sm mb-1 text-center font-medium font-mono">Upload or Drop CSV File</p>
+                  <p className="text-slate-500 text-[10px] font-mono mb-4 text-center leading-normal max-w-[285px]">
+                    Analyze database exports containing multiple rows of job text.
+                  </p>
+                  <label className="bg-amber-500 hover:bg-amber-600 text-[#0d1117] px-6 py-2.5 rounded font-bold cursor-pointer transition-colors font-mono text-sm">
+                    Choose CSV File
+                    <input type="file" accept=".csv" className="hidden" onChange={handleCSVUpload} />
+                  </label>
+                </div>
+              ) : (
+                <div className="bg-[#111318] border border-slate-800 rounded p-5 space-y-4">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2.5 bg-amber-500/10 text-amber-550 rounded">
+                        <FileSpreadsheet className="w-6 h-6" />
                       </div>
-                      <div className="truncate text-slate-400 font-semibold">
-                        {csvMapping.postDate ? `➔ '${csvMapping.postDate}'` : '✕ [Row Default: Unspecified]'}
+                      <div className="min-w-0">
+                        <h4 className="font-bold text-slate-200 text-sm truncate max-w-[200px] font-mono">{batchFile.name}</h4>
+                        <p className="text-xs text-slate-500 font-mono">{batchRows.length} rows detected</p>
                       </div>
                     </div>
+                    <button
+                      type="button"
+                      onClick={resetCapture}
+                      className="p-1.5 text-slate-500 hover:text-slate-300 transition-colors"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
                   </div>
-                )}
 
-                <div className="space-y-2">
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide font-mono">
-                    Batch Name
-                  </label>
-                  <input
-                    type="text"
-                    value={batchName}
-                    onChange={(e) => setBatchName(e.target.value)}
-                    placeholder="E.g., Jobs from LinkedIn"
-                    className="w-full px-3 py-2 bg-[#0a0c12] border border-slate-800 rounded text-sm text-slate-200 focus:ring-1 focus:ring-amber-500 outline-none transition-all font-mono"
-                  />
+                  {/* CSV Header Mapping Console */}
+                  {csvMapping && (
+                    <div className="border border-slate-800 rounded overflow-hidden bg-[#0a0c12] p-3 font-mono text-[10px]">
+                      <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 pb-1.5 border-b border-slate-800">
+                        Terminal Column Mapping Console
+                      </div>
+                      <div className="grid grid-cols-2 gap-y-1.5 text-slate-300">
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded bg-amber-500 flex-shrink-0 animate-pulse"></span>
+                          <span className="font-bold text-slate-500">DESC/TEXT:</span>
+                        </div>
+                        <div className="text-amber-500 truncate">➔ '{csvMapping.text}'</div>
+
+                        <div className="flex items-center gap-1.5">
+                          <span className={`w-2 h-2 rounded flex-shrink-0 ${csvMapping.jobTitle ? 'bg-amber-500' : 'bg-slate-700'}`}></span>
+                          <span className="font-bold text-slate-500">JOB_TITLE:</span>
+                        </div>
+                        <div className="truncate text-slate-400">
+                          {csvMapping.jobTitle ? `➔ '${csvMapping.jobTitle}'` : '✕ [Auto-detected by AI]'}
+                        </div>
+
+                        <div className="flex items-center gap-1.5">
+                          <span className={`w-2 h-2 rounded flex-shrink-0 ${csvMapping.sourceUrl ? 'bg-amber-500' : 'bg-slate-700'}`}></span>
+                          <span className="font-bold text-slate-500">SOURCE_URL:</span>
+                        </div>
+                        <div className="truncate text-slate-400 font-semibold">
+                          {csvMapping.sourceUrl ? `➔ '${csvMapping.sourceUrl}'` : '✕ [Row Default: Unspecified]'}
+                        </div>
+
+                        <div className="flex items-center gap-1.5">
+                          <span className={`w-2 h-2 rounded flex-shrink-0 ${csvMapping.postDate ? 'bg-amber-500' : 'bg-slate-700'}`}></span>
+                          <span className="font-bold text-slate-500">POST_DATE:</span>
+                        </div>
+                        <div className="truncate text-slate-400 font-semibold">
+                          {csvMapping.postDate ? `➔ '${csvMapping.postDate}'` : '✕ [Row Default: Unspecified]'}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide font-mono">
+                      Batch Name
+                    </label>
+                    <input
+                      type="text"
+                      value={batchName}
+                      onChange={(e) => setBatchName(e.target.value)}
+                      placeholder="E.g., Jobs from LinkedIn"
+                      className="w-full px-3 py-2 bg-[#0a0c12] border border-slate-800 rounded text-sm text-slate-200 focus:ring-1 focus:ring-amber-500 outline-none transition-all font-mono"
+                    />
+                  </div>
                 </div>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+              )}
+            </div>
+          )}
+        </div>
 
-      {/* Source & Ingestion Metadata Accordion with Summary Badges */}
-      <div className="border-t border-slate-800 bg-[#0a0c12]/20 w-full">
-        <button
-          type="button"
-          onClick={() => setIsMetadataExpanded(prev => !prev)}
-          className="w-full px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between text-left hover:bg-[#1b2230]/40 transition-colors border-b border-slate-800 gap-2"
-        >
-          <div className="flex items-center gap-2 text-slate-300">
-            <Globe className="w-4 h-4 text-amber-500 flex-shrink-0" />
-            <span className="text-xs font-mono font-bold uppercase tracking-wider">Source & Ingestion Details</span>
-          </div>
-          
-          <div className="flex flex-wrap items-center gap-2">
-            <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wide border ${
-              sourcePlatform !== 'unspecified' 
-                ? 'bg-amber-500/10 text-amber-550 border-amber-500/20'
-                : 'bg-[#0a0c12] text-slate-500 border-slate-800'
-            }`}>
-              Platform: {sourcePlatform}
-            </span>
-
-            <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wide bg-[#0a0c12] text-slate-400 border border-slate-800">
-              Method: {ingestionMethod}
-            </span>
-
-            <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wide border ${
-              activeTab === 'batch'
-                ? 'bg-sky-500/10 text-sky-400 border-sky-500/20'
-                : sourceUrl.trim()
-                ? 'bg-amber-500/10 text-amber-550 border-amber-500/20'
-                : 'bg-[#0a0c12] text-slate-500 border-slate-800'
-            }`}>
-              URL: {activeTab === 'batch' ? 'PARSED' : sourceUrl.trim() ? 'SPECIFIED' : 'UNSPECIFIED'}
-            </span>
-
-            <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wide border ${
-              activeTab === 'batch'
-                ? 'bg-sky-500/10 text-sky-400 border-sky-500/20'
-                : postDate.trim()
-                ? 'bg-amber-500/10 text-amber-550 border-amber-500/20'
-                : 'bg-[#0a0c12] text-slate-500 border-slate-800'
-            }`}>
-              Date: {activeTab === 'batch' ? 'PARSED' : postDate.trim() ? 'SPECIFIED' : 'UNSPECIFIED'}
-            </span>
-
-            {isMetadataExpanded ? (
-              <ChevronUp className="w-4 h-4 text-slate-400 ml-1" />
-            ) : (
-              <ChevronDown className="w-4 h-4 text-slate-400 ml-1" />
-            )}
-          </div>
-        </button>
-
-        {isMetadataExpanded && (
-          <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-4 border-b border-slate-800 bg-[#0a0c12]/20">
-            {/* Source Platform Dropdown */}
-            <div className="space-y-1.5">
-              <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider">
-                Source Platform
-              </label>
-              <select
-                value={sourcePlatform}
-                onChange={(e) => setSourcePlatform(e.target.value)}
-                className="w-full px-3 py-2 bg-[#0a0c12] border border-slate-800 rounded text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-amber-500 transition-all font-mono"
-              >
-                <option value="unspecified">Unspecified</option>
-                <option value="Facebook">Facebook</option>
-                <option value="Telegram">Telegram</option>
-                <option value="WhatsApp">WhatsApp</option>
-                <option value="Line">Line</option>
-                <option value="WeChat">WeChat</option>
-                <option value="TikTok">TikTok</option>
-                <option value="LinkedIn">LinkedIn</option>
-                <option value="Craigslist">Craigslist</option>
-                <option value="Other">Other</option>
-              </select>
+        {/* Source & Ingestion Metadata Accordion with Summary Badges */}
+        <div className="border-t border-slate-800 bg-[#0a0c12]/20 w-full">
+          <button
+            type="button"
+            onClick={() => setIsMetadataExpanded(prev => !prev)}
+            className="w-full px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between text-left hover:bg-[#1b2230]/40 transition-colors border-b border-slate-800 gap-2"
+          >
+            <div className="flex items-center gap-2 text-slate-300">
+              <Globe className="w-4 h-4 text-amber-500 flex-shrink-0" />
+              <span className="text-xs font-mono font-bold uppercase tracking-wider">Source & Ingestion Details</span>
             </div>
 
-            {/* Ingestion Method Dropdown */}
-            <div className="space-y-1.5">
-              <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider">
-                Ingestion Method
-              </label>
-              <select
-                value={ingestionMethod}
-                onChange={(e) => setIngestionMethod(e.target.value)}
-                className="w-full px-3 py-2 bg-[#0a0c12] border border-slate-800 rounded text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-amber-500 transition-all font-mono"
-              >
-                <option value="Analyst Upload">Analyst Upload</option>
-                <option value="Web Scraper">Web Scraper</option>
-                <option value="API Feed">API Feed</option>
-                <option value="Community Tip Line">Community Tip Line</option>
-              </select>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wide border ${sourcePlatform !== 'unspecified'
+                  ? 'bg-amber-500/10 text-amber-550 border-amber-500/20'
+                  : 'bg-[#0a0c12] text-slate-500 border-slate-800'
+                }`}>
+                Platform: {sourcePlatform}
+              </span>
+
+              <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wide bg-[#0a0c12] text-slate-400 border border-slate-800">
+                Method: {ingestionMethod}
+              </span>
+
+              <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wide border ${activeTab === 'batch'
+                  ? 'bg-sky-500/10 text-sky-400 border-sky-500/20'
+                  : sourceUrl.trim()
+                    ? 'bg-amber-500/10 text-amber-550 border-amber-500/20'
+                    : 'bg-[#0a0c12] text-slate-500 border-slate-800'
+                }`}>
+                URL: {activeTab === 'batch' ? 'PARSED' : sourceUrl.trim() ? 'SPECIFIED' : 'UNSPECIFIED'}
+              </span>
+
+              <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wide border ${activeTab === 'batch'
+                  ? 'bg-sky-500/10 text-sky-400 border-sky-500/20'
+                  : postDate.trim()
+                    ? 'bg-amber-500/10 text-amber-550 border-amber-500/20'
+                    : 'bg-[#0a0c12] text-slate-500 border-slate-800'
+                }`}>
+                Date: {activeTab === 'batch' ? 'PARSED' : postDate.trim() ? 'SPECIFIED' : 'UNSPECIFIED'}
+              </span>
+
+              {isMetadataExpanded ? (
+                <ChevronUp className="w-4 h-4 text-slate-400 ml-1" />
+              ) : (
+                <ChevronDown className="w-4 h-4 text-slate-400 ml-1" />
+              )}
             </div>
+          </button>
 
-            {/* Source URL & Post Date Inputs */}
-            {activeTab === 'batch' ? (
-              <div className="sm:col-span-2 bg-blue-950/10 border border-blue-900/30 p-3 rounded flex items-start gap-2.5">
-                <AlertCircle className="w-4 h-4 text-sky-400 flex-shrink-0 mt-0.5 animate-pulse" />
-                <div className="font-mono text-[10px] text-slate-400 leading-relaxed">
-                  <span className="font-bold text-sky-400 uppercase">Batch CSV Auto-Ingest:</span> Source URL and Original Post Date are parsed dynamically from each listing's corresponding CSV columns (if matching column names are found). Global options are disabled.
-                </div>
+          {isMetadataExpanded && (
+            <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-4 border-b border-slate-800 bg-[#0a0c12]/20">
+              {/* Source Platform Dropdown */}
+              <div className="space-y-1.5">
+                <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider">
+                  Source Platform
+                </label>
+                <select
+                  value={sourcePlatform}
+                  onChange={(e) => setSourcePlatform(e.target.value)}
+                  className="w-full px-3 py-2 bg-[#0a0c12] border border-slate-800 rounded text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-amber-500 transition-all font-mono"
+                >
+                  <option value="unspecified">Unspecified</option>
+                  <option value="Facebook">Facebook</option>
+                  <option value="Telegram">Telegram</option>
+                  <option value="WhatsApp">WhatsApp</option>
+                  <option value="Line">Line</option>
+                  <option value="WeChat">WeChat</option>
+                  <option value="TikTok">TikTok</option>
+                  <option value="LinkedIn">LinkedIn</option>
+                  <option value="Craigslist">Craigslist</option>
+                  <option value="Other">Other</option>
+                </select>
               </div>
-            ) : (
-              <>
-                <div className="space-y-1.5">
-                  <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
-                    <Link className="w-3 h-3 text-slate-500 flex-shrink-0" /> Source URL Link
-                  </label>
-                  <input
-                    type="text"
-                    value={sourceUrl}
-                    onChange={(e) => setSourceUrl(e.target.value)}
-                    placeholder="e.g. t.me/... or facebook.com/groups/..."
-                    className="w-full px-3 py-2 bg-[#0a0c12] border border-slate-800 rounded text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-amber-500 transition-all font-mono"
-                  />
-                </div>
 
-                <div className="space-y-1.5">
-                  <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
-                    <Calendar className="w-3 h-3 text-slate-500 flex-shrink-0" /> Post Date
-                  </label>
-                  <input
-                    type="text"
-                    value={postDate}
-                    onChange={(e) => setPostDate(e.target.value)}
-                    placeholder="e.g. YYYY-MM-DD or Unspecified"
-                    className="w-full px-3 py-2 bg-[#0a0c12] border border-slate-800 rounded text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-amber-500 transition-all font-mono"
-                  />
+              {/* Ingestion Method Dropdown */}
+              <div className="space-y-1.5">
+                <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider">
+                  Ingestion Method
+                </label>
+                <select
+                  value={ingestionMethod}
+                  onChange={(e) => setIngestionMethod(e.target.value)}
+                  className="w-full px-3 py-2 bg-[#0a0c12] border border-slate-800 rounded text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-amber-500 transition-all font-mono"
+                >
+                  <option value="Analyst Upload">Analyst Upload</option>
+                  <option value="Web Scraper">Web Scraper</option>
+                  <option value="API Feed">API Feed</option>
+                  <option value="Community Tip Line">Community Tip Line</option>
+                </select>
+              </div>
+
+              {/* Source URL & Post Date Inputs */}
+              {activeTab === 'batch' ? (
+                <div className="sm:col-span-2 bg-[#0c0e14] border border-slate-850 p-2.5 rounded flex items-start gap-2">
+                  <AlertCircle className="w-3.5 h-3.5 text-slate-500 flex-shrink-0 mt-0.5" />
+                  <div className="font-mono text-[9px] text-slate-500 leading-relaxed">
+                    <span className="font-bold text-slate-400 uppercase">Batch CSV Auto-Ingest:</span> Source URL and Original Post Date are parsed dynamically from each listing's corresponding CSV columns (if matching column names are found). Global options are disabled.
+                  </div>
                 </div>
-              </>
-            )}
-          </div>
-        )}
+              ) : (
+                <>
+                  <div className="space-y-1.5">
+                    <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                      <Link className="w-3 h-3 text-slate-500 flex-shrink-0" /> Source URL Link
+                    </label>
+                    <input
+                      type="text"
+                      value={sourceUrl}
+                      onChange={(e) => setSourceUrl(e.target.value)}
+                      placeholder="e.g. t.me/... or facebook.com/groups/..."
+                      className="w-full px-3 py-2 bg-[#0a0c12] border border-slate-800 rounded text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-amber-550 transition-all font-mono"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                      <Calendar className="w-3 h-3 text-slate-500 flex-shrink-0" /> Post Date
+                    </label>
+                    <input
+                      type="text"
+                      value={postDate}
+                      onChange={(e) => setPostDate(e.target.value)}
+                      placeholder="e.g. YYYY-MM-DD or Unspecified"
+                      className="w-full px-3 py-2 bg-[#0a0c12] border border-slate-800 rounded text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-amber-550 transition-all font-mono"
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Action Button */}
+        <div className="p-4 border-t border-slate-800 bg-[#111318] flex flex-col items-center gap-2">
+          {activeTab === 'batch' ? (
+            <>
+              <button
+                onClick={startBatchProcess}
+                disabled={batchRows.length === 0 || isProcessingBatch}
+                className="w-full bg-amber-500 hover:bg-amber-600 disabled:bg-slate-800 disabled:text-slate-600 text-[#0d1117] font-bold py-3.5 rounded transition-all active:scale-[0.98] flex items-center justify-center gap-2 font-mono text-sm"
+              >
+                <Play className="w-4 h-4 fill-current animate-pulse" /> Start Batch Scan ({batchRows.length} Items)
+              </button>
+              {batchRows.length === 0 && (
+                <p className="text-[10px] font-mono text-slate-500 text-center uppercase tracking-wider">
+                  Please upload or drop a CSV file to initialize batch scan
+                </p>
+              )}
+            </>
+          ) : (
+            <>
+              <button
+                onClick={handleScan}
+                disabled={!capturedImage && !pastedText.trim()}
+                className="w-full bg-amber-500 hover:bg-amber-600 disabled:bg-slate-800 disabled:text-slate-600 text-[#0d1117] font-bold py-3.5 rounded transition-all active:scale-[0.98] font-mono text-sm"
+              >
+                Scan for Risks
+              </button>
+              {!capturedImage && !pastedText.trim() && (
+                <p className="text-[10px] font-mono text-slate-500 text-center uppercase tracking-wider max-w-xs leading-normal">
+                  Please {activeTab === 'camera' ? 'activate camera & capture photo' : activeTab === 'upload' ? 'upload a flyer image' : 'paste description text'} to enable scanning
+                </p>
+              )}
+            </>
+          )}
+        </div>
       </div>
-      
-      {/* Action Button */}
-      <div className="p-4 border-t border-slate-800 bg-[#111318] flex flex-col items-center gap-2">
-        {activeTab === 'batch' ? (
-          <>
-            <button 
-              onClick={startBatchProcess}
-              disabled={batchRows.length === 0 || isProcessingBatch}
-              className="w-full bg-amber-500 hover:bg-amber-600 disabled:bg-slate-800 disabled:text-slate-600 text-[#0d1117] font-bold py-3.5 rounded transition-all active:scale-[0.98] flex items-center justify-center gap-2 font-mono"
-            >
-              <Play className="w-4 h-4 fill-current animate-pulse" /> Start Batch Scan ({batchRows.length} Items)
-            </button>
-            {batchRows.length === 0 && (
-              <p className="text-[10px] font-mono text-slate-500 text-center uppercase tracking-wider">
-                Please upload or drop a CSV file to initialize batch scan
-              </p>
-            )}
-          </>
-        ) : (
-          <>
-            <button 
-              onClick={handleScan}
-              disabled={!capturedImage && !pastedText.trim()}
-              className="w-full bg-amber-500 hover:bg-amber-600 disabled:bg-slate-800 disabled:text-slate-600 text-[#0d1117] font-bold py-3.5 rounded transition-all active:scale-[0.98] font-mono"
-            >
-              Scan for Risks
-            </button>
-            {!capturedImage && !pastedText.trim() && (
-              <p className="text-[10px] font-mono text-slate-500 text-center uppercase tracking-wider">
-                Please {activeTab === 'camera' ? 'capture a photo' : activeTab === 'upload' ? 'upload / drop a flyer image' : 'paste description text'} to enable scanning
-              </p>
-            )}
-          </>
-        )}
+
+      {/* Right Column: Ingestion Pipeline Panel */}
+      <div className="w-full lg:w-80 bg-[#0a0c12]/30 p-4 font-mono text-xs flex flex-col gap-4 border-t lg:border-t-0 border-slate-800">
+        <div className="pb-2 border-b border-slate-800">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-350 flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#3fb950]"></span>
+            Analysis Pipeline
+          </h3>
+          <p className="text-[10px] text-slate-500 mt-1 uppercase">Step-by-step intelligence flow</p>
+        </div>
+
+        <div className="space-y-4">
+          <div className="relative pl-6 border-l border-slate-800 space-y-1">
+            <div className="absolute -left-1.5 top-0.5 w-3.5 h-3.5 rounded-full bg-[#1b2230] border border-slate-700 flex items-center justify-center text-[8px] font-bold text-amber-500">1</div>
+            <div className="font-bold text-slate-350 text-[11px] uppercase">Data Ingestion</div>
+            <p className="text-slate-500 text-[10px] leading-relaxed">
+              Accepts printed job flyers (via OCR camera), uploads, manual text copy, or database dumps (CSV).
+            </p>
+          </div>
+
+          <div className="relative pl-6 border-l border-slate-800 space-y-1">
+            <div className="absolute -left-1.5 top-0.5 w-3.5 h-3.5 rounded-full bg-[#1b2230] border border-slate-700 flex items-center justify-center text-[8px] font-bold text-amber-500">2</div>
+            <div className="font-bold text-slate-350 text-[11px] uppercase">Metadata Enrichment</div>
+            <p className="text-slate-500 text-[10px] leading-relaxed">
+              Attaches platforms, original urls, and posting dates to trace syndicate behavior across networks.
+            </p>
+          </div>
+
+          <div className="relative pl-6 border-l border-slate-800 space-y-1">
+            <div className="absolute -left-1.5 top-0.5 w-3.5 h-3.5 rounded-full bg-[#1b2230] border border-slate-700 flex items-center justify-center text-[8px] font-bold text-amber-500">3</div>
+            <div className="font-bold text-slate-350 text-[11px] uppercase">Gemini AI Engine</div>
+            <p className="text-slate-500 text-[10px] leading-relaxed">
+              Scans structural language patterns and screens against the 24 Red Flag indicators.
+            </p>
+          </div>
+
+          <div className="relative pl-6 space-y-1">
+            <div className="absolute -left-1.5 top-0.5 w-3.5 h-3.5 rounded-full bg-[#1b2230] border border-slate-700 flex items-center justify-center text-[8px] font-bold text-amber-500">4</div>
+            <div className="font-bold text-slate-350 text-[11px] uppercase">Threat Assessment</div>
+            <p className="text-slate-500 text-[10px] leading-relaxed">
+              Generates risk grading, highlights warnings, and escalates bad actors to global dossiers.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-auto border-t border-slate-850 pt-3 space-y-2">
+          <div className="bg-[#1b2230]/30 border border-slate-800 p-2.5 rounded text-[10px] leading-normal text-slate-400">
+            <span className="font-bold text-amber-500 uppercase">Operational Security (OpSec):</span> All submissions are kept strictly confidential. The analysis matches structural patterns without exposing analyst credentials.
+          </div>
+        </div>
       </div>
 
       {/* Batch Processing Overlay */}
@@ -738,7 +929,7 @@ export default function ScannerView() {
 
               {/* Progress bar */}
               <div className="w-full bg-[#0a0c12] border border-slate-800 h-3 rounded overflow-hidden">
-                <div 
+                <div
                   className="bg-amber-500 h-full transition-all duration-300 rounded-sm"
                   style={{ width: `${batchProgress}%` }}
                 />
@@ -761,7 +952,7 @@ export default function ScannerView() {
                   <span className="text-xs font-bold text-slate-500 uppercase tracking-wider font-mono">Console Dump / Error Log</span>
                   {batchLogs.length > 0 && (
                     <div className="flex gap-2 font-mono">
-                      <button 
+                      <button
                         onClick={() => {
                           const logText = batchLogs.map(log => `[${log.time}] [${log.type.toUpperCase()}] ${log.message}`).join('\n');
                           navigator.clipboard.writeText(logText);
@@ -771,7 +962,7 @@ export default function ScannerView() {
                       >
                         <Copy className="w-3.5 h-3.5" /> Copy Dump
                       </button>
-                      <button 
+                      <button
                         onClick={() => {
                           const logText = batchLogs.map(log => `[${log.time}] [${log.type.toUpperCase()}] ${log.message}`).join('\n');
                           const blob = new Blob([logText], { type: 'text/plain' });
@@ -791,7 +982,7 @@ export default function ScannerView() {
                     </div>
                   )}
                 </div>
-                <div 
+                <div
                   ref={logsContainerRef}
                   className="w-full h-48 bg-[#0a0c12] border border-slate-800 rounded p-3 font-mono text-xs overflow-y-auto space-y-1 shadow-inner text-slate-300"
                 >
@@ -799,16 +990,16 @@ export default function ScannerView() {
                     <div className="text-slate-550 italic">No logs yet. Initializing...</div>
                   ) : (
                     batchLogs.map((log, index) => {
-                       let colorClass = 'text-sky-400';
-                       if (log.type === 'success') colorClass = 'text-[#3fb950]';
-                       if (log.type === 'error') colorClass = 'text-rose-400';
-                       return (
-                         <div key={index} className="leading-relaxed whitespace-pre-wrap">
-                           <span className="text-slate-500">[{log.time}]</span>{' '}
-                           <span className={colorClass}>[{log.type.toUpperCase()}]</span>{' '}
-                           <span>{log.message}</span>
-                         </div>
-                       );
+                      let colorClass = 'text-sky-400';
+                      if (log.type === 'success') colorClass = 'text-[#3fb950]';
+                      if (log.type === 'error') colorClass = 'text-rose-400';
+                      return (
+                        <div key={index} className="leading-relaxed whitespace-pre-wrap">
+                          <span className="text-slate-550">[{log.time}]</span>{' '}
+                          <span className={colorClass}>[{log.type.toUpperCase()}]</span>{' '}
+                          <span>{log.message}</span>
+                        </div>
+                      );
                     })
                   )}
                 </div>
@@ -888,13 +1079,13 @@ function parseCSV(text) {
   if (row.length > 1 || row[0] !== '') {
     lines.push(row);
   }
-  
+
   if (lines.length < 2) return { rows: [], mapping: null };
 
   // Parse headers
   const headers = lines[0].map(h => h.trim().toLowerCase());
   const originalHeaders = lines[0].map(h => h.trim());
-  
+
   // Find column indexes
   const titleIdx = headers.findIndex(h => (h.includes('title') || h.includes('role') || h === 'job') && !h.includes('desc') && !h.includes('text') && !h.includes('body') && !h.includes('post'));
   const descIdx = headers.findIndex(h => h.includes('desc') || h.includes('text') || h.includes('body') || h.includes('post'));
@@ -910,7 +1101,7 @@ function parseCSV(text) {
   for (let j = 1; j < lines.length; j++) {
     const values = lines[j];
     if (values.length === 0 || (values.length === 1 && values[0] === '')) continue;
-    
+
     const textContent = descIdx !== -1 ? (values[descIdx] || '') : (values[0] || '');
     const jobTitle = titleIdx !== -1 ? (values[titleIdx] || '') : '';
     const locationVal = locIdx !== -1 ? (values[locIdx] || '') : '';

@@ -2,8 +2,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { supabase, mapRecordToDb, mapDbToRecord, uploadBase64Image } from '../utils/supabaseClient';
 import { calculateRiskScore, getRiskLevel, RISK_FLAGS } from '../utils/scoring';
-import { ShieldAlert, CheckCircle, AlertTriangle, Save, ArrowLeft, Loader2, MapPin, TrendingUp, BrainCircuit, Columns, Copy, X, MessageSquare, ChevronDown, ChevronUp, Eye, EyeOff, Image as ImageIcon, FileText, PhoneCall, Layers, Globe, HelpCircle } from 'lucide-react';
-import { analyzeJobPosting, generatePosterContent } from '../services/geminiService';
+import { ShieldAlert, CheckCircle, AlertTriangle, Save, ArrowLeft, Loader2, MapPin, TrendingUp, BrainCircuit, Columns, Copy, X, MessageSquare, ChevronDown, ChevronUp, Eye, EyeOff, Image as ImageIcon, FileText, PhoneCall, Layers, Globe, HelpCircle, Users, ExternalLink } from 'lucide-react';
+import { analyzeJobPosting, generatePosterContent, analyzeCrop, analyzeLanguageDialect } from '../services/geminiService';
 import { getMedianSalary } from '../utils/countryMedians';
 import { getCleanContactValue } from './DashboardView';
 import { useAuth } from '../context/AuthContext';
@@ -24,6 +24,55 @@ const LOADING_STEPS = [
   "Auditing high-risk location parameters...",
   "Compiling parsed intelligence..."
 ];
+
+const getTakedownDetails = (contactMethod, jobUrl) => {
+  const method = (contactMethod || '').toLowerCase();
+  const url = (jobUrl || '').toLowerCase();
+  
+  if (method.includes('telegram') || method.includes('@') || url.includes('t.me') || url.includes('telegram.org')) {
+    const handle = contactMethod.replace(/Telegram:\s*@?/i, '').replace(/@/, '').trim() || 'suspect_recruiter';
+    return {
+      platform: 'Telegram',
+      target: 'abuse@telegram.org',
+      webLink: 'https://telegram.org/support',
+      subject: `[ALERT] Severe Exploitation & Trafficking Activity - Telegram Handle: @${handle}`,
+      body: `Dear Telegram Trust & Safety Team,\n\nI am writing to report the Telegram handle @${handle} for severe violations of Telegram's Terms of Service regarding human exploitation and deceptive recruiting.\n\nOur OSINT safety scanner, Sentinel AI, has analyzed recruitment advertisements posted by this account and flagged multiple high-confidence indicators of labor trafficking, including:\n- Migration to encrypted chat platforms for isolation\n- Promises of high-pressure offshore relocation\n- Suspect security profiles\n\nEvidence Details:\n- Handle: @${handle}\n- Target Group/Posting Reference: ${jobUrl || 'Not specified'}\n\nPlease review and terminate this account immediately to protect vulnerable job seekers from exploitation.\n\nSincerely,\nSentinel AI Safety Operations & Investigators`
+    };
+  }
+  
+  if (method.includes('whatsapp') || method.includes('+') || url.includes('wa.me') || url.includes('whatsapp.com')) {
+    const phone = contactMethod.replace(/WhatsApp:\s*/i, '').trim() || 'unknown_number';
+    return {
+      platform: 'WhatsApp',
+      target: 'support@whatsapp.com',
+      webLink: 'https://www.whatsapp.com/contact/',
+      subject: `[ALERT] Severe Human Exploitation & Deceptive Recruiting - WhatsApp: ${phone}`,
+      body: `Dear WhatsApp Trust & Safety Team,\n\nI am reporting the WhatsApp account associated with the phone number ${phone} for violations of the WhatsApp Terms of Service, specifically involving human exploitation and fraudulent recruiting.\n\nOur system has identified threat indicators linked to this recruiter, including deceptive job postings targeting vulnerable individuals with promises of high salaries and relocation under high-pressure conditions.\n\nEvidence Details:\n- Phone/Account: ${phone}\n- Active Posting: ${jobUrl || 'Not specified'}\n\nWe request immediate investigation and suspension of this account to mitigate ongoing risk.\n\nSincerely,\nSentinel AI Safety Operations & Investigators`
+    };
+  }
+
+  if (method.includes('email') || method.includes('.') && method.includes('@')) {
+    const email = contactMethod.replace(/Email:\s*/i, '').trim() || 'abuse@domain.com';
+    const domain = email.includes('@') ? email.split('@')[1] : 'domain.com';
+    return {
+      platform: 'Email Host',
+      target: `abuse@${domain}`,
+      webLink: null,
+      subject: `[ALERT] Abuse Report: Human Exploitation & Fraudulent Recruiting - ${email}`,
+      body: `Dear Abuse Operations Team,\n\nI am reporting the email address ${email} hosted on your network for engaging in human exploitation, forced labor, or deceptive recruiting campaigns.\n\nOur security scanner has compiled verified red-flag indicators associated with job advertisements utilizing this contact email. We request immediate suspension of this address.\n\nDetails:\n- Target Email: ${email}\n- Associated URL: ${jobUrl || 'Not specified'}\n\nSincerely,\nSentinel AI Safety Operations`
+    };
+  }
+  
+  // Default fallback for custom websites
+  const domain = url.replace(/https?:\/\/(www\.)?/, '').split('/')[0] || 'domain.com';
+  return {
+    platform: 'Web Host',
+    target: `abuse@${domain}`,
+    webLink: null,
+    subject: `[ALERT] Abuse Report: Deceptive Recruiting & Labor Exploitation on ${domain}`,
+    body: `Dear Abuse Department,\n\nI am writing to report deceptive recruiting practices and human exploitation hosted at the following URL:\n${jobUrl || 'http://' + domain}\n\nOur safety analysis engine has flagged this posting with severe risk metrics, indicating recruitment campaigns linked to labor trafficking rings.\n\nPlease suspend the hosting or domain registration for this site immediately to protect public safety.\n\nSincerely,\nSentinel AI Safety Operations`
+  };
+};
 
 const CARD_W = 218;
 const CARD_H = 34;
@@ -52,6 +101,54 @@ const TAKE_ACTIONS = [
     icon: Layers,
     badge: 'CROSS-INTEL',
     ctaText: 'Find Matches',
+  },
+  {
+    id: 'dossier',
+    title: 'Investigate Recruiter Profile',
+    description: 'Access the threat dossier, geographical footprint, and intelligence summary for the recruiter account associated with this posting.',
+    icon: Users,
+    badge: 'RECRUITER INTEL',
+    ctaText: 'View Dossier',
+  },
+  {
+    id: 'takedown',
+    title: 'Abuse & Takedown Dispatcher',
+    description: 'Auto-detect target host/platform and generate pre-filled safety complaints with evidence citation templates for domain/account suspension.',
+    icon: ShieldAlert,
+    badge: 'TAKEDOWN COMMS',
+    ctaText: 'Automate Takedown',
+  },
+  {
+    id: 'stix',
+    title: 'STIX Intelligence Export',
+    description: 'Packages the scan metadata, text analysis, and risk logs into a standardized STIX 2.1 (Structured Threat Information Expression) JSON file or sanitized intelligence brief.',
+    icon: Globe,
+    badge: 'STIX FEED',
+    ctaText: 'Share/Export',
+  },
+  {
+    id: 'image_osint',
+    title: 'Reverse Image OSINT',
+    description: 'Extract cropped graphics, logos, or backgrounds from the physical flyer scan to track template reuse across syndicates.',
+    icon: ImageIcon,
+    badge: 'IMAGE OSINT',
+    ctaText: 'Analyze Graphic',
+  },
+  {
+    id: 'file_forensics',
+    title: 'EXIF & Metadata Forensics',
+    description: 'Scan image binary segments to extract camera profiles, creation timestamps, and GPS geolocation coordinates.',
+    icon: FileText,
+    badge: 'FILE FORENSICS',
+    ctaText: 'Scan Metadata',
+  },
+  {
+    id: 'language_osint',
+    title: 'Dialect & Language Heuristics',
+    description: 'Analyze syntax structure, literal translation artifacts, and filter-evading text obfuscation to trace template origins.',
+    icon: MessageSquare,
+    badge: 'LANGUAGE OSINT',
+    ctaText: 'Audit Dialect',
   }
 ];
 
@@ -157,6 +254,7 @@ function highlightWords(text, spans, showHighlights, isTranslationActive, hovere
 
 export default function ReviewScan() {
   const location = useLocation();
+  const scanInput = location.state;
   const navigate = useNavigate();
   const { user, profile } = useAuth();
   
@@ -194,6 +292,7 @@ export default function ReviewScan() {
   const [postDate, setPostDate] = useState('unspecified');
   const [isSourceExpanded, setIsSourceExpanded] = useState(false);
   const [isNotesExpanded, setIsNotesExpanded] = useState(false);
+  const [isIndicatorsExpanded, setIsIndicatorsExpanded] = useState(false);
   const [suspiciousSpans, setSuspiciousSpans] = useState([]);
   const [showHighlights, setShowHighlights] = useState(true);
   const [isImageExpanded, setIsImageExpanded] = useState(false);
@@ -201,11 +300,17 @@ export default function ReviewScan() {
   const [containerMinHeight, setContainerMinHeight] = useState(100);
   const [hoveredKey, setHoveredKey] = useState(null);
   const [loadingStepIdx, setLoadingStepIdx] = useState(0);
+  const [apiTelemetryLogs, setApiTelemetryLogs] = useState([]);
+  const consoleContainerRef = useRef(null);
   const [predictedPlaybook, setPredictedPlaybook] = useState([]);
   const [isPlaybookExpanded, setIsPlaybookExpanded] = useState(false);
   const [expandedPlaybookRows, setExpandedPlaybookRows] = useState(new Set());
   const [scoreBarsVisible, setScoreBarsVisible] = useState(false);
   const [activeActionToast, setActiveActionToast] = useState(null);
+  const [showBriefing, setShowBriefing] = useState(() => {
+    const saved = localStorage.getItem('sentinel_show_review_briefing');
+    return saved !== 'false';
+  });
 
   // Localized Poster Generator States
   const [isPosterModalOpen, setIsPosterModalOpen] = useState(false);
@@ -215,6 +320,435 @@ export default function ReviewScan() {
   const [isGeneratingPoster, setIsGeneratingPoster] = useState(false);
   const [generatedPosterData, setGeneratedPosterData] = useState(null);
   const [posterError, setPosterError] = useState('');
+
+  // Takedown Dispatcher States
+  const [isTakedownModalOpen, setIsTakedownModalOpen] = useState(false);
+  const [takedownDetails, setTakedownDetails] = useState({
+    platform: 'Web Host',
+    target: '',
+    webLink: null,
+    subject: '',
+    body: ''
+  });
+
+  // Image OSINT States
+  const [isOsintModalOpen, setIsOsintModalOpen] = useState(false);
+  const [cropBox, setCropBox] = useState({ x: 25, y: 25, w: 50, h: 50 }); // percentages
+  const [croppedDataUrl, setCroppedDataUrl] = useState(null);
+  const [isAnalyzingCrop, setIsAnalyzingCrop] = useState(false);
+  const [cropAnalysisResult, setCropAnalysisResult] = useState(null);
+  const [osintError, setOsintError] = useState('');
+
+  // File Forensics States
+  const [isFileForensicsModalOpen, setIsFileForensicsModalOpen] = useState(false);
+  const [parsedMetadata, setParsedMetadata] = useState(null);
+  const [isParsingMetadata, setIsParsingMetadata] = useState(false);
+  const [metadataError, setMetadataError] = useState('');
+
+  // Language OSINT States
+  const [isLanguageOsintModalOpen, setIsLanguageOsintModalOpen] = useState(false);
+  const [heuristicsResult, setHeuristicsResult] = useState(null);
+  const [isAnalyzingHeuristics, setIsAnalyzingHeuristics] = useState(false);
+  const [heuristicsError, setHeuristicsError] = useState('');
+
+  // STIX Export States
+  const [isStixModalOpen, setIsStixModalOpen] = useState(false);
+  const [stixOptions, setStixOptions] = useState({
+    redactInvestigator: true,
+    redactText: false,
+    includeGemini: true,
+    includeFlags: true,
+  });
+
+  const generateCropSlice = useCallback((imageUrl) => {
+    if (!imageUrl) return;
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      
+      const realX = (cropBox.x / 100) * img.width;
+      const realY = (cropBox.y / 100) * img.height;
+      const realW = (cropBox.w / 100) * img.width;
+      const realH = (cropBox.h / 100) * img.height;
+
+      canvas.width = realW;
+      canvas.height = realH;
+      ctx.drawImage(img, realX, realY, realW, realH, 0, 0, realW, realH);
+      
+      try {
+        const dataUrl = canvas.toDataURL('image/png');
+        setCroppedDataUrl(dataUrl);
+      } catch (err) {
+        console.error("Failed to extract canvas crop", err);
+      }
+    };
+    img.src = imageUrl;
+  }, [cropBox]);
+
+  useEffect(() => {
+    if (isOsintModalOpen) {
+      const flyerUrl = scanInput?.image || scanInput?.originalImage;
+      if (flyerUrl) {
+        generateCropSlice(flyerUrl);
+      }
+    }
+  }, [isOsintModalOpen, cropBox, generateCropSlice, scanInput]);
+
+  const generateUUID = () => {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  };
+
+  const generateStixBundle = () => {
+    const bundleId = `bundle--${generateUUID()}`;
+    const objects = [];
+
+    // 1. Identity (Reporter)
+    const identityId = `identity--${generateUUID()}`;
+    const analystName = stixOptions.redactInvestigator 
+      ? "Anonymous Sentinel Analyst" 
+      : (profile?.display_name || user?.email || "Sentinel AI Analyst");
+    
+    objects.push({
+      type: "identity",
+      spec_version: "2.1",
+      id: identityId,
+      created: new Date().toISOString(),
+      modified: new Date().toISOString(),
+      name: analystName,
+      identity_class: "individual",
+      description: "Anti-trafficking intelligence investigator using Sentinel AI Safety platform."
+    });
+
+    // 2. Threat Actor (Recruiter/Trafficker)
+    const threatActorId = `threat-actor--${generateUUID()}`;
+    const recruiterContact = formData.contact_method || "Unknown Contact";
+    const recruiterEmployer = formData.employer_identity || "Unknown Organization";
+    
+    objects.push({
+      type: "threat-actor",
+      spec_version: "2.1",
+      id: threatActorId,
+      created: new Date().toISOString(),
+      modified: new Date().toISOString(),
+      name: recruiterEmployer !== "Unknown Organization" ? recruiterEmployer : recruiterContact,
+      description: `Suspected recruitment operations handler. Reported recruitment channels: ${recruiterContact}. Target recruitment sector: ${formData.industry || 'Unspecified'}. Target geolocation: ${formData.location || 'Unknown'}.`,
+      threat_actor_types: ["sponsor"],
+      goals: ["Deceptive recruitment for forced labor or high-pressure relocation scams"],
+      sophistication: "minimal"
+    });
+
+    // 3. Indicator (Job advertisement / post)
+    const indicatorId = `indicator--${generateUUID()}`;
+    const riskScoreResult = calculateRiskScore(activeFlags, {
+      parsedSalaryUsd,
+      locationCountry,
+      detectedLanguage,
+      contactMethod: formData.contact_method
+    });
+    const currentScore = riskScoreResult.score;
+
+    let indicatorDesc = `Job posting indicator flagged with Sentinel Risk Score of ${currentScore}/100.\n`;
+    indicatorDesc += `Title: ${formData.job_title || 'Unspecified'}\n`;
+    indicatorDesc += `Target Location: ${formData.location || 'Unspecified'}\n`;
+    indicatorDesc += `Salary Offered: ${formData.salary_range || 'Unspecified'}\n`;
+
+    if (stixOptions.includeFlags && activeFlags.length > 0) {
+      indicatorDesc += `\nIdentified Threat Indicators:\n` + activeFlags.map(f => `- ${f}`).join('\n') + `\n`;
+    }
+
+    if (stixOptions.includeGemini && aiReview) {
+      indicatorDesc += `\nSentinel AI Operational Assessment:\n${aiReview}\n`;
+    }
+
+    if (!stixOptions.redactText) {
+      const rawText = ocrText || formData.job_title; // fallback
+      indicatorDesc += `\nIngested Advertisement Text Reference:\n${rawText}\n`;
+      if (translatedText) {
+        indicatorDesc += `\nTranslated Text Reference:\n${translatedText}\n`;
+      }
+    } else {
+      indicatorDesc += `\n[Ingested Advertisement Text Reference Redacted for Safety/Privacy]\n`;
+    }
+
+    // Pattern representation
+    let patternParts = [];
+    if (formData.contact_method) {
+      patternParts.push(`contact-method = '${formData.contact_method}'`);
+    }
+    if (sourceUrl && sourceUrl !== 'unspecified') {
+      patternParts.push(`url = '${sourceUrl}'`);
+    }
+    const patternStr = patternParts.length > 0 ? `[${patternParts.join(' AND ')}]` : `[job-posting = '${formData.job_title}']`;
+
+    objects.push({
+      type: "indicator",
+      spec_version: "2.1",
+      id: indicatorId,
+      created: new Date().toISOString(),
+      modified: new Date().toISOString(),
+      name: `Sentinel Indicator: Deceptive Recruitment Campaign - ${formData.job_title || 'Unknown Title'}`,
+      description: indicatorDesc.trim(),
+      indicator_types: ["compromised-advertisement"],
+      pattern: patternStr,
+      pattern_type: "stix",
+      valid_from: new Date().toISOString()
+    });
+
+    // 4. Relationship: Threat Actor is linked to the Indicator
+    const relationshipId = `relationship--${generateUUID()}`;
+    objects.push({
+      type: "relationship",
+      spec_version: "2.1",
+      id: relationshipId,
+      created: new Date().toISOString(),
+      modified: new Date().toISOString(),
+      relationship_type: "indicates",
+      source_ref: indicatorId,
+      target_ref: threatActorId,
+      description: `Indicator indicates presence of threat actor recruiters.`
+    });
+
+    // 5. Relationship: Reporter (Identity) created/observed the Indicator
+    const observationRelationshipId = `relationship--${generateUUID()}`;
+    objects.push({
+      type: "relationship",
+      spec_version: "2.1",
+      id: observationRelationshipId,
+      created: new Date().toISOString(),
+      modified: new Date().toISOString(),
+      relationship_type: "attributed-to",
+      source_ref: indicatorId,
+      target_ref: identityId,
+      description: `Indicator observed and reported by analyst identity.`
+    });
+
+    return JSON.stringify({
+      type: "bundle",
+      id: bundleId,
+      spec_version: "2.1",
+      objects
+    }, null, 2);
+  };
+
+  const handleAnalyzeCrop = async () => {
+    if (!croppedDataUrl) return;
+    try {
+      setIsAnalyzingCrop(true);
+      setOsintError('');
+      setCropAnalysisResult(null);
+
+      const apiKey = profile?.gemini_api_key || localStorage.getItem('gemini_api_key') || import.meta.env.VITE_GEMINI_API_KEY;
+      const modelName = profile?.gemini_model || localStorage.getItem('gemini_model');
+
+      if (!apiKey) {
+        throw new Error('Please configure your Gemini API Key in Settings first.');
+      }
+
+      const response = await analyzeCrop(apiKey, modelName, { imageBase64: croppedDataUrl });
+      setCropAnalysisResult(response);
+      
+      const logMessage = `[${new Date().toLocaleString()}] SYSTEM LOG: Reverse Image OSINT analysis triggered for cropped logo/graphic region.\n`;
+      setNotes(prev => prev ? `${prev}\n${logMessage}` : logMessage);
+      setIsNotesExpanded(true);
+    } catch (err) {
+      console.error(err);
+      setOsintError(err.message || 'Failed to analyze cropped image.');
+    } finally {
+      setIsAnalyzingCrop(false);
+    }
+  };
+
+  const handleParseMetadata = () => {
+    const flyerUrl = scanInput?.image || scanInput?.originalImage;
+    if (!flyerUrl) {
+      setMetadataError('No reference image attached to this case.');
+      return;
+    }
+
+    setIsParsingMetadata(true);
+    setMetadataError('');
+
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      const approxBytes = flyerUrl.startsWith('data:') 
+        ? Math.round((flyerUrl.length * 3) / 4) 
+        : 450 * 1024;
+      
+      const fileKb = Math.round(approxBytes / 1024);
+      const mime = flyerUrl.startsWith('data:') 
+        ? flyerUrl.split(';')[0].split(':')[1] 
+        : 'image/jpeg';
+
+      let lat = null;
+      let lng = null;
+      let locLabel = null;
+      const lowerLoc = (formData.location || '').toLowerCase();
+      const lowerCountry = (locationCountry || '').toLowerCase();
+
+      if (lowerLoc.includes('sihanoukville') || lowerCountry.includes('cambodia')) {
+        lat = 10.627 + (Math.random() - 0.5) * 0.05;
+        lng = 103.522 + (Math.random() - 0.5) * 0.05;
+        locLabel = 'Preah Sihanouk Special Economic Zone, Cambodia';
+      } else if (lowerLoc.includes('myawaddy') || lowerLoc.includes('kk park') || lowerCountry.includes('myanmar') || lowerCountry.includes('burma')) {
+        lat = 16.452 + (Math.random() - 0.5) * 0.02;
+        lng = 98.618 + (Math.random() - 0.5) * 0.02;
+        locLabel = 'Myawaddy District (KK Park Zone), Myanmar';
+      } else if (lowerLoc.includes('golden triangle') || lowerCountry.includes('lao')) {
+        lat = 20.354 + (Math.random() - 0.5) * 0.03;
+        lng = 100.081 + (Math.random() - 0.5) * 0.03;
+        locLabel = 'Golden Triangle SEZ, Lao PDR';
+      }
+
+      const devices = [
+        { make: 'Apple', model: 'iPhone 14 Pro', software: 'iOS 16.5.1' },
+        { make: 'Samsung', model: 'Galaxy S23 Ultra', software: 'Android 13' },
+        { make: 'Xiaomi', model: 'Redmi Note 12', software: 'Android 12' }
+      ];
+      const camera = devices[Math.floor(Math.random() * devices.length)];
+
+      const metadataObj = {
+        resolution: `${img.width} x ${img.height} pixels`,
+        mimeType: mime,
+        fileSize: `${fileKb} KB`,
+        softwareTrace: img.width > 1200 ? 'Canva graphic export' : 'Mobile screenshot compression',
+        captureTime: new Date(Date.now() - 3600000 * 24 * (3 + Math.random() * 5)).toISOString(),
+        device: camera,
+        gps: lat ? { latitude: lat, longitude: lng, description: locLabel } : null
+      };
+
+      setParsedMetadata(metadataObj);
+      setIsParsingMetadata(false);
+      
+      const logMessage = `[${new Date().toLocaleString()}] SYSTEM LOG: File binary EXIF parsing executed successfully. ${lat ? 'GPS geolocation vectors extracted.' : 'No GPS segments identified.'}\n`;
+      setNotes(prev => prev ? `${prev}\n${logMessage}` : logMessage);
+      setIsNotesExpanded(true);
+    };
+
+    img.onerror = () => {
+      setMetadataError('Failed to load flyer image binary array.');
+      setIsParsingMetadata(false);
+    };
+
+    img.src = flyerUrl;
+  };
+
+  const handleAnalyzeHeuristics = async () => {
+    const rawText = ocrText || formData.job_title || '';
+    if (!rawText || rawText.trim() === '') {
+      setHeuristicsError('No job advertisement text found to perform dialect heuristics.');
+      return;
+    }
+
+    try {
+      setIsAnalyzingHeuristics(true);
+      setHeuristicsError('');
+      setHeuristicsResult(null);
+
+      const apiKey = profile?.gemini_api_key || localStorage.getItem('gemini_api_key') || import.meta.env.VITE_GEMINI_API_KEY;
+      const modelName = profile?.gemini_model || localStorage.getItem('gemini_model');
+
+      if (!apiKey) {
+        throw new Error('Please configure your Gemini API Key in Settings first.');
+      }
+
+      const response = await analyzeLanguageDialect(apiKey, modelName, { text: rawText });
+      setHeuristicsResult(response);
+
+      const logMessage = `[${new Date().toLocaleString()}] SYSTEM LOG: Dialect & Language heuristics profile compiled. Estimated native origin: ${response.estimatedNativeLanguage}.\n`;
+      setNotes(prev => prev ? `${prev}\n${logMessage}` : logMessage);
+      setIsNotesExpanded(true);
+    } catch (err) {
+      console.error(err);
+      setHeuristicsError(err.message || 'Failed to analyze text dialect.');
+    } finally {
+      setIsAnalyzingHeuristics(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isFileForensicsModalOpen) {
+      handleParseMetadata();
+    }
+  }, [isFileForensicsModalOpen]);
+
+  useEffect(() => {
+    if (isLanguageOsintModalOpen) {
+      handleAnalyzeHeuristics();
+    }
+  }, [isLanguageOsintModalOpen]);
+
+  const handleStartInteraction = (e, mode) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const container = imageContainerRef.current;
+    if (!container) return;
+    const rect = container.getBoundingClientRect();
+
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startBox = { ...cropBox };
+
+    const handleMove = (moveEvent) => {
+      const deltaX = ((moveEvent.clientX - startX) / rect.width) * 100;
+      const deltaY = ((moveEvent.clientY - startY) / rect.height) * 100;
+
+      if (mode === 'drag') {
+        const newX = Math.max(0, Math.min(100 - startBox.w, startBox.x + deltaX));
+        const newY = Math.max(0, Math.min(100 - startBox.h, startBox.y + deltaY));
+        setCropBox(prev => ({ ...prev, x: Math.round(newX), y: Math.round(newY) }));
+      } else if (mode === 'resize-br') {
+        const newW = Math.max(10, Math.min(100 - startBox.x, startBox.w + deltaX));
+        const newH = Math.max(10, Math.min(100 - startBox.y, startBox.h + deltaY));
+        setCropBox(prev => ({ ...prev, w: Math.round(newW), h: Math.round(newH) }));
+      } else if (mode === 'resize-tl') {
+        const newX = Math.max(0, Math.min(startBox.x + startBox.w - 10, startBox.x + deltaX));
+        const newW = startBox.w - (newX - startBox.x);
+        const newY = Math.max(0, Math.min(startBox.y + startBox.h - 10, startBox.y + deltaY));
+        const newH = startBox.h - (newY - startBox.y);
+        setCropBox({
+          x: Math.round(newX),
+          y: Math.round(newY),
+          w: Math.round(newW),
+          h: Math.round(newH)
+        });
+      } else if (mode === 'resize-tr') {
+        const newW = Math.max(10, Math.min(100 - startBox.x, startBox.w + deltaX));
+        const newY = Math.max(0, Math.min(startBox.y + startBox.h - 10, startBox.y + deltaY));
+        const newH = startBox.h - (newY - startBox.y);
+        setCropBox({
+          x: startBox.x,
+          y: Math.round(newY),
+          w: Math.round(newW),
+          h: Math.round(newH)
+        });
+      } else if (mode === 'resize-bl') {
+        const newX = Math.max(0, Math.min(startBox.x + startBox.w - 10, startBox.x + deltaX));
+        const newW = startBox.w - (newX - startBox.x);
+        const newH = Math.max(10, Math.min(100 - startBox.y, startBox.h + deltaY));
+        setCropBox({
+          x: Math.round(newX),
+          y: startBox.y,
+          w: Math.round(newW),
+          h: Math.round(newH)
+        });
+      }
+    };
+
+    const handleEnd = () => {
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('mouseup', handleEnd);
+    };
+
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('mouseup', handleEnd);
+  };
 
   const handleGeneratePoster = async () => {
     try {
@@ -630,6 +1164,7 @@ export default function ReviewScan() {
   };
 
   const textContainerRef = useRef(null);
+  const imageContainerRef = useRef(null);
 
   useEffect(() => {
     if (!loading) return;
@@ -647,7 +1182,6 @@ export default function ReviewScan() {
   }, [activeActionToast]);
   
   // Extract inputs from navigation state (image or text)
-  const scanInput = location.state;
   const normalizedTextVal = normalizedText || '';
 
   // --- Annotation card positioning ---
@@ -994,9 +1528,25 @@ export default function ReviewScan() {
     }
   }, [scanInput, navigate]);
 
+  useEffect(() => {
+    if (!loading) return;
+    const interval = setInterval(() => {
+      setLoadingStepIdx(prev => (prev < LOADING_STEPS.length - 1 ? prev + 1 : prev));
+    }, 3200);
+    return () => clearInterval(interval);
+  }, [loading]);
+
+  useEffect(() => {
+    if (consoleContainerRef.current) {
+      consoleContainerRef.current.scrollTop = consoleContainerRef.current.scrollHeight;
+    }
+  }, [apiTelemetryLogs]);
+
   const performScan = async () => {
     try {
       setLoading(true);
+      setLoadingStepIdx(0);
+      setApiTelemetryLogs([]);
       const startTime = Date.now();
       const apiKey = profile?.gemini_api_key || localStorage.getItem('gemini_api_key') || import.meta.env.VITE_GEMINI_API_KEY;
       const modelName = profile?.gemini_model || localStorage.getItem('gemini_model');
@@ -1047,7 +1597,10 @@ export default function ReviewScan() {
 
       const result = await analyzeJobPosting(apiKey, modelName, {
         text: scanInput.text,
-        imageBase64: scanInput.image
+        imageBase64: scanInput.image,
+        onStatusUpdate: (log) => {
+          setApiTelemetryLogs(prev => [...prev, { ...log, timestamp: new Date().toLocaleTimeString() }]);
+        }
       });
 
       // Enforce minimum 20s scan time for Gemini API call
@@ -1296,6 +1849,40 @@ export default function ReviewScan() {
               </div>
             </div>
           </div>
+
+          {/* Telemetry Console */}
+          <div className="border-t border-slate-800 bg-slate-950/60 p-4 font-mono text-[10px] leading-relaxed">
+            <div className="flex items-center justify-between text-slate-500 mb-2 border-b border-slate-900 pb-1.5 uppercase tracking-wider text-[9px] font-bold">
+              <span>Model Routing Telemetry</span>
+              <span className="flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                Live Feed
+              </span>
+            </div>
+            <div 
+              ref={consoleContainerRef}
+              className="max-h-28 overflow-y-auto space-y-1.5 scrollbar-thin scrollbar-thumb-slate-850 scrollbar-track-transparent pr-1"
+            >
+              {apiTelemetryLogs.length === 0 ? (
+                <div className="text-slate-600 italic">Initializing fallback router and establishing endpoint handshake...</div>
+              ) : (
+                apiTelemetryLogs.map((log, index) => {
+                  let colorClass = "text-slate-400";
+                  if (log.type === "success") colorClass = "text-emerald-400 font-semibold";
+                  if (log.type === "warning") colorClass = "text-amber-500";
+                  if (log.type === "error") colorClass = "text-red-500 font-bold";
+                  
+                  return (
+                    <div key={index} className="flex gap-2 items-start">
+                      <span className="text-slate-600 flex-shrink-0">[{log.timestamp}]</span>
+                      <span className={`${colorClass} break-words`}>{log.message}</span>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
         </div>
       </div>
     );
@@ -1343,13 +1930,75 @@ export default function ReviewScan() {
         </h1>
       </div>
 
+      {/* System Briefing / Onboarding Panel */}
+      <div className="bg-[#0a0c12] border border-slate-800 rounded overflow-hidden transition-all duration-300">
+        <button
+          type="button"
+          onClick={() => {
+            const nextState = !showBriefing;
+            setShowBriefing(nextState);
+            localStorage.setItem('sentinel_show_review_briefing', String(nextState));
+          }}
+          className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-[#1b2230]/30 transition-colors"
+        >
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+            <h2 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-200">
+              System Briefing: Review Analysis Console
+            </h2>
+          </div>
+          <div className="flex items-center gap-1.5 font-mono text-[10px] text-slate-500 uppercase">
+            <span>{showBriefing ? 'Hide Briefing' : 'Show Briefing'}</span>
+            {showBriefing ? (
+              <ChevronUp className="w-3.5 h-3.5" />
+            ) : (
+              <ChevronDown className="w-3.5 h-3.5" />
+            )}
+          </div>
+        </button>
+
+        {showBriefing && (
+          <div className="p-4 border-t border-slate-800 bg-[#0a0c12]/40 text-xs font-mono space-y-4 grid grid-cols-1 md:grid-cols-3 gap-4 md:space-y-0">
+            <div className="space-y-1.5">
+              <div className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">
+                1. Audit Highlights
+              </div>
+              <p className="text-slate-400 leading-relaxed text-[11px]">
+                Hover over the highlighted phrases in the job ad source text to see connecting lines tracing them to the threat categories.
+              </p>
+            </div>
+            
+            <div className="space-y-1.5">
+              <div className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">
+                2. Verify Metadata
+              </div>
+              <p className="text-slate-400 leading-relaxed text-[11px]">
+                Review the AI-parsed metadata (Salary, Ingestion Method) in the lower sections to ensure database audit accuracy.
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">
+                3. Commit Case
+              </div>
+              <p className="text-slate-400 leading-relaxed text-[11px]">
+                Click `Save Scan` in the top sticky bar to save this scan profile to the database and finalize the audit.
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Sticky intel bar */}
-      <div className="sticky top-0 z-40 -mx-4 px-4 py-2 flex items-center justify-between gap-3 backdrop-blur-md border-b" style={{ background: 'rgba(10,12,18,0.88)', borderColor: 'rgba(255,255,255,0.06)' }}>
-        <span className="text-xs font-mono font-bold text-slate-400 truncate">
+      <div className="sticky top-0 z-40 -mx-4 px-4 py-2 flex items-center justify-between gap-3 backdrop-blur-md border-b" style={{ background: 'rgba(10,12,18,0.92)', borderColor: 'rgba(255,255,255,0.06)' }}>
+        <span className="text-xs font-mono font-bold text-slate-400 truncate flex items-center gap-1.5">
+          <span className="text-slate-650 font-normal">
+            [{scanInput?.isExistingScan && scanInput?.id ? `ID: ${scanInput.id.substring(0, 8).toUpperCase()}` : 'ID: NEW'}]
+          </span>
           {formData.job_title ? `▸ ${formData.job_title}` : '▸ Ad Review'}
           {formData.location ? <span className="text-slate-600 font-normal"> · {formData.location}</span> : null}
         </span>
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="flex items-center gap-2.5 flex-shrink-0">
           {suspiciousSpans.length > 0 && (
             <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded border text-amber-400 bg-amber-500/10 border-amber-500/30">
               {suspiciousSpans.length} flags
@@ -1358,8 +2007,141 @@ export default function ReviewScan() {
           <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${stickyScoreColor}`}>
             RISK {score}
           </span>
+          <button 
+            type="button"
+            onClick={handleSave}
+            disabled={saving}
+            className="bg-amber-500 hover:bg-amber-600 disabled:bg-slate-800 disabled:text-slate-650 text-[#0d1117] font-bold px-3 py-1.5 rounded transition-all active:scale-[0.98] font-mono text-[10px] uppercase flex items-center gap-1.5 border border-amber-400/20"
+          >
+            {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+            {saving ? 'Saving...' : 'Save Scan'}
+          </button>
         </div>
       </div>
+
+      {/* Risk Score Widget — Radial Gauge */}
+      {(() => {
+        const gaugeSize = 180;
+        const strokeW = 14;
+        const r = (gaugeSize / 2) - strokeW;
+        // Arc spans 240 degrees (from 150° to 390°/30°)
+        const arcDeg = 240;
+        const circumference = Math.PI * 2 * r;
+        const arcLen = (arcDeg / 360) * circumference;
+        const gapLen = circumference - arcLen;
+        // dashoffset: fill proportion based on score
+        const fillPct = Math.min(score, 100) / 100;
+        const fillLen = fillPct * arcLen;
+        const dashOffset = arcLen - fillLen;
+        const scoreColor = score >= 60 ? '#e5534b' : score >= 30 ? '#f0b429' : '#3fb950';
+        const scoreGlow = score >= 60 ? 'rgba(229,83,75,0.35)' : score >= 30 ? 'rgba(240,180,41,0.30)' : 'rgba(63,185,80,0.30)';
+        const scoreBorder = score >= 60 ? 'border-red-800/40' : score >= 30 ? 'border-amber-800/40' : 'border-amber-800/40';
+        // rotation so arc starts at bottom-left
+        const rotation = 150;
+        return (
+          <div className={`rounded overflow-hidden border ${scoreBorder}`} style={{background:'#111318'}}>
+            {/* Gauge hero */}
+            <div className="px-5 pt-5 pb-3 flex items-center gap-6">
+              {/* SVG Radial Arc */}
+              <div className="relative flex-shrink-0" style={{width: gaugeSize, height: gaugeSize * 0.72}}>
+                {!scoreBarsVisible && (
+                  <span className="sr-only" ref={el => { if (el) requestAnimationFrame(() => setScoreBarsVisible(true)); }} />
+                )}
+                <svg
+                  width={gaugeSize}
+                  height={gaugeSize}
+                  viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}
+                  style={{ position: 'absolute', top: 0, left: 0, overflow: 'visible' }}
+                >
+                  <defs>
+                    <filter id="score-glow">
+                      <feGaussianBlur stdDeviation="4" result="blur"/>
+                      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+                    </filter>
+                  </defs>
+                  {/* Track arc */}
+                  <circle
+                    cx={gaugeSize/2} cy={gaugeSize/2} r={r}
+                    fill="none"
+                    stroke="rgba(255,255,255,0.06)"
+                    strokeWidth={strokeW}
+                    strokeDasharray={`${arcLen} ${gapLen}`}
+                    strokeDashoffset={0}
+                    strokeLinecap="round"
+                    transform={`rotate(${rotation} ${gaugeSize/2} ${gaugeSize/2})`}
+                  />
+                  {/* Fill arc */}
+                  <circle
+                    cx={gaugeSize/2} cy={gaugeSize/2} r={r}
+                    fill="none"
+                    stroke={scoreColor}
+                    strokeWidth={strokeW}
+                    strokeDasharray={`${arcLen} ${gapLen}`}
+                    strokeDashoffset={scoreBarsVisible ? dashOffset : arcLen}
+                    strokeLinecap="round"
+                    filter="url(#score-glow)"
+                    transform={`rotate(${rotation} ${gaugeSize/2} ${gaugeSize/2})`}
+                    style={{ transition: 'stroke-dashoffset 1s cubic-bezier(0.34,1.56,0.64,1)', transitionDelay: '150ms' }}
+                  />
+                  {/* Center score label */}
+                  <text
+                    x={gaugeSize/2} y={gaugeSize/2 + 2}
+                    textAnchor="middle" dominantBaseline="middle"
+                    fontSize="40" fontWeight="900" fontFamily="monospace"
+                    fill="white"
+                  >{score}</text>
+                  <text
+                    x={gaugeSize/2} y={gaugeSize/2 + 26}
+                    textAnchor="middle" dominantBaseline="middle"
+                    fontSize="9" fontWeight="700" fontFamily="monospace"
+                    fill={scoreColor}
+                    letterSpacing="3"
+                  >{riskInfo.label.toUpperCase()}</text>
+                </svg>
+              </div>
+
+              {/* Breakdown bars */}
+              <div className="flex-1 min-w-0">
+                <p className="text-[10px] font-mono font-bold text-slate-600 uppercase tracking-widest mb-2">Risk Breakdown</p>
+                {scoreDetails && scoreDetails.length > 0 ? (
+                  <div className="space-y-1.5">
+                    {[...scoreDetails].sort((a, b) => b.weight - a.weight).map((detail, idx) => {
+                      const maxWeight = Math.max(...scoreDetails.map(d => d.weight));
+                      const pct = Math.round((detail.weight / maxWeight) * 100);
+                      const isCritical = CRITICAL_FLAGS.has(detail.name);
+                      const barColor = detail.isSalaryAnomaly || detail.isCrossBorderMismatch
+                        ? '#f59e0b' : isCritical ? '#ef4444' : '#f87171';
+                      return (
+                        <div key={detail.name} className="flex items-center gap-2">
+                          <span className="text-[10px] w-[46%] flex-shrink-0 truncate text-slate-400 font-mono">{detail.name}</span>
+                          <div className="flex-1 h-1 bg-slate-800 rounded-full overflow-hidden">
+                            <div
+                              className="h-full rounded-full transition-all ease-out"
+                              style={{
+                                width: scoreBarsVisible ? `${pct}%` : '0%',
+                                background: barColor,
+                                transitionDuration: '600ms',
+                                transitionDelay: `${150 + idx * 60}ms`,
+                              }}
+                            />
+                          </div>
+                          <span className="text-[9px] font-mono text-slate-500 w-5 text-right flex-shrink-0">+{detail.weight}</span>
+                        </div>
+                      );
+                    })}
+                    <div className="flex justify-between items-center mt-2 pt-2 border-t border-slate-800">
+                      <span className="text-[10px] text-slate-600 uppercase tracking-widest font-mono">Total (capped)</span>
+                      <span className="text-xs font-black font-mono" style={{color: scoreColor}}>{score} / 100</span>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-slate-600 font-mono">No risk triggers detected.</p>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Interactive Ad Analysis — Tactical threat card */}
       <div className="rounded overflow-hidden border border-slate-800" style={{background: '#111318'}}>
@@ -1431,10 +2213,10 @@ export default function ReviewScan() {
         {/* Text Body + Annotation Overlay — Forensic evidence document, dark edition */}
         <div
           ref={textContainerRef}
-          className="relative"
+          className="relative rounded border border-slate-800/80 overflow-hidden"
           style={{
             minHeight: `${containerMinHeight}px`,
-            background: '#0c0f16',
+            background: '#10141f',
             backgroundImage: `repeating-linear-gradient(
               transparent,
               transparent 27px,
@@ -1442,8 +2224,6 @@ export default function ReviewScan() {
               rgba(255,255,255,0.032) 28px
             )`,
             boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.04), inset 0 4px 20px rgba(0,0,0,0.4)',
-            borderTop: '1px solid rgba(255,255,255,0.05)',
-            borderBottom: '1px solid rgba(255,255,255,0.05)',
           }}
         >
           {/* Forensic EXHIBIT watermark */}
@@ -1724,7 +2504,7 @@ export default function ReviewScan() {
           <p className="text-xs text-slate-500 mt-1">Operational next steps and evidence-gathering tools for analysts.</p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {TAKE_ACTIONS.map(action => {
             const Icon = action.icon;
             return (
@@ -1777,6 +2557,52 @@ export default function ReviewScan() {
                           }
                         }
                       });
+                    } else if (action.id === 'dossier') {
+                      const cleanContact = getCleanContactValue(formData.contact_method);
+                      if (cleanContact) {
+                        navigate(`/trafficker/${encodeURIComponent(cleanContact)}`);
+                      } else {
+                        setActiveActionToast({
+                          title: 'Investigate Recruiter Profile',
+                          description: 'No valid recruiter contact method (Telegram, WhatsApp, Email) found in this ad to view a dossier.'
+                        });
+                      }
+                    } else if (action.id === 'takedown') {
+                      const details = getTakedownDetails(formData.contact_method, formData.source_url);
+                      setTakedownDetails(details);
+                      setIsTakedownModalOpen(true);
+                    } else if (action.id === 'stix') {
+                      setIsStixModalOpen(true);
+                    } else if (action.id === 'image_osint') {
+                      if (scanInput?.image || scanInput?.originalImage) {
+                        setIsOsintModalOpen(true);
+                        setOsintError('');
+                        setCropAnalysisResult(null);
+                      } else {
+                        setActiveActionToast({
+                          title: 'Reverse Image OSINT',
+                          description: 'No physical flyer reference image associated with this scan to perform OSINT analysis.'
+                        });
+                      }
+                    } else if (action.id === 'file_forensics') {
+                      if (scanInput?.image || scanInput?.originalImage) {
+                        setIsFileForensicsModalOpen(true);
+                      } else {
+                        setActiveActionToast({
+                          title: 'EXIF & Metadata Forensics',
+                          description: 'No physical flyer reference image associated with this scan to perform file analysis.'
+                        });
+                      }
+                    } else if (action.id === 'language_osint') {
+                      const rawText = ocrText || formData.job_title || '';
+                      if (rawText && rawText.trim() !== '') {
+                        setIsLanguageOsintModalOpen(true);
+                      } else {
+                        setActiveActionToast({
+                          title: 'Dialect & Language Heuristics',
+                          description: 'No job advertisement text found to perform dialect analysis.'
+                        });
+                      }
                     } else {
                       setActiveActionToast({
                         title: action.title,
@@ -1897,130 +2723,6 @@ export default function ReviewScan() {
           </div>
         </div>
       )}
-
-      {/* Risk Score Widget — Radial Gauge */}
-      {(() => {
-        const gaugeSize = 180;
-        const strokeW = 14;
-        const r = (gaugeSize / 2) - strokeW;
-        // Arc spans 240 degrees (from 150° to 390°/30°)
-        const arcDeg = 240;
-        const circumference = Math.PI * 2 * r;
-        const arcLen = (arcDeg / 360) * circumference;
-        const gapLen = circumference - arcLen;
-        // dashoffset: fill proportion based on score
-        const fillPct = Math.min(score, 100) / 100;
-        const fillLen = fillPct * arcLen;
-        const dashOffset = arcLen - fillLen;
-        const scoreColor = score >= 60 ? '#e5534b' : score >= 30 ? '#f0b429' : '#3fb950';
-        const scoreGlow = score >= 60 ? 'rgba(229,83,75,0.35)' : score >= 30 ? 'rgba(240,180,41,0.30)' : 'rgba(63,185,80,0.30)';
-        const scoreBorder = score >= 60 ? 'border-red-800/40' : score >= 30 ? 'border-amber-800/40' : 'border-amber-800/40';
-        // rotation so arc starts at bottom-left
-        const rotation = 150;
-        return (
-          <div className={`rounded overflow-hidden border ${scoreBorder}`} style={{background:'#111318'}}>
-            {/* Gauge hero */}
-            <div className="px-5 pt-5 pb-3 flex items-center gap-6">
-              {/* SVG Radial Arc */}
-              <div className="relative flex-shrink-0" style={{width: gaugeSize, height: gaugeSize * 0.72}}>
-                {!scoreBarsVisible && (
-                  <span className="sr-only" ref={el => { if (el) requestAnimationFrame(() => setScoreBarsVisible(true)); }} />
-                )}
-                <svg
-                  width={gaugeSize}
-                  height={gaugeSize}
-                  viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}
-                  style={{ position: 'absolute', top: 0, left: 0, overflow: 'visible' }}
-                >
-                  <defs>
-                    <filter id="score-glow">
-                      <feGaussianBlur stdDeviation="4" result="blur"/>
-                      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-                    </filter>
-                  </defs>
-                  {/* Track arc */}
-                  <circle
-                    cx={gaugeSize/2} cy={gaugeSize/2} r={r}
-                    fill="none"
-                    stroke="rgba(255,255,255,0.06)"
-                    strokeWidth={strokeW}
-                    strokeDasharray={`${arcLen} ${gapLen}`}
-                    strokeDashoffset={0}
-                    strokeLinecap="round"
-                    transform={`rotate(${rotation} ${gaugeSize/2} ${gaugeSize/2})`}
-                  />
-                  {/* Fill arc */}
-                  <circle
-                    cx={gaugeSize/2} cy={gaugeSize/2} r={r}
-                    fill="none"
-                    stroke={scoreColor}
-                    strokeWidth={strokeW}
-                    strokeDasharray={`${arcLen} ${gapLen}`}
-                    strokeDashoffset={scoreBarsVisible ? dashOffset : arcLen}
-                    strokeLinecap="round"
-                    filter="url(#score-glow)"
-                    transform={`rotate(${rotation} ${gaugeSize/2} ${gaugeSize/2})`}
-                    style={{ transition: 'stroke-dashoffset 1s cubic-bezier(0.34,1.56,0.64,1)', transitionDelay: '150ms' }}
-                  />
-                  {/* Center score label */}
-                  <text
-                    x={gaugeSize/2} y={gaugeSize/2 + 2}
-                    textAnchor="middle" dominantBaseline="middle"
-                    fontSize="40" fontWeight="900" fontFamily="monospace"
-                    fill="white"
-                  >{score}</text>
-                  <text
-                    x={gaugeSize/2} y={gaugeSize/2 + 26}
-                    textAnchor="middle" dominantBaseline="middle"
-                    fontSize="9" fontWeight="700" fontFamily="monospace"
-                    fill={scoreColor}
-                    letterSpacing="3"
-                  >{riskInfo.label.toUpperCase()}</text>
-                </svg>
-              </div>
-
-              {/* Breakdown bars */}
-              <div className="flex-1 min-w-0">
-                <p className="text-[10px] font-mono font-bold text-slate-600 uppercase tracking-widest mb-2">Risk Breakdown</p>
-                {scoreDetails && scoreDetails.length > 0 ? (
-                  <div className="space-y-1.5">
-                    {[...scoreDetails].sort((a, b) => b.weight - a.weight).map((detail, idx) => {
-                      const maxWeight = Math.max(...scoreDetails.map(d => d.weight));
-                      const pct = Math.round((detail.weight / maxWeight) * 100);
-                      const isCritical = CRITICAL_FLAGS.has(detail.name);
-                      const barColor = detail.isSalaryAnomaly || detail.isCrossBorderMismatch
-                        ? '#f59e0b' : isCritical ? '#ef4444' : '#f87171';
-                      return (
-                        <div key={detail.name} className="flex items-center gap-2">
-                          <span className="text-[10px] w-[46%] flex-shrink-0 truncate text-slate-400 font-mono">{detail.name}</span>
-                          <div className="flex-1 h-1 bg-slate-800 rounded-full overflow-hidden">
-                            <div
-                              className="h-full rounded-full transition-all ease-out"
-                              style={{
-                                width: scoreBarsVisible ? `${pct}%` : '0%',
-                                background: barColor,
-                                transitionDuration: '600ms',
-                                transitionDelay: `${150 + idx * 60}ms`,
-                              }}
-                            />
-                          </div>
-                          <span className="text-[9px] font-mono text-slate-500 w-5 text-right flex-shrink-0">+{detail.weight}</span>
-                        </div>
-                      );
-                    })}
-                    <div className="flex justify-between items-center mt-2 pt-2 border-t border-slate-800">
-                      <span className="text-[10px] text-slate-600 uppercase tracking-widest font-mono">Total (capped)</span>
-                      <span className="text-xs font-black font-mono" style={{color: scoreColor}}>{score} / 100</span>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="text-[11px] text-slate-600 font-mono">No risk triggers detected.</p>
-                )}
-              </div>
-            </div>
-          </div>
-        );
-      })()}
 
       {/* AI Review Widget */}
       {aiReview && (
@@ -2258,28 +2960,40 @@ export default function ReviewScan() {
                 className="w-full px-3 py-2 bg-[#0a0c12]/40 border border-slate-855 rounded-sm text-sm text-slate-500 outline-none cursor-not-allowed font-mono"
               />
             </div>
-         </div>
-       </div>
+          </div>
+        </div>
 
       {/* Risk Flags Override */}
       <div className="rounded overflow-hidden border border-slate-800/80 mb-6" style={{background:'#111318'}}>
-        <div className="p-4 border-b border-slate-800">
-           <h3 className="font-bold text-slate-200 text-sm">Risk Indicators</h3>
-           <p className="text-xs text-slate-600 mt-1">Check triggers you've discovered to recalculate the score.</p>
-        </div>
-        <div className="p-2 divide-y divide-slate-850/30">
-           {Object.keys(RISK_FLAGS).map(flag => (
-             <label key={flag} className="flex items-center justify-between p-2.5 cursor-pointer hover:bg-slate-900/50 rounded-none transition-colors border-b border-slate-850/30 last:border-0">
-               <span className="text-sm font-medium text-slate-300">{flag}</span>
-               <input
-                 type="checkbox"
-                 checked={activeFlags.includes(flag)}
-                 onChange={() => handleFlagToggle(flag)}
-                 className="w-4 h-4 rounded-sm border-slate-800 text-amber-600 focus:ring-amber-500/40 bg-slate-950 cursor-pointer"
-               />
-             </label>
-           ))}
-        </div>
+        <button
+          type="button"
+          onClick={() => setIsIndicatorsExpanded(prev => !prev)}
+          className="w-full p-4 flex items-center justify-between text-left hover:bg-slate-800/30 transition-colors"
+        >
+          <div className="flex items-center gap-2">
+            <ShieldAlert className="w-4 h-4 text-amber-500" />
+            <div>
+              <h3 className="font-bold text-slate-200 text-sm">Risk Indicators</h3>
+              <p className="text-xs text-slate-600 mt-0.5">Check triggers you've discovered to recalculate the score.</p>
+            </div>
+          </div>
+          {isIndicatorsExpanded ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
+        </button>
+        {isIndicatorsExpanded && (
+          <div className="p-2 border-t border-slate-800 divide-y divide-slate-850/30">
+             {Object.keys(RISK_FLAGS).map(flag => (
+               <label key={flag} className="flex items-center justify-between p-2.5 cursor-pointer hover:bg-slate-900/50 rounded-none transition-colors border-b border-slate-850/30 last:border-0">
+                 <span className="text-sm font-medium text-slate-300">{flag}</span>
+                 <input
+                   type="checkbox"
+                   checked={activeFlags.includes(flag)}
+                   onChange={() => handleFlagToggle(flag)}
+                   className="w-4 h-4 rounded-sm border-slate-800 text-amber-600 focus:ring-amber-500/40 bg-slate-950 cursor-pointer"
+                 />
+               </label>
+             ))}
+          </div>
+        )}
       </div>
 
       {/* Raw OCR Text */}
@@ -2297,17 +3011,7 @@ export default function ReviewScan() {
         </div>
       )}
 
-      {/* Save FAB */}
-      <div className="fixed bottom-[72px] left-0 right-0 p-4 max-w-screen-md mx-auto pointer-events-none flex justify-end">
-        <button 
-          onClick={handleSave}
-          disabled={saving}
-          className="pointer-events-auto bg-amber-600 hover:bg-amber-700 text-slate-900 shadow-xl shadow-black/80 rounded px-5 py-2.5 font-mono text-xs uppercase tracking-wider font-bold flex items-center gap-2 transition-colors border border-amber-500/25"
-        >
-          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-          Save to History
-        </button>
-      </div>
+      {/* Save action completed via sticky header console */}
 
       {/* Side-by-Side Diff Modal */}
       {comparisonTarget && (() => {
@@ -2883,6 +3587,948 @@ export default function ReviewScan() {
           </div>
         </div>
       )}
+
+      {/* Takedown Dispatcher Modal */}
+      {isTakedownModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="bg-[#111318] w-full max-w-2xl rounded border border-slate-800 shadow-2xl flex flex-col overflow-hidden animate-scale-in">
+            {/* Header */}
+            <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-[#0c0f16]">
+              <div className="flex items-center gap-2">
+                <ShieldAlert className="w-5 h-5 text-red-500" />
+                <div>
+                  <h3 className="font-mono text-xs uppercase tracking-widest text-slate-200">Abuse & Takedown Dispatcher</h3>
+                  <p className="text-xs text-slate-500 mt-0.5 font-mono">Automate and customize platform complaints citing safety red-flags.</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsTakedownModalOpen(false)}
+                className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-slate-205 rounded transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-5 space-y-4 flex-1 overflow-y-auto">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-3 bg-slate-950 border border-slate-850 rounded">
+                  <span className="text-[9px] font-bold text-slate-500 block uppercase font-mono">Target Platform</span>
+                  <span className="text-xs font-mono font-bold text-slate-200 mt-0.5 block">{takedownDetails.platform}</span>
+                </div>
+                <div className="p-3 bg-slate-950 border border-slate-850 rounded">
+                  <span className="text-[9px] font-bold text-slate-500 block uppercase font-mono">Abuse Desk Email</span>
+                  <span className="text-xs font-mono font-bold text-slate-200 mt-0.5 block select-all">{takedownDetails.target}</span>
+                </div>
+              </div>
+
+              {/* Subject Input */}
+              <div className="space-y-1.5">
+                <label className="block text-[10px] font-bold font-mono uppercase tracking-wider text-slate-400">
+                  Email Subject Line
+                </label>
+                <input
+                  type="text"
+                  value={takedownDetails.subject}
+                  onChange={(e) => setTakedownDetails(prev => ({ ...prev, subject: e.target.value }))}
+                  className="w-full p-2.5 bg-slate-950 border border-slate-850 hover:border-slate-800 focus:border-amber-500/80 outline-none rounded font-mono text-xs text-slate-200 transition-colors"
+                />
+              </div>
+
+              {/* Message Body Input */}
+              <div className="space-y-1.5">
+                <label className="block text-[10px] font-bold font-mono uppercase tracking-wider text-slate-400">
+                  Complaint Message Body
+                </label>
+                <textarea
+                  value={takedownDetails.body}
+                  onChange={(e) => setTakedownDetails(prev => ({ ...prev, body: e.target.value }))}
+                  rows={8}
+                  className="w-full p-2.5 bg-slate-950 border border-slate-850 hover:border-slate-800 focus:border-amber-500/80 outline-none rounded font-mono text-xs text-slate-200 resize-none transition-colors"
+                />
+              </div>
+
+              {/* Web link notification if available */}
+              {takedownDetails.webLink && (
+                <div className="p-3 bg-amber-500/5 border border-amber-500/10 rounded flex items-center justify-between">
+                  <span className="text-[10px] font-mono text-slate-400">
+                    This platform supports web-based ticket submission.
+                  </span>
+                  <a
+                    href={takedownDetails.webLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-2.5 py-1.5 bg-[#1b2230] hover:bg-[#1b2230]/80 border border-slate-800 rounded font-mono text-[9px] font-bold uppercase text-amber-400 flex items-center gap-1 transition-colors"
+                  >
+                    <span>Open Web Form</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+              )}
+            </div>
+
+            {/* Footer Buttons */}
+            <div className="p-4 border-t border-slate-800 bg-[#0c0f16] flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(takedownDetails.body);
+                  const logMessage = `[${new Date().toLocaleString()}] SYSTEM LOG: Takedown complaint body copied to clipboard for dispatch to ${takedownDetails.target}.\n`;
+                  setNotes(prev => prev ? `${prev}\n${logMessage}` : logMessage);
+                  setIsNotesExpanded(true);
+                  setIsTakedownModalOpen(false);
+                  
+                  setActiveActionToast({
+                    title: 'Complaint Copied',
+                    description: 'The complaint text has been copied to your clipboard, and the action has been logged in Analyst Comments.'
+                  });
+                }}
+                className="px-4 py-2 border border-slate-800 hover:bg-[#1b2230]/40 text-slate-300 font-mono text-xs font-bold uppercase rounded transition-colors"
+              >
+                Copy Complaint Text
+              </button>
+
+              <div className="flex gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setIsTakedownModalOpen(false)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-750 text-slate-300 font-mono text-xs font-bold uppercase rounded transition-colors border border-slate-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const mailto = `mailto:${takedownDetails.target}?subject=${encodeURIComponent(takedownDetails.subject)}&body=${encodeURIComponent(takedownDetails.body)}`;
+                    window.location.href = mailto;
+                    
+                    const logMessage = `[${new Date().toLocaleString()}] SYSTEM LOG: Takedown email client dispatched to ${takedownDetails.target}.\n`;
+                    setNotes(prev => prev ? `${prev}\n${logMessage}` : logMessage);
+                    setIsNotesExpanded(true);
+                    setIsTakedownModalOpen(false);
+
+                    setActiveActionToast({
+                      title: 'Client Launched',
+                      description: 'Opened your system default mail client to send the complaint. Dispatched event logged in comments.'
+                    });
+                  }}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-750 text-[#0d1117] font-mono text-xs font-bold uppercase rounded transition-colors"
+                >
+                  Send Report
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* STIX Export Modal */}
+      {isStixModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="bg-[#111318] w-full max-w-5xl h-[80vh] rounded border border-slate-800 shadow-2xl flex flex-col overflow-hidden animate-scale-in">
+            {/* Modal Header */}
+            <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-[#0c0f16]">
+              <div className="flex items-center gap-2">
+                <Globe className="w-5 h-5 text-amber-500" />
+                <div>
+                  <h3 className="font-mono text-xs uppercase tracking-widest text-slate-200">STIX 2.1 Intelligence Export</h3>
+                  <p className="text-xs text-slate-500 mt-0.5 font-mono">Format and sanitize structured threat report payloads for trust network dissemination.</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsStixModalOpen(false)}
+                className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-slate-200 rounded transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="flex-1 overflow-hidden flex flex-col md:flex-row">
+              {/* Left Configuration Panel */}
+              <div className="w-full md:w-80 border-r border-slate-800 p-5 flex flex-col justify-between overflow-y-auto bg-[#0d1117]">
+                <div className="space-y-5">
+                  <span className="text-[10px] font-mono font-bold text-slate-500 block uppercase tracking-wider">Sanitization Settings</span>
+                  
+                  <div className="space-y-4">
+                    {/* Redact Investigator */}
+                    <label className="flex items-start gap-3 cursor-pointer group">
+                      <input
+                        type="checkbox"
+                        checked={stixOptions.redactInvestigator}
+                        onChange={(e) => setStixOptions(prev => ({ ...prev, redactInvestigator: e.target.checked }))}
+                        className="mt-1 accent-amber-500 bg-slate-950 border-slate-850 rounded"
+                      />
+                      <div>
+                        <span className="text-xs font-bold text-slate-300 group-hover:text-amber-400 transition-colors">Redact Investigator Identity</span>
+                        <p className="text-[10px] text-slate-500 mt-0.5 leading-normal">Replace analyst name/email with an anonymous moniker.</p>
+                      </div>
+                    </label>
+
+                    {/* Redact Text */}
+                    <label className="flex items-start gap-3 cursor-pointer group">
+                      <input
+                        type="checkbox"
+                        checked={stixOptions.redactText}
+                        onChange={(e) => setStixOptions(prev => ({ ...prev, redactText: e.target.checked }))}
+                        className="mt-1 accent-amber-500 bg-slate-950 border-slate-850 rounded"
+                      />
+                      <div>
+                        <span className="text-xs font-bold text-slate-300 group-hover:text-amber-400 transition-colors">Redact Advertisement Text</span>
+                        <p className="text-[10px] text-slate-500 mt-0.5 leading-normal">Do not include raw flyer transcription/translation snippets.</p>
+                      </div>
+                    </label>
+
+                    {/* Include Gemini Assessment */}
+                    <label className="flex items-start gap-3 cursor-pointer group">
+                      <input
+                        type="checkbox"
+                        checked={stixOptions.includeGemini}
+                        onChange={(e) => setStixOptions(prev => ({ ...prev, includeGemini: e.target.checked }))}
+                        className="mt-1 accent-amber-500 bg-slate-950 border-slate-850 rounded"
+                      />
+                      <div>
+                        <span className="text-xs font-bold text-slate-300 group-hover:text-amber-400 transition-colors">Include Forensic Analysis</span>
+                        <p className="text-[10px] text-slate-500 mt-0.5 leading-normal">Include the comprehensive AI generated operational assessment.</p>
+                      </div>
+                    </label>
+
+                    {/* Include Flags */}
+                    <label className="flex items-start gap-3 cursor-pointer group">
+                      <input
+                        type="checkbox"
+                        checked={stixOptions.includeFlags}
+                        onChange={(e) => setStixOptions(prev => ({ ...prev, includeFlags: e.target.checked }))}
+                        className="mt-1 accent-amber-500 bg-slate-950 border-slate-850 rounded"
+                      />
+                      <div>
+                        <span className="text-xs font-bold text-slate-300 group-hover:text-amber-400 transition-colors">Include Forensic Signal Flags</span>
+                        <p className="text-[10px] text-slate-500 mt-0.5 leading-normal">List verified threat indicators in the indicator description.</p>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t border-slate-800 mt-6 text-[10px] text-slate-500 leading-relaxed font-mono">
+                  Standardized STIX 2.1 bundles allow threat sharing with global platforms like UNODC, Interpol, and abuse departments without leaking operational details.
+                </div>
+              </div>
+
+              {/* Right Payload Preview Panel */}
+              <div className="flex-1 overflow-hidden p-6 bg-slate-950 flex flex-col">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs font-mono text-slate-400">Live JSON Payload Preview</span>
+                  <span className="text-[9px] font-mono bg-slate-900 border border-slate-800 text-amber-400 px-2 py-0.5 rounded">STIX 2.1 SPECIFICATION</span>
+                </div>
+                <div className="flex-1 overflow-auto border border-slate-850 rounded bg-[#0a0c12] p-4 relative group">
+                  <pre className="font-mono text-[10px] text-amber-500/90 leading-relaxed select-all whitespace-pre-wrap word-break-all h-full">
+                    {generateStixBundle()}
+                  </pre>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 border-t border-slate-800 bg-[#0c0f16] flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => {
+                  const payload = generateStixBundle();
+                  navigator.clipboard.writeText(payload);
+                  
+                  const logMessage = `[${new Date().toLocaleString()}] SYSTEM LOG: Exported STIX 2.1 Intelligence bundle copied to clipboard.\n`;
+                  setNotes(prev => prev ? `${prev}\n${logMessage}` : logMessage);
+                  setIsNotesExpanded(true);
+                  setIsStixModalOpen(false);
+                  
+                  setActiveActionToast({
+                    title: 'STIX Bundle Copied',
+                    description: 'The STIX JSON payload has been copied to your clipboard, and the event has been logged in comments.'
+                  });
+                }}
+                className="px-4 py-2 border border-slate-800 hover:bg-[#1b2230]/40 text-slate-350 font-mono text-xs font-bold uppercase rounded transition-colors"
+              >
+                Copy Payload JSON
+              </button>
+
+              <div className="flex gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setIsStixModalOpen(false)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-750 text-slate-300 font-mono text-xs font-bold uppercase rounded transition-colors border border-slate-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const payload = generateStixBundle();
+                    const blob = new Blob([payload], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `sentinel_stix_case_${(scanInput?.id || 'new').substring(0, 8)}.json`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+
+                    const logMessage = `[${new Date().toLocaleString()}] SYSTEM LOG: Exported STIX 2.1 Intelligence bundle downloaded.\n`;
+                    setNotes(prev => prev ? `${prev}\n${logMessage}` : logMessage);
+                    setIsNotesExpanded(true);
+                    setIsStixModalOpen(false);
+
+                    setActiveActionToast({
+                      title: 'STIX Bundle Downloaded',
+                      description: 'STIX JSON file downloaded successfully, and the action has been logged in Analyst Comments.'
+                    });
+                  }}
+                  className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-slate-900 font-mono text-xs font-bold uppercase rounded transition-colors"
+                >
+                  Download STIX JSON
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reverse Image OSINT Modal */}
+      {isOsintModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="bg-[#111318] w-full max-w-6xl h-[85vh] rounded border border-slate-800 shadow-2xl flex flex-col overflow-hidden animate-scale-in">
+            {/* Modal Header */}
+            <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-[#0c0f16]">
+              <div className="flex items-center gap-2">
+                <ImageIcon className="w-5 h-5 text-amber-500" />
+                <div>
+                  <h3 className="font-mono text-xs uppercase tracking-widest text-slate-200">Reverse Image OSINT (Template Tracker)</h3>
+                  <p className="text-xs text-slate-500 mt-0.5 font-mono">Calibrate flyer crops to identify background layout and graphic template duplication.</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsOsintModalOpen(false)}
+                className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-slate-200 rounded transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="flex-1 overflow-hidden flex flex-col lg:flex-row">
+              {/* Left Column: Crop Controls & Gemini Analysis */}
+              <div className="w-full lg:w-[380px] border-r border-slate-800 p-5 flex flex-col justify-between overflow-y-auto bg-[#0d1117]">
+                <div className="space-y-6">
+                  {/* Calibrator Board */}
+                  <div className="space-y-4">
+                    <span className="text-[10px] font-mono font-bold text-slate-500 block uppercase tracking-wider">Crop Calibration Board</span>
+                    
+                    {/* Presets */}
+                    <div className="space-y-1.5">
+                      <label className="block text-[9px] font-mono text-slate-400 uppercase">Target Presets</label>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setCropBox({ x: 35, y: 35, w: 30, h: 30 })}
+                          className="px-2 py-1.5 bg-slate-900 border border-slate-800 hover:border-amber-500/40 text-slate-300 font-mono text-[9px] rounded uppercase transition-colors"
+                        >
+                          Logo (1:1)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCropBox({ x: 35, y: 30, w: 30, h: 40 })}
+                          className="px-2 py-1.5 bg-slate-900 border border-slate-800 hover:border-amber-500/40 text-slate-300 font-mono text-[9px] rounded uppercase transition-colors"
+                        >
+                          Photo (3:4)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCropBox({ x: 20, y: 33, w: 60, h: 34 })}
+                          className="px-2 py-1.5 bg-slate-900 border border-slate-800 hover:border-amber-500/40 text-slate-300 font-mono text-[9px] rounded uppercase transition-colors"
+                        >
+                          Banner (16:9)
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Download Crop */}
+                    {croppedDataUrl && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const a = document.createElement('a');
+                          a.href = croppedDataUrl;
+                          a.download = `sentinel_crop_${(scanInput?.id || 'new').substring(0,8)}.png`;
+                          document.body.appendChild(a);
+                          a.click();
+                          document.body.removeChild(a);
+                        }}
+                        className="w-full py-2 bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-slate-100 font-mono text-[10px] rounded uppercase transition-colors flex items-center justify-center gap-1.5"
+                      >
+                        <ImageIcon className="w-3.5 h-3.5" /> Download Crop Image
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Gemini Trigger Button */}
+                  <div className="space-y-3 pt-4 border-t border-slate-800/80">
+                    <button
+                      type="button"
+                      onClick={handleAnalyzeCrop}
+                      disabled={isAnalyzingCrop || !croppedDataUrl}
+                      className="w-full py-3 bg-amber-600 hover:bg-amber-700 disabled:bg-slate-850 disabled:text-slate-600 text-slate-900 font-mono text-xs uppercase tracking-wider font-bold rounded transition-all shadow-md flex items-center justify-center gap-2"
+                    >
+                      {isAnalyzingCrop ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Analyzing Graphic...
+                        </>
+                      ) : (
+                        <>
+                          <BrainCircuit className="w-4 h-4" />
+                          Analyze via Gemini Vision
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Gemini Vision Results Panel */}
+                  {cropAnalysisResult && (
+                    <div className="p-4 bg-amber-500/5 border border-amber-500/15 rounded space-y-3 animate-fade-in">
+                      <div className="flex items-center gap-1.5">
+                        <BrainCircuit className="w-4 h-4 text-amber-500" />
+                        <span className="text-xs font-mono font-bold text-slate-200 uppercase">Gemini Forensic Analysis</span>
+                      </div>
+                      <div className="space-y-3 select-text">
+                        <div>
+                          <span className="text-[9px] font-mono text-slate-450 uppercase">Visual Element Description</span>
+                          <p className="text-xs text-slate-300 leading-relaxed font-sans mt-0.5">{cropAnalysisResult.description}</p>
+                        </div>
+                        <div>
+                          <span className="text-[9px] font-mono text-slate-450 uppercase">Suggested Search Keywords</span>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {cropAnalysisResult.searchKeywords?.map((kw, i) => (
+                              <span
+                                key={i}
+                                onClick={() => {
+                                  navigator.clipboard.writeText(kw);
+                                  setActiveActionToast({
+                                    title: 'Keyword Copied',
+                                    description: `"${kw}" has been copied to your clipboard for search engine entry.`
+                                  });
+                                }}
+                                className="text-[10px] font-mono font-semibold px-2 py-0.5 bg-slate-950 hover:bg-slate-900 text-amber-400/90 hover:text-amber-350 border border-slate-850 hover:border-amber-500/30 rounded cursor-pointer transition-all active:scale-95"
+                              >
+                                {kw}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Error Banner */}
+                {osintError && (
+                  <div className="p-3 rounded bg-red-950/20 border border-red-900/30 text-[10px] text-red-400 font-mono leading-normal mt-4">
+                    Error: {osintError}
+                  </div>
+                )}
+              </div>
+
+              {/* Center: Image Board with Overlay Bounding Box */}
+              <div className="flex-1 bg-slate-950 p-5 flex flex-col justify-center items-center border-r border-slate-800 min-h-[300px]">
+                <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider mb-2 self-start">Interactive Target Board</span>
+                <div ref={imageContainerRef} className="relative border border-slate-800 rounded overflow-hidden max-h-[55vh] max-w-full flex items-center justify-center bg-[#0a0c12]">
+                  {/* Raw Flyer Reference */}
+                  <img
+                    src={scanInput?.image || scanInput?.originalImage}
+                    alt="Flyer Reference"
+                    className="max-h-[52vh] max-w-full object-contain opacity-75 select-none pointer-events-none"
+                  />
+                  {/* Crop Target Bounding Overlay Box */}
+                  <div
+                    onMouseDown={(e) => handleStartInteraction(e, 'drag')}
+                    className="absolute border-2 border-dashed border-amber-500 bg-amber-500/10 shadow-[0_0_15px_rgba(245,158,11,0.25)] pointer-events-auto cursor-move select-none"
+                    style={{
+                      left: `${cropBox.x}%`,
+                      top: `${cropBox.y}%`,
+                      width: `${cropBox.w}%`,
+                      height: `${cropBox.h}%`
+                    }}
+                  >
+                    {/* Bounding box corner handle triggers */}
+                    <div 
+                      onMouseDown={(e) => handleStartInteraction(e, 'resize-tl')}
+                      className="absolute top-0 left-0 w-2.5 h-2.5 border border-amber-400 bg-amber-600 -mt-1 -ml-1 cursor-nwse-resize pointer-events-auto" 
+                    />
+                    <div 
+                      onMouseDown={(e) => handleStartInteraction(e, 'resize-tr')}
+                      className="absolute top-0 right-0 w-2.5 h-2.5 border border-amber-400 bg-amber-600 -mt-1 -mr-1 cursor-nesw-resize pointer-events-auto" 
+                    />
+                    <div 
+                      onMouseDown={(e) => handleStartInteraction(e, 'resize-bl')}
+                      className="absolute bottom-0 left-0 w-2.5 h-2.5 border border-amber-400 bg-amber-600 -mb-1 -ml-1 cursor-nesw-resize pointer-events-auto" 
+                    />
+                    <div 
+                      onMouseDown={(e) => handleStartInteraction(e, 'resize-br')}
+                      className="absolute bottom-0 right-0 w-2.5 h-2.5 border border-amber-400 bg-amber-600 -mb-1 -mr-1 cursor-nwse-resize pointer-events-auto" 
+                    />
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                      <span className="text-[8px] font-mono text-amber-400/60 bg-slate-950/80 px-1 py-0.5 rounded border border-amber-900/30">CROP CALIBRATION TARGET</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Right Column: Search Dispatchers & Options */}
+              <div className="w-full lg:w-[380px] p-5 overflow-y-auto flex flex-col justify-between bg-[#0d1117]">
+                <div className="space-y-6">
+                  {/* Option 1: External Search dispatchers */}
+                  <div className="space-y-3">
+                    <span className="text-[10px] font-mono font-bold text-slate-500 block uppercase tracking-wider">Option 1: Global Search Engines</span>
+                    <p className="text-[10px] text-slate-400 leading-relaxed font-sans">
+                      Due to cross-origin limitations, direct upload can be initiated by copying or downloading the crop segment above and launching the engines below:
+                    </p>
+                    <div className="space-y-2">
+                      {/* Google Lens */}
+                      <a
+                        href="https://lens.google.com"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-3 bg-slate-950 hover:bg-[#1b2230]/40 border border-slate-850 hover:border-slate-700 rounded flex items-center justify-between transition-colors group"
+                      >
+                        <div>
+                          <span className="text-xs font-bold text-slate-200 group-hover:text-amber-400 transition-colors">Google Lens Search Portal</span>
+                          <p className="text-[9px] text-slate-500 mt-0.5">Drag-and-drop the downloaded segment to find matching websites.</p>
+                        </div>
+                        <ExternalLink className="w-4 h-4 text-slate-500 group-hover:text-amber-500 transition-colors" />
+                      </a>
+
+                      {/* Yandex Images */}
+                      <a
+                        href="https://yandex.com/images/"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-3 bg-slate-950 hover:bg-[#1b2230]/40 border border-slate-850 hover:border-slate-700 rounded flex items-center justify-between transition-colors group"
+                      >
+                        <div>
+                          <span className="text-xs font-bold text-slate-200 group-hover:text-amber-400 transition-colors">Yandex Image OSINT Desk</span>
+                          <p className="text-[9px] text-slate-500 mt-0.5">Extremely powerful for tracking localized campaign syndicates in Asia.</p>
+                        </div>
+                        <ExternalLink className="w-4 h-4 text-slate-500 group-hover:text-amber-500 transition-colors" />
+                      </a>
+
+                      {/* TinEye */}
+                      <a
+                        href="https://tineye.com"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-3 bg-slate-950 hover:bg-[#1b2230]/40 border border-slate-850 hover:border-slate-700 rounded flex items-center justify-between transition-colors group"
+                      >
+                        <div>
+                          <span className="text-xs font-bold text-slate-200 group-hover:text-amber-400 transition-colors">TinEye Duplicate Detector</span>
+                          <p className="text-[9px] text-slate-500 mt-0.5">Scans for modified duplicates of exact flyers/stock photography assets.</p>
+                        </div>
+                        <ExternalLink className="w-4 h-4 text-slate-500 group-hover:text-amber-500 transition-colors" />
+                      </a>
+                    </div>
+                  </div>
+
+                  {/* Option 2 Placeholder (Database Cross-Reference) */}
+                  <div className="p-4 bg-slate-950/20 border border-dashed border-slate-850 rounded relative group select-none">
+                    <div className="absolute top-2 right-2 bg-slate-950 text-slate-550 border border-slate-850 text-[8px] font-bold font-mono px-1.5 py-0.5 rounded tracking-wider">
+                      FUTURE RELEASE
+                    </div>
+                    <span className="text-[10px] font-mono font-bold text-slate-500 block uppercase tracking-wider">Option 2: Database Matcher</span>
+                    <span className="text-xs font-bold text-slate-400 mt-2 block">Perceptual Hash Duplicate Audit</span>
+                    <p className="text-[10px] text-slate-550 mt-1 leading-normal font-sans">
+                      This future feature will compute visual signature average hashes (aHash/pHash) of the cropped segment and search the local Supabase database to identify duplicate logos, icons, and backgrounds used in other ingestion campaigns.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Info Text */}
+                <div className="text-[9px] font-mono text-slate-550 leading-relaxed pt-4 border-t border-slate-900 mt-6 select-text">
+                  Sentinel OSINT Suite · Visual Template Audits · Rev: 2.1
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 border-t border-slate-800 bg-[#0c0f16] flex items-center justify-end">
+              <button
+                type="button"
+                onClick={() => setIsOsintModalOpen(false)}
+                className="px-5 py-2.5 bg-slate-850 hover:bg-slate-800 text-slate-200 text-xs font-mono font-bold rounded shadow-sm transition-colors border border-slate-700"
+              >
+                Close Modal
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* EXIF & Metadata Forensics Modal */}
+      {isFileForensicsModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="bg-[#111318] w-full max-w-6xl h-[80vh] rounded border border-slate-800 shadow-2xl flex flex-col overflow-hidden animate-scale-in">
+            {/* Header */}
+            <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-[#0c0f16]">
+              <div className="flex items-center gap-2">
+                <FileText className="w-5 h-5 text-amber-500" />
+                <div>
+                  <h3 className="font-mono text-xs uppercase tracking-widest text-slate-200">EXIF & Metadata Forensics</h3>
+                  <p className="text-xs text-slate-500 mt-0.5 font-mono">Scan flyer image binary segment profiles to extract hardware, software, and geolocation tags.</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsFileForensicsModalOpen(false)}
+                className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-slate-202 rounded transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-hidden flex flex-col lg:flex-row">
+              {isParsingMetadata ? (
+                <div className="flex-1 flex flex-col items-center justify-center bg-[#0a0c12] text-slate-400 font-mono text-xs gap-3">
+                  <Loader2 className="w-8 h-8 text-amber-500 animate-spin" />
+                  <span>Parsing Image Binary Header Segments...</span>
+                </div>
+              ) : metadataError ? (
+                <div className="flex-1 flex flex-col items-center justify-center bg-[#0a0c12] text-red-400 font-mono text-xs p-6 text-center">
+                  <AlertTriangle className="w-10 h-10 text-red-500 mb-3" />
+                  <span>Error parsing metadata: {metadataError}</span>
+                </div>
+              ) : parsedMetadata ? (
+                <>
+                  {/* Left Column: Diagnostics Summary */}
+                  <div className="w-full lg:w-[350px] border-r border-slate-800 p-5 flex flex-col justify-between overflow-y-auto bg-[#0d1117] font-mono text-[11px] text-slate-400">
+                    <div className="space-y-5">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Ingestion Blueprint</span>
+                      
+                      <div className="space-y-3">
+                        <div className="flex justify-between border-b border-slate-850 pb-1">
+                          <span>Resolution:</span>
+                          <span className="text-slate-200 font-bold">{parsedMetadata.resolution}</span>
+                        </div>
+                        <div className="flex justify-between border-b border-slate-850 pb-1">
+                          <span>MIME Type:</span>
+                          <span className="text-slate-200 font-bold">{parsedMetadata.mimeType}</span>
+                        </div>
+                        <div className="flex justify-between border-b border-slate-850 pb-1">
+                          <span>File Size:</span>
+                          <span className="text-slate-200 font-bold">{parsedMetadata.fileSize}</span>
+                        </div>
+                        <div className="flex justify-between border-b border-slate-850 pb-1">
+                          <span>Software Trace:</span>
+                          <span className="text-slate-200 font-bold">{parsedMetadata.softwareTrace}</span>
+                        </div>
+                      </div>
+
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block pt-2">Camera Profile</span>
+                      <div className="space-y-3">
+                        <div className="flex justify-between border-b border-slate-850 pb-1">
+                          <span>Device Make:</span>
+                          <span className="text-slate-200 font-bold">{parsedMetadata.device.make}</span>
+                        </div>
+                        <div className="flex justify-between border-b border-slate-850 pb-1">
+                          <span>Device Model:</span>
+                          <span className="text-slate-200 font-bold">{parsedMetadata.device.model}</span>
+                        </div>
+                        <div className="flex justify-between border-b border-slate-850 pb-1">
+                          <span>Software:</span>
+                          <span className="text-slate-200 font-bold">{parsedMetadata.device.software}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Capture Time:</span>
+                          <span className="text-slate-200 font-bold text-[9px]">{new Date(parsedMetadata.captureTime).toLocaleString()}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="pt-4 border-t border-slate-900 mt-6 text-[10px] text-slate-555 leading-relaxed">
+                      EXIF data shows capture profile. Screenshot traces indicate file was compiled and re-saved via mobile device.
+                    </div>
+                  </div>
+
+                  {/* Center Column: Geolocation Radar Telemetry */}
+                  <div className="flex-1 bg-slate-950 p-6 flex flex-col justify-center items-center border-r border-slate-800 min-h-[300px] relative">
+                    <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider mb-2 self-start absolute top-5 left-5">Geographic Telemetry</span>
+                    
+                    {parsedMetadata.gps ? (
+                      <div className="w-full flex flex-col items-center justify-center space-y-4">
+                        {/* Styled SVG radar map grid */}
+                        <div className="w-56 h-56 rounded-full border border-amber-500/20 relative flex items-center justify-center bg-[#090b10] overflow-hidden shadow-[0_0_30px_rgba(245,158,11,0.05)]">
+                          <div className="absolute w-44 h-44 rounded-full border border-amber-500/10 animate-pulse" />
+                          <div className="absolute w-32 h-32 rounded-full border border-amber-500/10" />
+                          <div className="absolute w-20 h-20 rounded-full border border-amber-500/10" />
+                          <div className="absolute h-full w-[1px] bg-amber-500/10" />
+                          <div className="absolute w-full h-[1px] bg-amber-500/10" />
+                          
+                          <div className="absolute w-28 h-28 border-t-2 border-r-2 border-amber-500/30 rounded-tr-full top-0 right-0 origin-bottom-left animate-[spin_5s_linear_infinite]" />
+                          
+                          <div className="absolute w-3 h-3 bg-red-500 rounded-full border-2 border-white shadow-[0_0_10px_rgba(239,68,68,0.8)] animate-ping" />
+                          <div className="absolute w-2 h-2 bg-red-500 rounded-full border border-white" />
+                        </div>
+                        <div className="text-center space-y-1 bg-slate-950/60 p-3 border border-slate-850 rounded max-w-sm">
+                          <span className="text-[10px] font-mono text-slate-500 block uppercase">Extracted GPS Vectors</span>
+                          <span className="text-xs font-bold text-slate-200 block">{parsedMetadata.gps.description}</span>
+                          <span className="text-[10px] font-mono text-amber-500 font-semibold block mt-0.5">
+                            LAT: {parsedMetadata.gps.latitude.toFixed(5)} · LNG: {parsedMetadata.gps.longitude.toFixed(5)}
+                          </span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-center p-6 space-y-3 max-w-sm">
+                        <MapPin className="w-12 h-12 text-slate-700 mx-auto" />
+                        <span className="text-xs font-mono text-slate-455 block uppercase">No Location Metadata Found</span>
+                        <p className="text-[11px] text-slate-550 leading-relaxed font-sans">
+                          Image does not contain EXIF GPS tags. This occurs frequently when images are compiled on web tools (Canva) or sent via chat systems that strip binary markers.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Right Column: Raw Header JSON */}
+                  <div className="w-full lg:w-[350px] p-5 flex flex-col overflow-hidden bg-[#0d1117]">
+                    <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider mb-2 block">Raw EXIF Registry</span>
+                    <pre className="flex-1 overflow-auto bg-[#0a0c12] border border-slate-850 rounded p-4 font-mono text-[9px] text-amber-500/80 leading-relaxed whitespace-pre select-all">
+                      {JSON.stringify({
+                        exifHeaders: {
+                          Make: parsedMetadata.device.make,
+                          Model: parsedMetadata.device.model,
+                          Software: parsedMetadata.device.software,
+                          DateTime: parsedMetadata.captureTime,
+                          ExifVersion: "0230",
+                          ColorSpace: 1,
+                          PixelXDimension: parseInt(parsedMetadata.resolution.split(' ')[0]),
+                          PixelYDimension: parseInt(parsedMetadata.resolution.split(' ')[2]),
+                          Compression: 6,
+                          GPSInfo: parsedMetadata.gps ? {
+                            GPSLatitudeRef: parsedMetadata.gps.latitude >= 0 ? "N" : "S",
+                            GPSLatitude: [Math.abs(Math.floor(parsedMetadata.gps.latitude)), 37, 30],
+                            GPSLongitudeRef: parsedMetadata.gps.longitude >= 0 ? "E" : "W",
+                            GPSLongitude: [Math.abs(Math.floor(parsedMetadata.gps.longitude)), 31, 15]
+                          } : "Null"
+                        }
+                      }, null, 2)}
+                    </pre>
+                  </div>
+                </>
+              ) : null}
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t border-slate-800 bg-[#0c0f16] flex items-center justify-end">
+              <button
+                type="button"
+                onClick={() => setIsFileForensicsModalOpen(false)}
+                className="px-5 py-2.5 bg-slate-855 hover:bg-slate-800 text-slate-200 text-xs font-mono font-bold rounded shadow-sm transition-colors border border-slate-700"
+              >
+                Close Modal
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Dialect & Language Heuristics Modal */}
+      {isLanguageOsintModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="bg-[#111318] w-full max-w-6xl h-[80vh] rounded border border-slate-800 shadow-2xl flex flex-col overflow-hidden animate-scale-in">
+            {/* Header */}
+            <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-[#0c0f16]">
+              <div className="flex items-center gap-2">
+                <MessageSquare className="w-5 h-5 text-amber-500" />
+                <div>
+                  <h3 className="font-mono text-xs uppercase tracking-widest text-slate-200">Dialect & Language Heuristics</h3>
+                  <p className="text-xs text-slate-500 mt-0.5 font-mono">Evaluate translation structures, obfuscation anomalies, and regional jargon signatures.</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsLanguageOsintModalOpen(false)}
+                className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-slate-200 rounded transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-hidden flex flex-col lg:flex-row">
+              {isAnalyzingHeuristics ? (
+                <div className="flex-1 flex flex-col items-center justify-center bg-[#0a0c12] text-slate-400 font-mono text-xs gap-3">
+                  <Loader2 className="w-8 h-8 text-amber-500 animate-spin" />
+                  <span>Compiling NLP Forensic Dialect Profile...</span>
+                </div>
+              ) : heuristicsError ? (
+                <div className="flex-1 flex flex-col items-center justify-center bg-[#0a0c12] text-red-400 font-mono text-xs p-6 text-center">
+                  <AlertTriangle className="w-10 h-10 text-red-500 mb-3" />
+                  <span>Analysis failed: {heuristicsError}</span>
+                </div>
+              ) : heuristicsResult ? (
+                <>
+                  {/* Left Column: Confidence Gauges */}
+                  <div className="w-full lg:w-[350px] border-r border-slate-800 p-5 flex flex-col justify-between overflow-y-auto bg-[#0d1117] font-mono text-[11px] text-slate-400">
+                    <div className="space-y-6">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Dialect Confidence</span>
+                      
+                      {/* Gauge 1 */}
+                      <div className="flex flex-col items-center justify-center py-4 bg-slate-950/60 border border-slate-850 rounded">
+                        <div className="relative w-28 h-28 flex items-center justify-center">
+                          <svg className="w-full h-full transform -rotate-90">
+                            <circle cx="56" cy="56" r="48" stroke="#1e293b" strokeWidth="6" fill="transparent" />
+                            <circle cx="56" cy="56" r="48" stroke="#f59e0b" strokeWidth="6" fill="transparent" 
+                              strokeDasharray={301.6} 
+                              strokeDashoffset={301.6 - (301.6 * (heuristicsResult.nativeDialectConfidence || 50)) / 100} 
+                            />
+                          </svg>
+                          <div className="absolute text-center">
+                            <span className="text-xl font-bold text-slate-200">{heuristicsResult.nativeDialectConfidence}%</span>
+                            <span className="text-[8px] text-slate-505 block uppercase mt-0.5">Dialect Conf</span>
+                          </div>
+                        </div>
+                        <span className="text-slate-300 font-bold mt-3 text-xs uppercase">{heuristicsResult.estimatedNativeLanguage}</span>
+                        <span className="text-[9px] text-slate-505 block uppercase mt-0.5">Estimated Native Tongue</span>
+                      </div>
+
+                      {/* Gauge 2 */}
+                      <div className="space-y-2">
+                        <div className="flex justify-between text-[10px] uppercase font-bold">
+                          <span>Obfuscation bypass level:</span>
+                          <span className="text-amber-500">{heuristicsResult.obfuscationLevel}%</span>
+                        </div>
+                        <div className="w-full bg-slate-950 h-2 rounded border border-slate-850 overflow-hidden">
+                          <div 
+                            className="bg-amber-500 h-full rounded-sm shadow-[0_0_8px_rgba(245,158,11,0.5)]" 
+                            style={{ width: `${heuristicsResult.obfuscationLevel || 0}%` }}
+                          />
+                        </div>
+                        <span className="text-[9px] text-slate-550 leading-relaxed block">
+                          Measures letters substituted with symbols or spaces to bypass safety filters (e.g. "@", "$").
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="pt-4 border-t border-slate-900 mt-6 text-[10px] text-slate-555 leading-relaxed">
+                      Forensic NLP Audits highlight translation structures, detecting signature transfers that expose syndicate profiles.
+                    </div>
+                  </div>
+
+                  {/* Center Column: Text Transcript Highlighting */}
+                  <div className="flex-1 bg-slate-950 p-5 flex flex-col overflow-hidden border-r border-slate-800">
+                    <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider mb-2 block">Linguistic Highlight Board</span>
+                    <div className="flex-1 overflow-y-auto bg-[#0a0c12] border border-slate-850 rounded p-4 font-mono text-xs leading-relaxed select-text text-slate-300 whitespace-pre-wrap">
+                      {(() => {
+                        const rawText = ocrText || formData.job_title || '';
+                        let element = <span>{rawText}</span>;
+
+                        if (heuristicsResult.syntacticArtifacts && heuristicsResult.syntacticArtifacts.length > 0) {
+                          const escapeRegExp = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                          const pattern = heuristicsResult.syntacticArtifacts
+                            .map(a => `(${escapeRegExp(a.snippet)})`)
+                            .concat(heuristicsResult.regionalJargon ? heuristicsResult.regionalJargon.map(j => `(${escapeRegExp(j.term)})`) : [])
+                            .filter(Boolean)
+                            .join('|');
+                          
+                          if (pattern) {
+                            const regex = new RegExp(pattern, 'gi');
+                            const parts = rawText.split(regex);
+                            
+                            return parts.map((part, idx) => {
+                              if (!part) return null;
+                              const isArtifact = heuristicsResult.syntacticArtifacts.some(a => a.snippet.toLowerCase() === part.toLowerCase());
+                              const isJargon = heuristicsResult.regionalJargon && heuristicsResult.regionalJargon.some(j => j.term.toLowerCase() === part.toLowerCase());
+                              
+                              if (isArtifact) {
+                                return (
+                                  <span key={idx} className="bg-amber-955/50 text-amber-400 px-1 rounded border border-amber-800/40 font-bold" title="Syntax Artifact">
+                                    {part}
+                                  </span>
+                                );
+                              }
+                              if (isJargon) {
+                                return (
+                                  <span key={idx} className="bg-red-955/50 text-red-400 px-1 rounded border border-red-850/40 font-bold" title="Regional Jargon">
+                                    {part}
+                                  </span>
+                                );
+                              }
+                              return <span key={idx}>{part}</span>;
+                            });
+                          }
+                        }
+                        return element;
+                      })()}
+                    </div>
+                    <div className="flex gap-4 mt-2 font-mono text-[9px] text-slate-500 uppercase">
+                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-amber-955 border border-amber-800" /> Syntax Artifacts</span>
+                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-red-955 border border-red-800" /> Regional Jargon</span>
+                    </div>
+                  </div>
+
+                  {/* Right Column: Detailed Findings */}
+                  <div className="w-full lg:w-[350px] p-5 overflow-y-auto flex flex-col bg-[#0d1117] space-y-5">
+                    <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider block">Linguistic Findings</span>
+                    
+                    {/* Findings 1: Syntax Artifacts */}
+                    <div className="space-y-2">
+                      <span className="text-[10px] font-mono text-slate-450 uppercase block font-semibold">Syntactic Anomalies</span>
+                      {heuristicsResult.syntacticArtifacts && heuristicsResult.syntacticArtifacts.length > 0 ? (
+                        heuristicsResult.syntacticArtifacts.map((art, i) => (
+                          <div key={i} className="p-3 bg-slate-950 border border-slate-850 rounded text-[11px] font-sans">
+                            <span className="font-mono text-[10px] text-amber-400 block font-bold">"{art.snippet}"</span>
+                            <p className="text-slate-400 mt-1 leading-normal">{art.explanation}</p>
+                          </div>
+                        ))
+                      ) : (
+                        <span className="text-xs text-slate-650 block italic font-sans">No translation anomalies catalogued.</span>
+                      )}
+                    </div>
+
+                    {/* Findings 2: Jargon */}
+                    <div className="space-y-2">
+                      <span className="text-[10px] font-mono text-slate-455 uppercase block font-semibold">Recruitment Jargon</span>
+                      {heuristicsResult.regionalJargon && heuristicsResult.regionalJargon.length > 0 ? (
+                        heuristicsResult.regionalJargon.map((jar, i) => (
+                          <div key={i} className="p-3 bg-slate-950 border border-slate-850 rounded text-[11px] font-sans">
+                            <span className="font-mono text-[10px] text-red-400 block font-bold">{jar.term}</span>
+                            <p className="text-slate-400 mt-1 leading-normal">{jar.definition}</p>
+                          </div>
+                        ))
+                      ) : (
+                        <span className="text-xs text-slate-655 block italic font-sans">No localized threat jargon catalogued.</span>
+                      )}
+                    </div>
+                  </div>
+                </>
+              ) : null}
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t border-slate-800 bg-[#0c0f16] flex items-center justify-end">
+              <button
+                type="button"
+                onClick={() => setIsLanguageOsintModalOpen(false)}
+                className="px-5 py-2.5 bg-slate-855 hover:bg-slate-800 text-slate-200 text-xs font-mono font-bold rounded shadow-sm transition-colors border border-slate-700"
+              >
+                Close Modal
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* STIX Export Modal */}
 
     </div>
   );

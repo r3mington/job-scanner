@@ -47,13 +47,99 @@ You must output ONLY valid JSON matching this schema:
   ]
 }`;
 
-export async function analyzeJobPosting(apiKey, modelName, { text, imageBase64 }) {
+export function getEndpointForModel(model, apiKey, path = 'generateContent') {
+  // Use v1beta for all models because systemInstruction and responseMimeType JSON schema settings
+  // are beta REST parameters and will throw validation errors on the stable v1 REST API.
+  return `https://generativelanguage.googleapis.com/v1beta/models/${model}:${path}?key=${apiKey}`;
+}
+
+export async function postToGeminiWithFallback(apiKey, requestedModel, payload, onStatusUpdate = null, path = 'generateContent') {
+  const fallbacks = [
+    requestedModel,
+    'gemini-2.5-flash',
+    'gemini-3.1-flash-lite',
+    'gemini-2.0-flash',
+    'gemini-2.5-pro'
+  ];
+
+  // Remove duplicate/empty entries
+  const modelChain = Array.from(new Set(fallbacks.filter(Boolean)));
+  const errorsList = [];
+
+  for (const model of modelChain) {
+    const endpoint = getEndpointForModel(model, apiKey, path);
+    const statusMsg = `Attempting model: ${model}...`;
+    console.log(`[Gemini API] ${statusMsg}`);
+    if (onStatusUpdate) {
+      onStatusUpdate({ type: 'info', message: statusMsg, model });
+    }
+
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const successMsg = `Successfully completed using model: ${model}`;
+        console.log(`[Gemini API] ${successMsg}`);
+        if (onStatusUpdate) {
+          onStatusUpdate({ type: 'success', message: successMsg, model });
+        }
+        return data;
+      }
+
+      let errorMsg = `HTTP error ${response.status}`;
+      try {
+        const errorData = await response.json();
+        errorMsg = errorData.error?.message || errorMsg;
+      } catch (e) {
+        // Response body might not be JSON
+      }
+      
+      const warnMsg = `Model ${model} failed: ${errorMsg}`;
+      console.warn(`[Gemini API] ${warnMsg}`);
+      
+      if (onStatusUpdate) {
+        onStatusUpdate({ type: 'warning', message: warnMsg, model });
+      }
+      
+      const errorObj = new Error(errorMsg);
+      errorsList.push(`${model}: ${errorMsg}`);
+
+      // If it's a client authentication/API key issue, fail immediately to prevent infinite loops
+      if (response.status === 400 && (errorMsg.includes('API key') || errorMsg.includes('invalid'))) {
+        throw errorObj;
+      }
+    } catch (err) {
+      const failMsg = `Exception occurred with model ${model}: ${err.message || err}`;
+      console.warn(`[Gemini API] ${failMsg}`, err);
+      if (onStatusUpdate) {
+        onStatusUpdate({ type: 'warning', message: failMsg, model });
+      }
+      
+      errorsList.push(`${model}: ${err.message || err}`);
+      
+      // If we threw early (e.g. API key issue), bubble it up
+      if (err.message && (err.message.includes('API key') || err.message.includes('invalid'))) {
+        throw err;
+      }
+    }
+  }
+
+  throw new Error(`All models in the fallback chain failed:\n${errorsList.join('\n')}`);
+}
+
+export async function analyzeJobPosting(apiKey, modelName, { text, imageBase64, onStatusUpdate }) {
   if (!apiKey) {
     throw new Error('Gemini API key is required');
   }
 
   const selectedModel = modelName || 'gemini-2.5-flash';
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${apiKey}`;
 
   const contents = [{
     parts: []
@@ -108,20 +194,7 @@ export async function analyzeJobPosting(apiKey, modelName, { text, imageBase64 }
   };
 
   try {
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload)
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error?.message || 'Failed to analyze job posting');
-    }
-
-    const data = await response.json();
+    const data = await postToGeminiWithFallback(apiKey, selectedModel, payload, onStatusUpdate);
     
     if (!data.candidates || data.candidates.length === 0) {
       throw new Error('No candidates returned from Gemini API. The response may have been blocked.');
@@ -167,13 +240,12 @@ export async function analyzeJobPosting(apiKey, modelName, { text, imageBase64 }
   }
 }
 
-export async function generateTraffickerSummary(apiKey, modelName, { contactMethod, scansData }) {
+export async function generateTraffickerSummary(apiKey, modelName, { contactMethod, scansData, onStatusUpdate }) {
   if (!apiKey) {
     throw new Error('Gemini API key is required');
   }
 
   const selectedModel = modelName || 'gemini-2.5-flash';
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${apiKey}`;
 
   const textPayload = `You are a professional threat intelligence analyst. 
 Analyze this recruiter/trafficker profile and their history of job postings to create a threat intelligence summary.
@@ -205,20 +277,7 @@ Provide a ~120 to 150 word summary of this recruiter's profile. Synthesize their
   };
 
   try {
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload)
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error?.message || 'Failed to generate summary');
-    }
-
-    const data = await response.json();
+    const data = await postToGeminiWithFallback(apiKey, selectedModel, payload, onStatusUpdate);
     if (!data.candidates || data.candidates.length === 0) {
       throw new Error('No response returned from Gemini API.');
     }
@@ -243,7 +302,7 @@ You must output ONLY valid JSON matching this schema:
       "dangerExplanation": "string (Localized. If mode is 'victim', explain how it threatens their physical safety. If 'analyst', explain forensic implications)"
     }
   ],
-  "playbookWarning": "string (A ~60-80 word paragraph. Localized. If 'victim', outline how a victim is lured, transported, and trapped in a compound. If 'analyst', outline the step-by-step Modus Operandi and coercion timeline)",
+  "playbookWarning": "string (A ~60-80 word paragraph. Localized. If 'victim', outline how a victim luring, transported, and trapped in a compound. If 'analyst', outline the step-by-step Modus Operandi and coercion timeline)",
   "helpResources": [
     {
       "organization": "string (Official or localized name of embassy, hotline, or NGO)",
@@ -256,13 +315,12 @@ You must output ONLY valid JSON matching this schema:
 Ensure all textual values are written in the requested Target Language.
 Ensure the help resources list 2 to 3 real, relevant organizations (such as regional anti-trafficking tip lines, local police numbers, or key foreign embassies like Thai, Chinese, or ASEAN missions) based on the location and language.`;
 
-export async function generatePosterContent(apiKey, modelName, { mode, language, scanData }) {
+export async function generatePosterContent(apiKey, modelName, { mode, language, scanData, onStatusUpdate }) {
   if (!apiKey) {
     throw new Error('Gemini API key is required');
   }
 
   const selectedModel = modelName || 'gemini-2.5-flash';
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${apiKey}`;
 
   const flagsStr = (scanData.activeFlags || []).join(', ') || 'N/A';
   
@@ -310,20 +368,7 @@ Generate the structured JSON content for the poster in the Target Language (${la
   };
 
   try {
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload)
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error?.message || 'Failed to generate poster content');
-    }
-
-    const data = await response.json();
+    const data = await postToGeminiWithFallback(apiKey, selectedModel, payload, onStatusUpdate);
     
     if (!data.candidates || data.candidates.length === 0) {
       throw new Error('No candidates returned from Gemini API.');
@@ -364,6 +409,131 @@ Generate the structured JSON content for the poster in the Target Language (${la
     return JSON.parse(cleanText);
   } catch (error) {
     console.error('Gemini Poster Generation Error:', error);
+    throw error;
+  }
+}
+
+export async function analyzeCrop(apiKey, modelName, { imageBase64, onStatusUpdate }) {
+  if (!apiKey) {
+    throw new Error('Gemini API key is required');
+  }
+
+  const selectedModel = modelName || 'gemini-2.5-flash';
+
+  // imageBase64 usually looks like: data:image/jpeg;base64,/9j/4AAQSkZJRg...
+  const base64Data = imageBase64.split(',')[1];
+  const mimeType = imageBase64.split(';')[0].split(':')[1];
+
+  const payload = {
+    systemInstruction: {
+      parts: [{ text: "You are a threat intelligence OSINT specialist. Analyze the provided cropped segment of a recruitment advertisement flyer/image and describe its visual components, potential stock photo features, or company logos, and output 3-5 concrete search keywords or reverse image search phrases." }]
+    },
+    contents: [{
+      parts: [
+        {
+          inlineData: {
+            mimeType: mimeType,
+            data: base64Data
+          }
+        },
+        {
+          text: "Identify any logo names, company symbols, character details, background graphics, or landmarks present in this image. Produce a JSON response containing 'description' (a concise 60-80 word forensic description of the visual element) and 'searchKeywords' (an array of 3-5 specific keywords/phrases to use in search engines to trace copies of this graphic template)."
+        }
+      ]
+    }],
+    generationConfig: {
+      responseMimeType: "application/json",
+      temperature: 0.2
+    }
+  };
+
+  try {
+    const data = await postToGeminiWithFallback(apiKey, selectedModel, payload, onStatusUpdate);
+    if (!data.candidates || data.candidates.length === 0) {
+      throw new Error('No response returned from Gemini API.');
+    }
+
+    const text = data.candidates[0].content.parts[0].text;
+    
+    // Extract JSON
+    let cleanText = text;
+    const firstBrace = cleanText.indexOf('{');
+    if (firstBrace !== -1) {
+      const lastBrace = cleanText.lastIndexOf('}');
+      if (lastBrace !== -1) {
+        cleanText = cleanText.substring(firstBrace, lastBrace + 1);
+      }
+    }
+
+    return JSON.parse(cleanText);
+  } catch (error) {
+    console.error('Gemini Crop Analysis Error:', error);
+    throw error;
+  }
+}
+
+export async function analyzeLanguageDialect(apiKey, modelName, { text, onStatusUpdate }) {
+  if (!apiKey) {
+    throw new Error('Gemini API key is required');
+  }
+
+  const selectedModel = modelName || 'gemini-2.5-flash';
+
+  const payload = {
+    systemInstruction: {
+      parts: [{ text: "You are an expert NLP forensic linguist specializing in recruitment scams and forced labor human trafficking campaigns. Analyze the text of the job advertisement and evaluate: direct translation syntax artifacts, obfuscation levels to bypass spam filters, and regional jargon signatures linked to online cyber-scam compound operations (ShaZhuPan)." }]
+    },
+    contents: [{
+      parts: [{
+        text: `Analyze this advertisement text:
+        "${text}"
+        
+        Provide a structured JSON response matching this schema:
+        {
+          "nativeDialectConfidence": number,
+          "estimatedNativeLanguage": "string",
+          "obfuscationLevel": number,
+          "syntacticArtifacts": [
+            {
+              "snippet": "string",
+              "explanation": "string"
+            }
+          ],
+          "regionalJargon": [
+            {
+              "term": "string",
+              "definition": "string"
+            }
+          ]
+        }`
+      }]
+    }],
+    generationConfig: {
+      responseMimeType: "application/json",
+      temperature: 0.1
+    }
+  };
+
+  try {
+    const data = await postToGeminiWithFallback(apiKey, selectedModel, payload, onStatusUpdate);
+    if (!data.candidates || data.candidates.length === 0) {
+      throw new Error('No response returned from Gemini API.');
+    }
+
+    const resText = data.candidates[0].content.parts[0].text;
+    
+    let cleanText = resText;
+    const firstBrace = cleanText.indexOf('{');
+    if (firstBrace !== -1) {
+      const lastBrace = cleanText.lastIndexOf('}');
+      if (lastBrace !== -1) {
+        cleanText = cleanText.substring(firstBrace, lastBrace + 1);
+      }
+    }
+
+    return JSON.parse(cleanText);
+  } catch (error) {
+    console.error('Gemini Dialect Analysis Error:', error);
     throw error;
   }
 }

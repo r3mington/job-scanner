@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase, mapDbToRecord } from '../utils/supabaseClient';
-import { BarChart3, AlertTriangle, ShieldAlert, CheckCircle2, TrendingUp, Users, MapPin, PhoneCall, Loader2, Award } from 'lucide-react';
+import { BarChart3, AlertTriangle, ShieldAlert, CheckCircle2, TrendingUp, Users, MapPin, PhoneCall, Loader2, Award, ChevronUp, ChevronDown } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 export const getCleanContactValue = (val) => {
@@ -29,6 +29,10 @@ export default function DashboardView() {
   const navigate = useNavigate();
   const [scans, setScans] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [showBriefing, setShowBriefing] = useState(() => {
+    const saved = localStorage.getItem('sentinel_show_dashboard_briefing');
+    return saved === null ? true : saved === 'true';
+  });
 
   useEffect(() => {
     const fetchScans = async () => {
@@ -145,6 +149,77 @@ export default function DashboardView() {
           <span className="text-amber-500 font-bold">▸</span> Analytics Dashboard
         </h1>
         <p className="text-slate-500 text-xs mt-0.5">Aggregate risk metrics and scam patterns detected in historical listings.</p>
+      </div>
+
+      {/* System Briefing / Onboarding Panel */}
+      <div className="bg-[#111318] border border-slate-800 rounded transition-all duration-300">
+        <button
+          type="button"
+          onClick={() => {
+            const nextState = !showBriefing;
+            setShowBriefing(nextState);
+            localStorage.setItem('sentinel_show_dashboard_briefing', String(nextState));
+          }}
+          className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-[#1b2230]/30 transition-colors rounded-t"
+        >
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+            <h2 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-200">
+              System Briefing: Intelligence Dashboard & Network Analysis
+            </h2>
+          </div>
+          <div className="flex items-center gap-1.5 font-mono text-[10px] text-slate-500 uppercase">
+            <span>{showBriefing ? 'Hide Briefing' : 'Show Briefing'}</span>
+            {showBriefing ? (
+              <ChevronUp className="w-3.5 h-3.5" />
+            ) : (
+              <ChevronDown className="w-3.5 h-3.5" />
+            )}
+          </div>
+        </button>
+
+        {showBriefing && (
+          <div className="p-4 border-t border-slate-800/60 bg-[#0a0c12]/40 text-xs font-mono space-y-4 grid grid-cols-1 md:grid-cols-2 gap-4 md:space-y-0">
+            <div className="space-y-2">
+              <div className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">
+                Console Overview
+              </div>
+              <p className="text-slate-400 leading-relaxed">
+                This dashboard aggregates threat intelligence gathered from historical scans to track exploitation metrics, isolate syndicated recruiters, and map syndicate hubs globally.
+              </p>
+              <div className="grid grid-cols-2 gap-2 pt-1.5">
+                <div className="border border-slate-800 bg-[#111318]/50 p-2 rounded">
+                  <div className="text-slate-500 font-bold text-[9px] uppercase">Syndicate Hubs</div>
+                  <div className="text-purple-400 font-bold text-[10px] mt-0.5">{networkHubs.length} Shared Contacts</div>
+                </div>
+                <div className="border border-slate-800 bg-[#111318]/50 p-2 rounded">
+                  <div className="text-slate-500 font-bold text-[9px] uppercase">Danger Threshold</div>
+                  <div className="text-red-400 font-bold text-[10px] mt-0.5">&gt;= 60 Severe Risk</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">
+                Threat Metrics Explanation
+              </div>
+              <ul className="space-y-1.5 text-slate-400">
+                <li className="flex items-start gap-2">
+                  <span className="text-amber-500/80">•</span>
+                  <span><strong>Key Indicators:</strong> Most frequent red-flags found in active exploitative posts.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-amber-500/80">•</span>
+                  <span><strong>Recruiter Hubs:</strong> Identified contact methods connecting multiple scam postings. Click any hub to view the recruiter's network.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-amber-500/80">•</span>
+                  <span><strong>Geographic Distribution:</strong> Average threat levels grouped by country or operating jurisdiction.</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* KPI Stats Grid */}

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { supabase } from '../utils/supabaseClient';
 import { Shield, Mail, Lock, Loader2, AlertCircle, LogIn, UserPlus, Database, Save } from 'lucide-react';
-import logo from '../assets/logo.png';
+import Logo from '../components/Logo';
 
 export default function LoginView() {
   const activeUrl = import.meta.env.VITE_SUPABASE_URL || localStorage.getItem('supabase_url') || '';
@@ -83,9 +83,7 @@ export default function LoginView() {
         {/* Branding header */}
         <div className="text-center space-y-4">
           <div className="flex justify-center">
-            <div className="bg-[#0a0f18] p-5 rounded border border-slate-800 inline-block">
-              <img src={logo} alt="Sentinel AI Logo" className="h-10 w-auto object-contain" />
-            </div>
+            <Logo height={45} showWordmark={true} />
           </div>
           <p className="text-xs text-slate-400 max-w-[280px] mx-auto font-mono">
             Securely detect risky job postings and human exploitation scams.

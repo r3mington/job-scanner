@@ -1,7 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 100" fill="none">
   <defs>
     <!-- Clip everything drawn over the hex to stay inside its boundary -->
-    <clipPath id="sai-hex-clip-fav">
+    <clipPath id="sai-hex-clip">
       <polygon points="29,13 72,13 93,50 72,87 29,87 7,50" />
     </clipPath>
   </defs>
@@ -10,7 +10,7 @@
   <polygon points="29,13 72,13 93,50 72,87 29,87 7,50" fill="#f59e0b" />
 
   <!-- ── FRACTURE + SCAN LINE (clipped inside hex) ────────────────── -->
-  <g clipPath="url(#sai-hex-clip-fav)">
+  <g clipPath="url(#sai-hex-clip)">
     <!-- Z-shaped crack: three connected segments forming a lightning-bolt -->
     <polyline
       points="38,13 58,40 30,61 46,87"
@@ -31,4 +31,15 @@
       opacity="0.8"
     />
   </g>
+
+  <!-- ── WORDMARK ─────────────────────────────────────────────────── -->
+  <text
+    x="110"
+    y="66"
+    font-family="'Inter', 'Segoe UI', 'Helvetica Neue', sans-serif"
+    font-size="38"
+    font-weight="700"
+    fill="#f59e0b"
+    letter-spacing="-0.5"
+  >Sentinel AI</text>
 </svg>

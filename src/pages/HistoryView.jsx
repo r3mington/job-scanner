@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase, mapDbToRecord } from '../utils/supabaseClient';
-import { Search, ChevronRight, ChevronDown, AlertTriangle, Briefcase, MapPin, Folder, Trash2, Globe, DollarSign, Languages, FileText, ShieldAlert } from 'lucide-react';
+import { Search, ChevronRight, ChevronDown, ChevronUp, AlertTriangle, Briefcase, MapPin, Folder, Trash2, Globe, DollarSign, Languages, FileText, ShieldAlert } from 'lucide-react';
 import { format } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import { getCleanContactValue } from './DashboardView';
@@ -57,6 +57,10 @@ export default function HistoryView() {
   const [viewType, setViewType] = useState('list'); // 'list', 'graph'
   const [scans, setScans] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [showBriefing, setShowBriefing] = useState(() => {
+    const saved = localStorage.getItem('sentinel_show_history_briefing');
+    return saved !== 'false';
+  });
 
   const fetchScans = async () => {
     try {
@@ -186,6 +190,63 @@ export default function HistoryView() {
   return (
     <div className={`flex flex-col flex-1 h-full mt-4 w-full mx-auto transition-all ${viewType === 'list' ? 'max-w-lg' : 'max-w-screen-md'}`}>
       
+      {/* System Briefing / Onboarding Panel */}
+      <div className="bg-[#0a0c12] border border-slate-800 rounded mb-4 overflow-hidden transition-all duration-300">
+        <button
+          type="button"
+          onClick={() => {
+            const nextState = !showBriefing;
+            setShowBriefing(nextState);
+            localStorage.setItem('sentinel_show_history_briefing', String(nextState));
+          }}
+          className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-[#1b2230]/30 transition-colors"
+        >
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+            <h2 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-200">
+              System Briefing: History Console & Audit Log
+            </h2>
+          </div>
+          <div className="flex items-center gap-1.5 font-mono text-[10px] text-slate-500 uppercase">
+            <span>{showBriefing ? 'Hide Briefing' : 'Show Briefing'}</span>
+            {showBriefing ? (
+              <ChevronUp className="w-3.5 h-3.5" />
+            ) : (
+              <ChevronDown className="w-3.5 h-3.5" />
+            )}
+          </div>
+        </button>
+
+        {showBriefing && (
+          <div className="p-4 border-t border-slate-800 bg-[#0a0c12]/40 text-xs font-mono space-y-4 grid grid-cols-1 sm:grid-cols-2 gap-4 sm:space-y-0">
+            <div className="space-y-2">
+              <div className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">
+                Audit Trail Overview
+              </div>
+              <p className="text-slate-400 leading-relaxed">
+                This console acts as a secure, local repository of your scanned jobs and ingested batches. Review historical risk trends, investigate threat dossiers, and track syndicates.
+              </p>
+            </div>
+            
+            <div className="space-y-2">
+              <div className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">
+                Interface Operations
+              </div>
+              <ul className="space-y-1 text-slate-400">
+                <li className="flex items-start gap-2">
+                  <span className="text-amber-500/80">•</span>
+                  <span><strong>List View:</strong> Displays nested batch structures and chronological timelines.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-amber-500/80">•</span>
+                  <span><strong>Connections Graph:</strong> Maps shared burner handles to visually isolate syndicate networks.</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+        )}
+      </div>
+
       <div className="bg-[#111318] p-4 rounded border border-slate-800 mb-4 sticky top-16 z-10">
         <div className="relative">
           <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -317,7 +378,7 @@ export default function HistoryView() {
                                     </span>
                                   )}
                                   {scan.parsedSalaryUsd && (
-                                    <span className="flex items-center gap-0.5 text-[#3fb950]">
+                                    <span className="flex items-center gap-0.5 text-slate-400">
                                       <DollarSign className="w-3 h-3 flex-shrink-0" />
                                       <span>{formatSalary(scan.parsedSalaryUsd)}/mo</span>
                                     </span>
@@ -351,7 +412,7 @@ export default function HistoryView() {
                                 {/* Recruiter Contact Handle */}
                                 {scan.extractedData?.contact_method && (
                                   <div className="mt-2 flex flex-wrap gap-1">
-                                    <span className="text-[8px] font-mono font-bold tracking-wider px-1.5 py-0.5 rounded border border-purple-500/20 text-purple-400 border-purple-500/15 bg-purple-500/5 uppercase">
+                                    <span className="text-[8px] font-mono font-bold tracking-wider px-1.5 py-0.5 rounded border border-slate-800 text-slate-400 bg-slate-900/50 uppercase">
                                       CONTACT: {getCleanContactValue(scan.extractedData.contact_method) || scan.extractedData.contact_method}
                                     </span>
                                   </div>
@@ -448,7 +509,7 @@ export default function HistoryView() {
                         </span>
                       )}
                       {scan.parsedSalaryUsd && (
-                        <span className="flex items-center gap-1 text-[#3fb950]">
+                        <span className="flex items-center gap-1 text-slate-400">
                           <DollarSign className="w-3.5 h-3.5 flex-shrink-0" />
                           <span>{formatSalary(scan.parsedSalaryUsd)}/mo</span>
                         </span>
@@ -482,7 +543,7 @@ export default function HistoryView() {
                     {/* Recruiter Contact Handle */}
                     {scan.extractedData?.contact_method && (
                       <div className="mt-2.5 flex flex-wrap gap-1">
-                        <span className="text-[9px] font-mono font-bold tracking-wider px-1.5 py-0.5 rounded border border-purple-500/20 text-purple-400 border-purple-500/15 bg-purple-500/5 uppercase">
+                        <span className="text-[9px] font-mono font-bold tracking-wider px-1.5 py-0.5 rounded border border-slate-800 text-slate-400 bg-slate-900/50 uppercase">
                           CONTACT: {getCleanContactValue(scan.extractedData.contact_method) || scan.extractedData.contact_method}
                         </span>
                       </div>

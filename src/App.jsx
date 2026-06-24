@@ -1,7 +1,8 @@
+import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
-import { Shield, History, Settings, BarChart3, LogOut, Loader2 } from 'lucide-react';
+import { Shield, Database, Settings, BarChart3, LogOut, Loader2 } from 'lucide-react';
 import ScannerView from './pages/ScannerView';
-import logo from './assets/logo.png';
+import Logo from './components/Logo';
 import HistoryView from './pages/HistoryView';
 import SettingsView from './pages/SettingsView';
 import ReviewScan from './pages/ReviewScan';
@@ -10,6 +11,8 @@ import LoginView from './pages/LoginView';
 import TraffickerProfileView from './pages/TraffickerProfileView';
 import DecoyContactView from './pages/DecoyContactView';
 import { AuthProvider, useAuth } from './context/AuthContext';
+
+
 
 function Layout({ children }) {
   const location = useLocation();
@@ -37,12 +40,11 @@ function Layout({ children }) {
 
   return (
     <div className="flex min-h-screen bg-[#0d1117] text-slate-300 font-sans">
-      {/* Desktop Sidebar (visible on md screens and up) */}
       <aside className="w-64 border-r border-slate-800 bg-[#111318] flex flex-col justify-between hidden md:flex sticky top-0 h-screen p-5 flex-shrink-0">
         <div className="space-y-6">
           <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-            <Link to="/" className="flex items-center bg-[#0a0f18] px-3 py-1 rounded border border-slate-850 shadow-sm transition-colors hover:border-amber-500/20">
-              <img src={logo} alt="Sentinel AI Logo" className="h-7 w-auto object-contain" />
+            <Link to="/" className="flex items-center group">
+              <Logo height={57} showWordmark={true} className="transition-opacity group-hover:opacity-75" />
             </Link>
           </div>
           <nav className="flex flex-col gap-1.5 font-mono text-xs uppercase tracking-wider">
@@ -51,8 +53,8 @@ function Layout({ children }) {
               <span>Scanner</span>
             </Link>
             <Link to="/history" className={`flex items-center gap-3 px-3 py-2.5 rounded transition-all border ${location.pathname === '/history' ? 'bg-[#0a0f18] border-slate-800 text-amber-400 font-bold' : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/30'}`}>
-              <History className="w-4 h-4" />
-              <span>History</span>
+              <Database className="w-4 h-4" />
+              <span>Threat Database</span>
             </Link>
             <Link to="/dashboard" className={`flex items-center gap-3 px-3 py-2.5 rounded transition-all border ${location.pathname === '/dashboard' ? 'bg-[#0a0f18] border-slate-800 text-amber-400 font-bold' : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/30'}`}>
               <BarChart3 className="w-4 h-4" />
@@ -65,9 +67,25 @@ function Layout({ children }) {
           </nav>
         </div>
         <div className="border-t border-slate-800 pt-4 flex flex-col gap-3">
-          <div className="flex flex-col gap-1">
-            <span className="text-[10px] text-slate-500 font-mono">USER EMAIL:</span>
-            <span className="text-xs text-slate-350 truncate">{user.email}</span>
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[10px] text-slate-500 font-mono uppercase tracking-wider">User Email:</span>
+              <span className="text-xs text-slate-350 truncate">{user.email}</span>
+            </div>
+            {user.last_sign_in_at && (
+              <div className="flex flex-col gap-0.5 font-mono text-[9px]">
+                <span className="text-slate-550 uppercase tracking-wider">Last Connected:</span>
+                <span className="text-slate-400">
+                  {new Date(user.last_sign_in_at).toLocaleString(undefined, {
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: true
+                  })}
+                </span>
+              </div>
+            )}
           </div>
           <button
             onClick={signOut}
@@ -81,8 +99,8 @@ function Layout({ children }) {
       <div className="flex-1 flex flex-col min-h-screen overflow-x-hidden">
         {/* Mobile Header (visible only on mobile) */}
         <header className="md:hidden bg-[#111318] border-b border-slate-800 sticky top-0 z-10 p-4 flex items-center justify-between shadow-sm">
-          <Link to="/" className="flex items-center bg-[#0a0f18] px-3 py-1 rounded border border-slate-850 shadow-sm">
-            <img src={logo} alt="Sentinel AI Logo" className="h-6 w-auto object-contain" />
+          <Link to="/" className="flex items-center group">
+            <Logo height={47} showWordmark={true} className="transition-opacity group-hover:opacity-75" />
           </Link>
           <div className="flex items-center gap-2">
             <span className="text-xs text-slate-400 truncate max-w-[120px]">{user.email}</span>
@@ -107,8 +125,8 @@ function Layout({ children }) {
             <span className="text-[10px] font-mono uppercase tracking-wider">Scanner</span>
           </Link>
           <Link to="/history" className={`flex-1 flex flex-col items-center justify-center py-2.5 transition-colors ${location.pathname === '/history' ? 'text-amber-450 font-bold' : 'text-slate-500 hover:text-slate-300'}`}>
-            <History className="w-5 h-5 mb-1" />
-            <span className="text-[10px] font-mono uppercase tracking-wider">History</span>
+            <Database className="w-5 h-5 mb-1" />
+            <span className="text-[10px] font-mono uppercase tracking-wider">Threat DB</span>
           </Link>
           <Link to="/dashboard" className={`flex-1 flex flex-col items-center justify-center py-2.5 transition-colors ${location.pathname === '/dashboard' ? 'text-amber-450 font-bold' : 'text-slate-500 hover:text-slate-300'}`}>
             <BarChart3 className="w-5 h-5 mb-1" />
