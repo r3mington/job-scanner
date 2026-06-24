@@ -1,13 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Network } from 'vis-network';
 import { useNavigate } from 'react-router-dom';
-import { ZoomIn, RotateCcw, AlertTriangle, ArrowRight, ShieldAlert, CheckCircle2, AlertCircle } from 'lucide-react';
+import { ZoomIn, RotateCcw, AlertTriangle, ArrowRight, ShieldAlert, CheckCircle2, AlertCircle, Play, Pause } from 'lucide-react';
 
 export default function NetworkGraphView({ scans }) {
   const containerRef = useRef(null);
   const networkRef = useRef(null);
   const navigate = useNavigate();
   const [selectedNode, setSelectedNode] = useState(null);
+  const [physicsEnabled, setPhysicsEnabled] = useState(true);
 
   // Parse contact method to extract clean identifier and type
   const parseContacts = (contactStr) => {
@@ -167,11 +168,64 @@ export default function NetworkGraphView({ scans }) {
       });
     });
 
+    // Apply dynamic styling based on final connection counts for dark-mode integration
+    nodesMap.forEach((node) => {
+      if (node.type === 'contact') {
+        const isHub = node.connectedScansCount > 1;
+        node.color = {
+          background: isHub ? '#4c1d95' : '#1e1b4b',
+          border: isHub ? '#f43f5e' : '#6366f1',
+          highlight: {
+            background: isHub ? '#5b21b6' : '#2e1065',
+            border: isHub ? '#f43f5e' : '#818cf8'
+          }
+        };
+        node.font = {
+          color: isHub ? '#fdf2ff' : '#e0e7ff',
+          size: isHub ? 12 : 11,
+          bold: isHub,
+          face: 'monospace'
+        };
+        if (isHub) {
+          node.borderWidth = 2.5;
+          node.label = `🚨 HUB: ${node.label.replace(/^[^\s]+\s/, '')}`;
+        } else {
+          node.borderWidth = 1;
+        }
+      } else if (node.type === 'employer') {
+        const isHub = node.connectedScansCount > 1;
+        node.color = {
+          background: '#1e293b',
+          border: isHub ? '#f59e0b' : '#475569',
+          highlight: {
+            background: '#334155',
+            border: isHub ? '#f59e0b' : '#64748b'
+          }
+        };
+        node.font = {
+          color: '#cbd5e1',
+          size: 11,
+          bold: true,
+          face: 'monospace'
+        };
+        if (isHub) {
+          node.borderWidth = 2;
+        }
+      } else if (node.type === 'scan') {
+        node.font = {
+          color: '#e2e8f0',
+          size: 11,
+          face: 'monospace'
+        };
+      }
+    });
+
     const nodes = Array.from(nodesMap.values());
     const data = { nodes, edges: edgesList };
 
     const options = {
       physics: {
+        enabled: physicsEnabled,
         solver: 'forceAtlas2Based',
         forceAtlas2Based: {
           gravitationalConstant: -50,
@@ -223,7 +277,7 @@ export default function NetworkGraphView({ scans }) {
         networkRef.current.destroy();
       }
     };
-  }, [scans]);
+  }, [scans, physicsEnabled]);
 
   const fitGraph = () => {
     if (networkRef.current) {
@@ -241,13 +295,13 @@ export default function NetworkGraphView({ scans }) {
   };
 
   return (
-    <div className="flex flex-col flex-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-sm min-h-[700px]">
+    <div className="flex flex-col flex-1 bg-[#111318] border border-slate-800 rounded-xl overflow-hidden shadow-sm min-h-[700px]">
       
       {/* Top Details Panel */}
-      <div className="border-b border-slate-200 dark:border-slate-800 p-4 bg-slate-50/50 dark:bg-slate-900/40 min-h-[120px] flex flex-col justify-center">
+      <div className="border-b border-slate-800 p-4 bg-[#0a0c12]/40 min-h-[120px] flex flex-col justify-center">
         {!selectedNode ? (
-          <div className="flex items-center gap-3 text-slate-500 dark:text-slate-400">
-            <AlertCircle className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+          <div className="flex items-center gap-3 text-slate-400">
+            <AlertCircle className="w-5 h-5 text-emerald-500 flex-shrink-0" />
             <p className="text-sm font-medium">Click any node in the graph below to inspect details, connected scans, and shared contact hubs.</p>
           </div>
         ) : (
@@ -382,16 +436,27 @@ export default function NetworkGraphView({ scans }) {
       </div>
 
       {/* Network Canvas */}
-      <div className="flex-1 relative bg-slate-50 dark:bg-slate-950/40 min-h-[550px] h-[550px]">
+      <div className="flex-1 relative bg-[#0a0c12] min-h-[550px] h-[550px]">
         <div ref={containerRef} className="w-full h-full absolute inset-0" />
         
         {/* Float Controls */}
         <div className="absolute bottom-4 left-4 flex gap-2 z-10">
           <button 
             onClick={fitGraph}
-            className="p-2 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg shadow border border-slate-200 dark:border-slate-700 transition-colors flex items-center gap-1.5 text-xs font-semibold"
+            className="p-2 bg-[#111318] hover:bg-slate-800 text-slate-300 rounded-lg shadow border border-slate-800 transition-colors flex items-center gap-1.5 text-xs font-semibold"
           >
             <RotateCcw className="w-4 h-4" /> Recenter
+          </button>
+          <button 
+            onClick={() => setPhysicsEnabled(prev => !prev)}
+            className={`p-2 rounded-lg shadow border transition-colors flex items-center gap-1.5 text-xs font-semibold ${
+              physicsEnabled 
+                ? 'bg-[#111318] hover:bg-slate-800 border-slate-800 text-slate-300' 
+                : 'bg-amber-500/10 border-amber-500/30 text-amber-500 hover:bg-amber-500/20'
+            }`}
+          >
+            {physicsEnabled ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+            {physicsEnabled ? 'Freeze Physics' : 'Unfreeze Physics'}
           </button>
         </div>
       </div>
