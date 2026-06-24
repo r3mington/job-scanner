@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
-import { Shield, Database, Settings, BarChart3, LogOut, Loader2 } from 'lucide-react';
+import { Shield, Database, Settings, BarChart3, LogOut, Loader2, HelpCircle } from 'lucide-react';
 import ScannerView from './pages/ScannerView';
+import FaqView from './pages/FaqView';
 import logoImg from './assets/logo.png';
 import HistoryView from './pages/HistoryView';
 import SettingsView from './pages/SettingsView';
@@ -64,6 +65,10 @@ function Layout({ children }) {
               <Settings className="w-4 h-4" />
               <span>Settings</span>
             </Link>
+            <Link to="/faq" className={`flex items-center gap-3 px-3 py-2.5 rounded transition-all border ${location.pathname === '/faq' ? 'bg-[#0a0f18] border-slate-800 text-amber-400 font-bold' : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/30'}`}>
+              <HelpCircle className="w-4 h-4" />
+              <span>FAQ</span>
+            </Link>
           </nav>
         </div>
         <div className="border-t border-slate-800 pt-4 flex flex-col gap-3">
@@ -102,7 +107,10 @@ function Layout({ children }) {
           <Link to="/" className="block">
               <img src={logoImg} alt="Sentinel AI" className="h-8 object-contain" />
             </Link>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2.5">
+            <Link to="/faq" className="p-1 text-slate-400 hover:text-amber-400 rounded transition-colors mr-1">
+              <HelpCircle className="w-5 h-5" />
+            </Link>
             <span className="text-xs text-slate-400 truncate max-w-[120px]">{user.email}</span>
             <button
               onClick={signOut}
@@ -155,6 +163,7 @@ function App() {
             <Route path="/settings" element={<SettingsView />} />
             <Route path="/trafficker/:contactId" element={<TraffickerProfileView />} />
             <Route path="/decoy-contact" element={<DecoyContactView />} />
+            <Route path="/faq" element={<FaqView />} />
           </Routes>
         </Layout>
       </AuthProvider>
