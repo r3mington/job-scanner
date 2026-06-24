@@ -195,64 +195,171 @@ export default function DecoyContactView() {
   };
 
   // --- jsPDF Resume Downloader ---
+  // --- jsPDF Resume Downloader ---
   const handleDownloadResume = () => {
     const doc = new jsPDF();
     
-    // Title Section
+    // Set custom colors
+    const primaryColor = [22, 101, 160]; // Deep Blue
+    const darkGray = [55, 65, 81];
+    
+    // Header Name
     doc.setFont("Helvetica", "bold");
-    doc.setFontSize(22);
+    doc.setFontSize(24);
+    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
     doc.text(persona.name.toUpperCase(), 20, 20);
     
-    // Contact details line
+    // Contact Info Grid
     doc.setFont("Helvetica", "normal");
-    doc.setFontSize(10);
-    doc.text(`Age: ${persona.age}  |  Location: ${persona.hometown}  |  Contact: ${persona.handle}`, 20, 28);
+    doc.setFontSize(9.5);
+    doc.setTextColor(darkGray[0], darkGray[1], darkGray[2]);
+    doc.text(`Age: ${persona.age}  |  Location: ${persona.hometown}  |  Contact: ${persona.handle}`, 20, 27);
     
-    // Border line
+    // Decorative Section Divider Line
+    doc.setDrawColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+    doc.setLineWidth(1);
+    doc.line(20, 31, 190, 31);
+    
+    // 1. Professional Summary / Career Objective
+    doc.setFont("Helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+    doc.text("PROFESSIONAL SUMMARY", 20, 40);
+    
+    doc.setFont("Helvetica", "normal");
+    doc.setFontSize(9.5);
+    doc.setTextColor(darkGray[0], darkGray[1], darkGray[2]);
+    const objectiveText = `Motivated and adaptable administrative professional from ${persona.hometown} with over 6 years of experience in data entry, client services, and logistics support. Demonstrates strong organizational skills, rapid document processing speed, and conversational language fluency. Seeking to leverage customer support and office management expertise in a challenging international environment. Available for immediate relocation.`;
+    doc.text(objectiveText, 20, 45, { maxWidth: 170, align: "justify" });
+    
+    // Divider
+    doc.setDrawColor(220, 224, 230);
     doc.setLineWidth(0.5);
-    doc.line(20, 32, 190, 32);
+    doc.line(20, 60, 190, 60);
     
-    // Career Objective
+    // 2. Professional Experience
     doc.setFont("Helvetica", "bold");
-    doc.setFontSize(12);
-    doc.text("OBJECTIVE", 20, 42);
-    doc.setFont("Helvetica", "normal");
-    doc.setFontSize(10);
-    doc.text(`Motivated and hard-working individual from ${persona.hometown} seeking an overseas entry-level customer service or administrative assistant role to support business operations. Available for immediate relocation.`, 20, 48, { maxWidth: 170 });
+    doc.setFontSize(11);
+    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+    doc.text("PROFESSIONAL EXPERIENCE", 20, 68);
     
-    // Work History
+    // Job 1
     doc.setFont("Helvetica", "bold");
-    doc.setFontSize(12);
-    doc.text("WORK HISTORY", 20, 68);
-    doc.setFont("Helvetica", "normal");
     doc.setFontSize(10);
-    doc.text("Assistant General Helper (2022 - Present)", 20, 74);
-    doc.text("• Handled general inquiries, inventory records, and office data entry tasks.", 25, 80);
-    doc.text("• Managed phone calls and chat interactions with local clients.", 25, 86);
+    doc.setTextColor(31, 41, 55);
+    doc.text("Administrative Assistant & Data Coordinator", 20, 75);
+    doc.setFont("Helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(107, 114, 128);
+    doc.text("South-East Logistics Ltd.  |  2022 - Present", 20, 80);
     
-    doc.text("Store Helper / Cashier (2020 - 2022)", 20, 96);
-    doc.text("• Processed transactional payments, reconciled logs, and managed cash registers.", 25, 102);
-    doc.text("• Assisted customers with location navigation and delivery updates.", 25, 108);
+    doc.setFont("Helvetica", "normal");
+    doc.setFontSize(9.5);
+    doc.setTextColor(darkGray[0], darkGray[1], darkGray[2]);
+    doc.text("• Handled incoming chat correspondence, client requests, and ticket queues under tight schedules.", 25, 86, { maxWidth: 165 });
+    doc.text("• Managed daily operations for shipping logs and digital data entry with 99.8% precision rating.", 25, 91, { maxWidth: 165 });
+    doc.text("• Maintained secure records databases and verified customs and routing documentation.", 25, 96, { maxWidth: 165 });
     
-    // Education
+    // Job 2
     doc.setFont("Helvetica", "bold");
-    doc.setFontSize(12);
-    doc.text("EDUCATION & SKILLS", 20, 122);
-    doc.setFont("Helvetica", "normal");
     doc.setFontSize(10);
-    doc.text("• High School Graduate / General Education", 20, 128);
-    doc.text("• Basic Computer Literacy (MS Office, Google Sheets, messaging apps)", 20, 134);
-    doc.text("• Typing speed: 40 WPM", 20, 140);
-    doc.text("• Languages: Native regional language, basic conversational English", 20, 146);
+    doc.setTextColor(31, 41, 55);
+    doc.text("Customer Service & Front Office Representative", 20, 106);
+    doc.setFont("Helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(107, 114, 128);
+    doc.text("Grand Horizon Hotel Group  |  2019 - 2022", 20, 111);
     
-    // Bottom separator
+    doc.setFont("Helvetica", "normal");
+    doc.setFontSize(9.5);
+    doc.setTextColor(darkGray[0], darkGray[1], darkGray[2]);
+    doc.text("• Managed guest communication channels, phone switchboards, and online chat assistance.", 25, 117, { maxWidth: 165 });
+    doc.text("• Coordinated travel plans, shuttle transfers, and regional tour guides for foreign customers.", 25, 122, { maxWidth: 165 });
+    doc.text("• Resolved customer disputes calmly and maintained billing registers accurately.", 25, 127, { maxWidth: 165 });
+    
+    // Job 3
+    doc.setFont("Helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(31, 41, 55);
+    doc.text("Retail Operations Clerk & Cashier", 20, 137);
+    doc.setFont("Helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(107, 114, 128);
+    doc.text("City Center Express Mart  |  2017 - 2019", 20, 142);
+    
+    doc.setFont("Helvetica", "normal");
+    doc.setFontSize(9.5);
+    doc.setTextColor(darkGray[0], darkGray[1], darkGray[2]);
+    doc.text("• Operated electronic cash register systems and balanced cash accounts daily.", 25, 148, { maxWidth: 165 });
+    doc.text("• Conducted bi-weekly inventory tracking, cataloging, and vendor restocking protocols.", 25, 153, { maxWidth: 165 });
+    
+    // Divider
+    doc.line(20, 161, 190, 161);
+    
+    // 3. Education & Credentials
+    doc.setFont("Helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+    doc.text("EDUCATION", 20, 169);
+    
+    doc.setFont("Helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(31, 41, 55);
+    doc.text("Associate Degree in Business Administration", 20, 175);
+    doc.setFont("Helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(107, 114, 128);
+    doc.text("Regional Vocational Institute  |  Graduated: 2017", 20, 180);
+    
+    doc.setFont("Helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(31, 41, 55);
+    doc.text("High School Certificate", 20, 188);
+    doc.setFont("Helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(107, 114, 128);
+    doc.text("District Academy  |  Graduated: 2015", 20, 193);
+    
+    // Divider
+    doc.line(20, 200, 190, 200);
+    
+    // 4. Skills & Dialects
+    doc.setFont("Helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+    doc.text("TECHNICAL SKILLS & LANGUAGES", 20, 208);
+    
+    doc.setFont("Helvetica", "normal");
+    doc.setFontSize(9.5);
+    doc.setTextColor(darkGray[0], darkGray[1], darkGray[2]);
+    doc.text("• Software: Microsoft Office Suite (Excel, Word), Google Workspace, Basic CRM platforms.", 20, 214);
+    doc.text("• Communication: Live Chat Support, VoIP, Customer Ticket Handling, email management.", 20, 220);
+    doc.text("• Key Metrics: Fast typing speed (55 WPM), document verification, scheduling.", 20, 226);
+    doc.text("• Languages: Native regional language (fluent), Conversational English.", 20, 232);
+    
+    // Divider
+    doc.line(20, 240, 190, 240);
+    
+    // 5. References
+    doc.setFont("Helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+    doc.text("REFERENCES", 20, 248);
+    
+    doc.setFont("Helvetica", "normal");
+    doc.setFontSize(9.5);
+    doc.setTextColor(darkGray[0], darkGray[1], darkGray[2]);
+    doc.text("Available immediately upon request.", 20, 254);
+    
+    // OpSec note / Footer
+    doc.setDrawColor(200, 200, 200);
     doc.setLineWidth(0.2);
-    doc.line(20, 156, 190, 156);
+    doc.line(20, 268, 190, 268);
     
-    // OpSec note
     doc.setFont("Helvetica", "italic");
     doc.setFontSize(8);
-    doc.text("Note: This document contains no tracking metadata or EXIF logs to verify authenticity.", 20, 162);
+    doc.setTextColor(156, 163, 175);
+    doc.text("Note: Sanitized document. EXIF metadata and tracking layers stripped.", 20, 274);
     
     doc.save(`${persona.name.toLowerCase()}_cv.pdf`);
   };
