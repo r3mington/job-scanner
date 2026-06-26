@@ -82,7 +82,7 @@ export default function SettingsView() {
   const isEnvConfigured = !!envApiKey;
 
   return (
-    <div className="flex flex-col flex-1 p-4 max-w-lg w-full mx-auto my-4 space-y-6">
+    <div className="flex flex-col flex-1 p-4 max-w-screen-md w-full mx-auto my-4 space-y-6">
       
       {/* Gemini API Key Configuration Card */}
       <div className="bg-[#111318] rounded border border-slate-800 overflow-hidden">

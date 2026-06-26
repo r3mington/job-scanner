@@ -18,12 +18,12 @@ import {
   UserCheck, 
   MessageSquare,
   ChevronRight,
-  ClipboardList
+  ClipboardList,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 
-const PERSONA_NAMES = ["Somyot", "Apinya", "Minh", "Ravi", "Sokha", "Myo Aung", "Kanya", "Aris", "Chinh", "Tewary"];
 const PERSONA_AGES = [21, 23, 24, 25, 27, 29, 31];
-const PERSONA_HOMETOWNS = ["Chiang Mai, Thailand", "Phnom Penh, Cambodia", "Hanoi, Vietnam", "Yangon, Myanmar", "Korat, Thailand", "Siem Reap, Cambodia", "Mandalay, Myanmar"];
 const PERSONA_BACKSTORIES = [
   "Former hotel clerk. Lost job due to compound closures. Has credit card debt of $1,500. Willing to work long shifts for high wage.",
   "High school graduate. Basic computer knowledge, no technical skills. Needs visa sponsorship. Seeking remote support roles.",
@@ -31,7 +31,49 @@ const PERSONA_BACKSTORIES = [
   "Agricultural worker seeking relocation. Willing to perform any online administrative task, desperate for cash to pay loan sharks.",
   "Freelance driver. Experienced in logistics, wants to move to office work. Eager for fast visa processing."
 ];
-const PERSONA_HANDLES = ["@somyot_c9", "@apinya_travels", "@minh_support", "@ravi_desk", "@sokha_agent", "@myo_aung_tech", "@kanya_work", "@aris_support"];
+
+const PERSONAS_BY_COUNTRY = {
+  Thailand: {
+    names: ["Somyot", "Apinya", "Kanya", "Anong", "Chai"],
+    hometowns: ["Chiang Mai, Thailand", "Korat, Thailand", "Bangkok, Thailand", "Phuket, Thailand"],
+    handles: ["@somyot_c9", "@apinya_travels", "@kanya_work", "@chai_support", "@anong_cs"]
+  },
+  Cambodia: {
+    names: ["Sokha", "Aris", "Chanthou", "Sophea", "Narin"],
+    hometowns: ["Phnom Penh, Cambodia", "Siem Reap, Cambodia", "Battambang, Cambodia", "Sihanoukville, Cambodia"],
+    handles: ["@sokha_agent", "@aris_support", "@chanthou_work", "@sophea_cs", "@narin_admin"]
+  },
+  Vietnam: {
+    names: ["Minh", "Chinh", "Lan", "Nam", "Huong"],
+    hometowns: ["Hanoi, Vietnam", "Ho Chi Minh City, Vietnam", "Da Nang, Vietnam", "Can Tho, Vietnam"],
+    handles: ["@minh_support", "@chinh_admin", "@lan_support", "@nam_cs", "@huong_agent"]
+  },
+  Myanmar: {
+    names: ["Myo Aung", "Tewary", "Thandar", "Kyaw", "Zin"],
+    hometowns: ["Yangon, Myanmar", "Mandalay, Myanmar", "Naypyidaw, Myanmar", "Taunggyi, Myanmar"],
+    handles: ["@myo_aung_tech", "@thandar_cs", "@kyaw_work", "@zin_support", "@tewary_admin"]
+  },
+  Malaysia: {
+    names: ["Ravi", "Lim", "Ahmad", "Siti", "Mei"],
+    hometowns: ["Kuala Lumpur, Malaysia", "Penang, Malaysia", "Johor Bahru, Malaysia", "Ipoh, Malaysia"],
+    handles: ["@ravi_desk", "@lim_support", "@ahmad_cs", "@siti_agent", "@mei_admin"]
+  },
+  Indonesia: {
+    names: ["Aris", "Budi", "Dewi", "Sari", "Agus"],
+    hometowns: ["Jakarta, Indonesia", "Surabaya, Indonesia", "Bandung, Indonesia", "Medan, Indonesia"],
+    handles: ["@aris_support", "@budi_cs", "@dewi_admin", "@sari_agent", "@agus_work"]
+  },
+  Philippines: {
+    names: ["Maria", "Juan", "Santos", "Cruz", "Reyes"],
+    hometowns: ["Manila, Philippines", "Cebu City, Philippines", "Davao City, Philippines", "Quezon City, Philippines"],
+    handles: ["@maria_cs", "@juan_support", "@santos_work", "@cruz_admin", "@reyes_agent"]
+  },
+  Laos: {
+    names: ["Seng", "Somphone", "Kham", "Keo", "Phon"],
+    hometowns: ["Vientiane, Laos", "Luang Prabang, Laos", "Savannakhet, Laos", "Pakse, Laos"],
+    handles: ["@seng_cs", "@somphone_support", "@kham_work", "@keo_admin", "@phon_agent"]
+  }
+};
 
 export default function DecoyContactView() {
   const location = useLocation();
@@ -122,6 +164,17 @@ export default function DecoyContactView() {
   };
 
   // --- Burner Persona State ---
+  const [isOpSecExpanded, setIsOpSecExpanded] = useState(false);
+
+  const [selectedCountry, setSelectedCountry] = useState(() => {
+    // Try to guess country from scanData's locationCountry
+    const matched = scanData?.locationCountry || '';
+    if (PERSONAS_BY_COUNTRY[matched]) {
+      return matched;
+    }
+    return 'Thailand';
+  });
+
   const [persona, setPersona] = useState({
     name: "Somyot",
     age: 24,
@@ -130,13 +183,20 @@ export default function DecoyContactView() {
     handle: "@somyot_c9"
   });
 
-  const rollPersona = () => {
-    const name = PERSONA_NAMES[Math.floor(Math.random() * PERSONA_NAMES.length)];
+  const rollPersona = (countryName = selectedCountry) => {
+    const countryData = PERSONAS_BY_COUNTRY[countryName] || PERSONAS_BY_COUNTRY['Thailand'];
+    const name = countryData.names[Math.floor(Math.random() * countryData.names.length)];
     const age = PERSONA_AGES[Math.floor(Math.random() * PERSONA_AGES.length)];
-    const hometown = PERSONA_HOMETOWNS[Math.floor(Math.random() * PERSONA_HOMETOWNS.length)];
+    const hometown = countryData.hometowns[Math.floor(Math.random() * countryData.hometowns.length)];
     const backstory = PERSONA_BACKSTORIES[Math.floor(Math.random() * PERSONA_BACKSTORIES.length)];
-    const handle = PERSONA_HANDLES[Math.floor(Math.random() * PERSONA_HANDLES.length)];
+    const handle = countryData.handles[Math.floor(Math.random() * countryData.handles.length)];
     setPersona({ name, age, hometown, backstory, handle });
+  };
+
+  // Re-roll persona when selected country changes
+  const handleCountryChange = (country) => {
+    setSelectedCountry(country);
+    rollPersona(country);
   };
 
   // --- Canned Templates Navigation ---
@@ -159,6 +219,16 @@ export default function DecoyContactView() {
       id: 'outreach_relocator',
       label: 'Relocation Inquiry',
       text: `Hello. I am interested in the customer support position. I am willing to relocate immediately. Can you tell me if flight tickets and accommodation are sponsor by company? Thank you.`
+    },
+    {
+      id: 'outreach_salary_type',
+      label: 'Compensation & Currency Inquiry',
+      text: `Regarding the salary, is it paid in local currency or USD/USDT? I want to make sure I can send the money back home to my family easily. Do you help set up a bank account?`
+    },
+    {
+      id: 'outreach_group',
+      label: 'Group Referral Inquiry',
+      text: `I have two friends who also lost their jobs. Do you have multiple spots open? We can travel together next week if you can sponsor all of us.`
     }
   ];
 
@@ -172,6 +242,16 @@ export default function DecoyContactView() {
       id: 'visa_withholding',
       label: 'Withholding Policy Check',
       text: `My friend told me some overseas companies keep the passport for safety. Will I be able to keep my passport with me in my room, or does the HR department hold it for visa renewal?`
+    },
+    {
+      id: 'visa_costs',
+      label: 'Travel Expense & Deposit Audit',
+      text: `Are there any visa processing fees or travel deposits I need to pay upfront? If the company pays for the flight, is that deducted from my salary later?`
+    },
+    {
+      id: 'visa_contract',
+      label: 'Contract Exit Option Check',
+      text: `What is the minimum contract period? If I find the job is not a good fit for me, can I resign and return home immediately, or is there a penalty fee I have to pay?`
     }
   ];
 
@@ -185,6 +265,16 @@ export default function DecoyContactView() {
       id: 'loc_transit',
       label: 'Transit Pickup Routine',
       text: `Will someone from company pick me up at the main airport terminal, or do I take a bus? Which airport should I fly to? Yangon, Bangkok, or Phnom Penh?`
+    },
+    {
+      id: 'loc_mobility',
+      label: 'Compound Mobility Check',
+      text: `Is the office in a closed park or compound? Are employees free to leave the building and visit the local town during our days off, or is it a security compound?`
+    },
+    {
+      id: 'loc_comms',
+      label: 'Communications & Internet Access Check',
+      text: `Will I have free internet access in my room to call my family? Are we allowed to keep our personal mobile phones with us during office working hours?`
     }
   ];
 
@@ -352,14 +442,18 @@ export default function DecoyContactView() {
     doc.text("Available immediately upon request.", 20, 254);
     
     // OpSec note / Footer
-    doc.setDrawColor(200, 200, 200);
-    doc.setLineWidth(0.2);
+    doc.setDrawColor(220, 38, 38);
+    doc.setLineWidth(0.5);
     doc.line(20, 268, 190, 268);
     
-    doc.setFont("Helvetica", "italic");
+    doc.setFont("Helvetica", "bold");
     doc.setFontSize(8);
+    doc.setTextColor(220, 38, 38);
+    doc.text("WARNING: SIMULATED DECOY PROFILE. RESEARCH AND TRAINING USE ONLY - NOT A REAL IDENTITY.", 20, 274);
+    doc.setFont("Helvetica", "italic");
+    doc.setFontSize(7.5);
     doc.setTextColor(156, 163, 175);
-    doc.text("Note: Sanitized document. EXIF metadata and tracking layers stripped.", 20, 274);
+    doc.text("Sentinel AI Do No Harm Framework: EXIF metadata and tracking layers stripped.", 20, 280);
     
     doc.save(`${persona.name.toLowerCase()}_cv.pdf`);
   };
@@ -372,7 +466,7 @@ export default function DecoyContactView() {
   }).score;
 
   return (
-    <div className="flex flex-col flex-1 p-4 max-w-4xl w-full mx-auto space-y-6 select-text text-slate-355 bg-[#0d1117] min-h-screen">
+    <div className="flex flex-col flex-1 p-4 max-w-screen-md w-full mx-auto space-y-6 select-text text-slate-355 bg-[#0d1117] min-h-screen">
       
       {/* Header Panel */}
       <div className="flex items-center gap-4">
@@ -413,11 +507,30 @@ export default function DecoyContactView() {
       </div>
 
       {/* STRICT OPSEC WARNING CONTAINER */}
-      <div className="rounded border-l-[4px] border-red-500 border-t border-b border-r border-slate-800 bg-red-950/20 p-5">
-        <div className="flex items-start gap-3">
-          <ShieldAlert className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
-          <div className="space-y-3">
-            <h3 className="text-sm font-bold text-red-400 uppercase tracking-wide font-mono">Mandatory Operational Security (OpSec) Safeguards</h3>
+      <div className="rounded border-l-[4px] border-red-500 border-t border-b border-r border-slate-800 bg-red-950/20 overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setIsOpSecExpanded(!isOpSecExpanded)}
+          className="w-full p-4 flex items-center justify-between text-left hover:bg-red-950/30 transition-colors"
+        >
+          <div className="flex items-center gap-3">
+            <ShieldAlert className="w-5 h-5 text-red-500 flex-shrink-0" />
+            <h3 className="text-sm font-bold text-red-400 uppercase tracking-wide font-mono">
+              Mandatory Operational Security (OpSec) Safeguards
+            </h3>
+          </div>
+          <div className="flex items-center gap-1 text-[10px] font-mono text-slate-500 uppercase">
+            <span>{isOpSecExpanded ? 'Hide' : 'Show'}</span>
+            {isOpSecExpanded ? (
+              <ChevronUp className="w-4 h-4 text-slate-400" />
+            ) : (
+              <ChevronDown className="w-4 h-4 text-slate-400" />
+            )}
+          </div>
+        </button>
+
+        {isOpSecExpanded && (
+          <div className="px-5 pb-5 pt-1 border-t border-slate-800/40 space-y-3">
             <p className="text-xs text-slate-450 leading-relaxed font-mono">
               Engaging directly with trafficking syndicates poses active physical and digital retaliation risks. Before sending any message, you must certify compliance with the following security standards:
             </p>
@@ -452,7 +565,7 @@ export default function DecoyContactView() {
               </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Main Grid: Left Column Settings, Right Column Templates */}
@@ -462,20 +575,38 @@ export default function DecoyContactView() {
         <div className="md:col-span-1 space-y-6">
           
           {/* Burner Persona Generator */}
-          <div className="rounded border border-slate-800 p-5 bg-[#111318]">
-            <div className="flex justify-between items-center mb-4">
+          <div className="rounded border border-slate-800 p-5 bg-[#111318] space-y-4">
+            <div className="flex justify-between items-center">
               <h3 className="font-bold text-sm text-slate-250 flex items-center gap-1.5 font-mono">
                 <UserCheck className="w-4 h-4 text-amber-500" />
                 Burner Candidate Profile
               </h3>
               <button 
                 type="button" 
-                onClick={rollPersona}
+                onClick={() => rollPersona(selectedCountry)}
                 className="p-1.5 rounded border border-slate-800 bg-[#0a0c12] hover:bg-[#1b2230] text-slate-400 hover:text-slate-200 transition-colors"
                 title="Roll New Persona"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
               </button>
+            </div>
+
+            {/* Country Selector Selector */}
+            <div className="space-y-1.5 font-mono text-xs">
+              <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-wider">
+                Select Resume Target Country
+              </label>
+              <select
+                value={selectedCountry}
+                onChange={(e) => handleCountryChange(e.target.value)}
+                className="w-full px-3 py-2 bg-[#0a0c12] border border-slate-800 rounded text-xs text-slate-255 focus:outline-none focus:ring-1 focus:ring-amber-500 transition-all"
+              >
+                {Object.keys(PERSONAS_BY_COUNTRY).map((country) => (
+                  <option key={country} value={country}>
+                    {country}
+                  </option>
+                ))}
+              </select>
             </div>
             
             <div className="space-y-3 text-xs font-mono">
@@ -497,11 +628,24 @@ export default function DecoyContactView() {
               </div>
             </div>
 
+            {/* Synthetic Candidate Disclaimer */}
+            <div className="p-3 bg-amber-500/5 border border-amber-500/10 rounded font-mono text-[9px] text-amber-500/90 leading-relaxed">
+              <div className="font-bold uppercase tracking-wider mb-1 flex items-center gap-1 text-amber-500">
+                <ShieldAlert className="w-3.5 h-3.5" />
+                Synthetic Candidate Profile
+              </div>
+              This profile and CV are generated with <strong>synthetic/fake data</strong>:
+              <ul className="list-disc list-inside mt-1 space-y-0.5 pl-1">
+                <li>Under no circumstances should live contact occur without active investigator oversight.</li>
+                <li>Used strictly for defensive OSINT simulation and profile threat mitigation.</li>
+              </ul>
+            </div>
+
             {/* Sanitized PDF Resume Downloader */}
             <button
               type="button"
               onClick={handleDownloadResume}
-              className="w-full mt-4 py-2.5 bg-[#0a0c12] hover:bg-[#1b2230] border border-slate-800 text-slate-300 hover:text-white text-xs font-mono font-bold rounded transition-all flex items-center justify-center gap-1.5 active:scale-95 shadow-sm"
+              className="w-full py-2.5 bg-[#0a0c12] hover:bg-[#1b2230] border border-slate-800 text-slate-300 hover:text-white text-xs font-mono font-bold rounded transition-all flex items-center justify-center gap-1.5 active:scale-95 shadow-sm"
             >
               <FileText className="w-4 h-4 text-amber-500" />
               Download Sanitized CV (PDF)
@@ -549,7 +693,11 @@ export default function DecoyContactView() {
         </div>
 
         {/* Right Column (Canned Chat Templates) */}
-        <div className="md:col-span-2 space-y-6">
+        <div className="md:col-span-2 space-y-4">
+          <h3 className="font-bold text-sm text-slate-250 flex items-center gap-1.5 font-mono">
+            <MessageSquare className="w-4 h-4 text-amber-500" />
+            Decoy Engagement Templates
+          </h3>
           <div className="rounded border border-slate-800 overflow-hidden bg-[#111318]">
             {/* Tab Bar */}
             <div className="border-b border-slate-800 p-2 flex bg-[#0a0c12]/50 justify-between items-center">
@@ -577,13 +725,18 @@ export default function DecoyContactView() {
 
             {/* Templates Content */}
             <div className="p-5 space-y-5">
-              <div className="p-3 rounded bg-[#0a0c12] border border-[#0a0c12] text-xs text-slate-500 leading-normal flex items-start gap-2 font-mono">
-                <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
-                <span>
-                  {activeTab === 'outreach' && "OBJECTIVE: Establish initial rapport. Act matching your Burner backstory. Gauge candidate requirements (low barriers to entry)."}
-                  {activeTab === 'visa' && "OBJECTIVE: Audit documentation workflow. Verify if the recruiter demands high-res passport pages, visa deposits, or passport controls."}
-                  {activeTab === 'location' && "OBJECTIVE: Extract compound coordinates or land travel checkpoints. Do not agree to cross borders illegally."}
-                </span>
+              <div className="p-3 rounded bg-amber-500/5 border border-amber-500/10 text-xs text-amber-500/90 leading-normal flex flex-col gap-1.5 font-mono">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
+                  <span>
+                    {activeTab === 'outreach' && "OBJECTIVE: Establish initial rapport. Act matching your Burner backstory. Gauge candidate requirements (low barriers to entry)."}
+                    {activeTab === 'visa' && "OBJECTIVE: Audit documentation workflow. Verify if the recruiter demands high-res passport pages, visa deposits, or passport controls."}
+                    {activeTab === 'location' && "OBJECTIVE: Extract compound coordinates or land travel checkpoints. Do not agree to cross borders illegally."}
+                  </span>
+                </div>
+                <div className="text-[10px] text-amber-500/80 pl-6 border-t border-amber-500/10 pt-1.5 mt-0.5 font-semibold uppercase tracking-wider">
+                  ⚠️ Synthetic OSINT Sandbox — Human-In-The-Loop Oversight Mandatory
+                </div>
               </div>
 
               <div className="space-y-4">

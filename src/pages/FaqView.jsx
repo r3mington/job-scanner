@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { HelpCircle, ChevronDown, ChevronUp, Cpu, Key, BarChart3, Fingerprint, MessageSquare, Image, Eye, Languages } from 'lucide-react';
+import { HelpCircle, ChevronDown, ChevronUp, Cpu, Key, BarChart3, Fingerprint, MessageSquare, Image, Eye, Languages, ShieldAlert } from 'lucide-react';
 
 export default function FaqView() {
   const [openSections, setOpenSections] = useState({});
@@ -12,6 +12,24 @@ export default function FaqView() {
   };
 
   const faqItems = [
+    {
+      id: 'privacy',
+      icon: <ShieldAlert className="w-4 h-4 text-amber-500" />,
+      title: 'Model Provider & Data Privacy Disclosure',
+      summary: 'Data protection policies, model providers, and how API keys are secured.',
+      details: (
+        <div className="space-y-3 leading-relaxed text-slate-355 text-slate-300">
+          <p>
+            Sentinel AI processes job listings and uploaded threat graphics using Google’s enterprise-tier developer API endpoints (specifically <strong>Gemini 2.5 Flash</strong> and <strong>Gemini 1.5 Pro</strong>).
+          </p>
+          <ul className="list-disc pl-5 space-y-2">
+            <li><strong>Data Retention Policy:</strong> To align with UN Do No Harm guidelines, all API calls are made directly from the analyst's browser to the official Google API endpoint. No text, image metadata, or document bytes are stored on intermediary servers.</li>
+            <li><strong>Training Data Exclusion:</strong> According to Google Cloud’s standard developer API terms, data transmitted via commercial API keys is not used to train Google’s public foundation models.</li>
+            <li><strong>Local Credential Security:</strong> Your Gemini API keys are stored solely in the local browser cache (LocalStorage / Settings) and are never transmitted to any third-party databases.</li>
+          </ul>
+        </div>
+      )
+    },
     {
       id: 'architecture',
       icon: <Cpu className="w-4 h-4 text-amber-500" />,
@@ -196,7 +214,7 @@ export default function FaqView() {
   ];
 
   return (
-    <div className="flex flex-col flex-1 p-4 max-w-2xl w-full mx-auto space-y-6">
+    <div className="flex flex-col flex-1 p-4 max-w-screen-md w-full mx-auto space-y-6">
       
       {/* Header */}
       <div className="space-y-1.5 border-b border-slate-800 pb-4">

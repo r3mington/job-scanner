@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
-import { Shield, Database, Settings, BarChart3, LogOut, Loader2, HelpCircle } from 'lucide-react';
+import { Shield, Database, Settings, BarChart3, LogOut, Loader2, HelpCircle, Home } from 'lucide-react';
 import ScannerView from './pages/ScannerView';
 import FaqView from './pages/FaqView';
 import logoImg from './assets/logo.png';
@@ -11,6 +11,7 @@ import DashboardView from './pages/DashboardView';
 import LoginView from './pages/LoginView';
 import TraffickerProfileView from './pages/TraffickerProfileView';
 import DecoyContactView from './pages/DecoyContactView';
+import HomeView from './pages/HomeView';
 import { AuthProvider, useAuth } from './context/AuthContext';
 
 
@@ -50,6 +51,10 @@ function Layout({ children }) {
           </div>
           <nav className="flex flex-col gap-1.5 font-mono text-xs uppercase tracking-wider">
             <Link to="/" className={`flex items-center gap-3 px-3 py-2.5 rounded transition-all border ${location.pathname === '/' ? 'bg-[#0a0f18] border-slate-800 text-amber-400 font-bold' : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/30'}`}>
+              <Home className="w-4 h-4" />
+              <span>Home</span>
+            </Link>
+            <Link to="/scanner" className={`flex items-center gap-3 px-3 py-2.5 rounded transition-all border ${location.pathname === '/scanner' ? 'bg-[#0a0f18] border-slate-800 text-amber-400 font-bold' : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/30'}`}>
               <Shield className="w-4 h-4" />
               <span>Scanner</span>
             </Link>
@@ -129,6 +134,10 @@ function Layout({ children }) {
         {/* Mobile Bottom Navigation (visible only on mobile) */}
         <nav className="md:hidden bg-[#111318] border-t border-slate-800 sticky bottom-0 z-10 shadow-lg flex pb-safe">
           <Link to="/" className={`flex-1 flex flex-col items-center justify-center py-2.5 transition-colors ${location.pathname === '/' ? 'text-amber-450 font-bold' : 'text-slate-500 hover:text-slate-300'}`}>
+            <Home className="w-5 h-5 mb-1" />
+            <span className="text-[10px] font-mono uppercase tracking-wider">Home</span>
+          </Link>
+          <Link to="/scanner" className={`flex-1 flex flex-col items-center justify-center py-2.5 transition-colors ${location.pathname === '/scanner' ? 'text-amber-450 font-bold' : 'text-slate-500 hover:text-slate-300'}`}>
             <Shield className="w-5 h-5 mb-1" />
             <span className="text-[10px] font-mono uppercase tracking-wider">Scanner</span>
           </Link>
@@ -156,7 +165,8 @@ function App() {
       <AuthProvider>
         <Layout>
           <Routes>
-            <Route path="/" element={<ScannerView />} />
+            <Route path="/" element={<HomeView />} />
+            <Route path="/scanner" element={<ScannerView />} />
             <Route path="/review" element={<ReviewScan />} />
             <Route path="/history" element={<HistoryView />} />
             <Route path="/dashboard" element={<DashboardView />} />

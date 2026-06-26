@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { Camera, Image as ImageIcon, FileText, Upload, X, FileSpreadsheet, Play, CheckCircle2, AlertCircle, Loader2, Download, Copy, ArrowRight, ChevronDown, ChevronUp, Globe, Link, Calendar } from 'lucide-react';
+import { Camera, Image as ImageIcon, FileText, Upload, X, FileSpreadsheet, Play, CheckCircle2, AlertCircle, Loader2, Download, Copy, ArrowRight, ChevronDown, ChevronUp, Globe, Link, Calendar, Cpu, Bot, Key, RefreshCw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { supabase, mapRecordToDb } from '../utils/supabaseClient';
 import { analyzeJobPosting } from '../services/geminiService';
@@ -474,6 +474,13 @@ export default function ScannerView() {
           >
             <FileSpreadsheet className="w-3.5 h-3.5 flex-shrink-0" /> Batch CSV
           </button>
+          <button
+            type="button"
+            onClick={() => handleTabChange('api')}
+            className={`flex-1 py-2 px-3 text-xs font-mono font-bold uppercase tracking-wider flex items-center justify-center gap-2 rounded transition-all whitespace-nowrap ${activeTab === 'api' ? 'bg-[#1b2230] text-amber-500 border border-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
+          >
+            <Cpu className="w-3.5 h-3.5 flex-shrink-0" /> API Stream
+          </button>
         </div>
 
         {/* Content Area with Drag & Drop Listener */}
@@ -593,7 +600,7 @@ export default function ScannerView() {
                 onChange={(e) => setPastedText(e.target.value)}
               />
             </div>
-          ) : (
+          ) : activeTab === 'batch' ? (
             <div className="w-full max-w-md flex flex-col gap-4">
               <div className="text-[10px] font-mono text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
                 <FileSpreadsheet className="w-3.5 h-3.5 text-amber-500" />
@@ -690,11 +697,110 @@ export default function ScannerView() {
                       value={batchName}
                       onChange={(e) => setBatchName(e.target.value)}
                       placeholder="E.g., Jobs from LinkedIn"
-                      className="w-full px-3 py-2 bg-[#0a0c12] border border-slate-800 rounded text-sm text-slate-200 focus:ring-1 focus:ring-amber-500 outline-none transition-all font-mono"
+                      className="w-full px-3 py-2 bg-[#0a0c12] border border-slate-800 rounded text-sm text-slate-200 focus:ring-1 focus:ring-amber-550 outline-none transition-all font-mono"
                     />
                   </div>
                 </div>
               )}
+            </div>
+          ) : (
+            <div className="w-full max-w-md flex flex-col gap-4">
+              <div className="text-[10px] font-mono text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                <Cpu className="w-3.5 h-3.5 text-amber-500" />
+                <span>API Integration: Stream Listings from Telegram, TikTok & Webhooks</span>
+              </div>
+
+              {/* Red functional warning banner */}
+              <div className="p-3.5 bg-red-950/20 border border-red-500/30 rounded text-xs text-red-400 font-mono leading-relaxed">
+                <p className="font-bold uppercase tracking-wider mb-1 flex items-center gap-2 text-red-500">
+                  <AlertCircle className="w-4 h-4" />
+                  Integration Not Functional Yet
+                </p>
+                The API stream, webhooks, and channel ingestion features are currently mock interfaces and not active in this environment.
+              </div>
+
+              {/* API Configuration Details */}
+              <div className="bg-[#111318] border border-slate-800 rounded p-4 space-y-4 font-mono text-xs">
+                <div className="border-b border-slate-800 pb-2">
+                  <h4 className="font-bold text-slate-300 uppercase">Mock API Credentials</h4>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] text-slate-500 uppercase font-bold">API Endpoint</label>
+                  <div className="flex items-center gap-2 bg-[#0a0c12] border border-slate-800 p-2 rounded">
+                    <span className="text-slate-400 select-all truncate flex-1">https://api.sentinel-intel.org/v1/ingest</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText("https://api.sentinel-intel.org/v1/ingest");
+                        alert("Endpoint copied to clipboard!");
+                      }}
+                      className="text-amber-550 hover:text-amber-400 font-bold"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] text-slate-500 uppercase font-bold">Analyst API Token</label>
+                  <div className="flex items-center gap-2 bg-[#0a0c12] border border-slate-800 p-2 rounded">
+                    <span className="text-slate-500 select-all truncate flex-1">sentinel_live_key_5f3e9c...</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText("sentinel_live_key_5f3e9c2b4d6e8f0a1c3e5g7i9k");
+                        alert("API Token copied to clipboard!");
+                      }}
+                      className="text-amber-550 hover:text-amber-400 font-bold"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Feed Streams Mock Toggles */}
+              <div className="bg-[#111318] border border-slate-800 rounded p-4 space-y-3 font-mono text-xs">
+                <div className="border-b border-slate-800 pb-2">
+                  <h4 className="font-bold text-slate-300 uppercase">Ingestion Stream Channels</h4>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between p-2 bg-[#0a0c12] border border-slate-800 rounded opacity-60">
+                    <div className="flex items-center gap-2">
+                      <Bot className="w-4 h-4 text-slate-400" />
+                      <div>
+                        <div className="font-bold text-slate-300">Telegram Bot Feed</div>
+                        <div className="text-[9px] text-slate-500">Listen to recruiting chatrooms</div>
+                      </div>
+                    </div>
+                    <span className="px-2 py-0.5 rounded text-[10px] bg-red-950/20 text-red-500 border border-red-900/30">INACTIVE</span>
+                  </div>
+
+                  <div className="flex items-center justify-between p-2 bg-[#0a0c12] border border-slate-800 rounded opacity-60">
+                    <div className="flex items-center gap-2">
+                      <Globe className="w-4 h-4 text-slate-400" />
+                      <div>
+                        <div className="font-bold text-slate-300">Instagram Hashtag Scraper</div>
+                        <div className="text-[9px] text-slate-500">Scan targeted location keywords</div>
+                      </div>
+                    </div>
+                    <span className="px-2 py-0.5 rounded text-[10px] bg-red-950/20 text-red-500 border border-red-900/30">INACTIVE</span>
+                  </div>
+
+                  <div className="flex items-center justify-between p-2 bg-[#0a0c12] border border-slate-800 rounded opacity-60">
+                    <div className="flex items-center gap-2">
+                      <RefreshCw className="w-4 h-4 text-slate-400" />
+                      <div>
+                        <div className="font-bold text-slate-300">TikTok Job Ads Webhook</div>
+                        <div className="text-[9px] text-slate-500">Ingest via TikTok Business Graph</div>
+                      </div>
+                    </div>
+                    <span className="px-2 py-0.5 rounded text-[10px] bg-red-950/20 text-red-500 border border-red-900/30">INACTIVE</span>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -849,6 +955,18 @@ export default function ScannerView() {
                 </p>
               )}
             </>
+          ) : activeTab === 'api' ? (
+            <>
+              <button
+                disabled
+                className="w-full bg-slate-800 text-slate-500 border border-slate-700/50 font-bold py-3.5 rounded transition-all font-mono text-sm cursor-not-allowed"
+              >
+                Ingestion Channel Offline
+              </button>
+              <p className="text-[10px] font-mono text-red-400 text-center uppercase tracking-wider max-w-xs leading-normal">
+                This integration is not functional yet
+              </p>
+            </>
           ) : (
             <>
               <button
@@ -865,57 +983,7 @@ export default function ScannerView() {
               )}
             </>
           )}
-        </div>
-      </div>
-
-      {/* Right Column: Ingestion Pipeline Panel */}
-      <div className="w-full lg:w-80 bg-[#0a0c12]/30 p-4 font-mono text-xs flex flex-col gap-4 border-t lg:border-t-0 border-slate-800">
-        <div className="pb-2 border-b border-slate-800">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-350 flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#3fb950]"></span>
-            Analysis Pipeline
-          </h3>
-          <p className="text-[10px] text-slate-500 mt-1 uppercase">Step-by-step intelligence flow</p>
-        </div>
-
-        <div className="space-y-4">
-          <div className="relative pl-6 border-l border-slate-800 space-y-1">
-            <div className="absolute -left-1.5 top-0.5 w-3.5 h-3.5 rounded-full bg-[#1b2230] border border-slate-700 flex items-center justify-center text-[8px] font-bold text-amber-500">1</div>
-            <div className="font-bold text-slate-350 text-[11px] uppercase">Data Ingestion</div>
-            <p className="text-slate-500 text-[10px] leading-relaxed">
-              Accepts printed job flyers (via OCR camera), uploads, manual text copy, or database dumps (CSV).
-            </p>
-          </div>
-
-          <div className="relative pl-6 border-l border-slate-800 space-y-1">
-            <div className="absolute -left-1.5 top-0.5 w-3.5 h-3.5 rounded-full bg-[#1b2230] border border-slate-700 flex items-center justify-center text-[8px] font-bold text-amber-500">2</div>
-            <div className="font-bold text-slate-350 text-[11px] uppercase">Metadata Enrichment</div>
-            <p className="text-slate-500 text-[10px] leading-relaxed">
-              Attaches platforms, original urls, and posting dates to trace syndicate behavior across networks.
-            </p>
-          </div>
-
-          <div className="relative pl-6 border-l border-slate-800 space-y-1">
-            <div className="absolute -left-1.5 top-0.5 w-3.5 h-3.5 rounded-full bg-[#1b2230] border border-slate-700 flex items-center justify-center text-[8px] font-bold text-amber-500">3</div>
-            <div className="font-bold text-slate-350 text-[11px] uppercase">Gemini AI Engine</div>
-            <p className="text-slate-500 text-[10px] leading-relaxed">
-              Scans structural language patterns and screens against the 24 Red Flag indicators.
-            </p>
-          </div>
-
-          <div className="relative pl-6 space-y-1">
-            <div className="absolute -left-1.5 top-0.5 w-3.5 h-3.5 rounded-full bg-[#1b2230] border border-slate-700 flex items-center justify-center text-[8px] font-bold text-amber-500">4</div>
-            <div className="font-bold text-slate-350 text-[11px] uppercase">Threat Assessment</div>
-            <p className="text-slate-500 text-[10px] leading-relaxed">
-              Generates risk grading, highlights warnings, and escalates bad actors to global dossiers.
-            </p>
-          </div>
-        </div>
-
-        <div className="mt-auto border-t border-slate-850 pt-3 space-y-2">
-          <div className="bg-[#1b2230]/30 border border-slate-800 p-2.5 rounded text-[10px] leading-normal text-slate-400">
-            <span className="font-bold text-amber-500 uppercase">Operational Security (OpSec):</span> All submissions are kept strictly confidential. The analysis matches structural patterns without exposing analyst credentials.
-          </div>
+ 
         </div>
       </div>
 

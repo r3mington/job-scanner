@@ -40,8 +40,9 @@ export default function TraffickerProfileView() {
   const [notesText, setNotesText] = useState('');
   const [showBriefing, setShowBriefing] = useState(() => {
     const saved = localStorage.getItem('sentinel_show_dossier_briefing');
-    return saved !== 'false';
+    return saved === 'true';
   });
+  const [pendingLink, setPendingLink] = useState(null);
 
   useEffect(() => {
     const loadData = async () => {
@@ -335,25 +336,21 @@ export default function TraffickerProfileView() {
               OSINT Integrations
             </h3>
             <div className="flex flex-col gap-2">
-              <a 
-                href={osintGoogle} 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="flex items-center justify-between p-2.5 border border-slate-800 hover:bg-[#1b2230]/40 text-xs font-mono font-bold rounded text-slate-300"
+              <button 
+                onClick={() => setPendingLink(osintGoogle)}
+                className="flex items-center justify-between p-2.5 border border-slate-800 hover:bg-[#1b2230]/40 text-xs font-mono font-bold rounded text-slate-300 text-left w-full cursor-pointer"
               >
                 <span>Google Search Handle</span>
                 <ExternalLink className="w-3.5 h-3.5 text-slate-500" />
-              </a>
+              </button>
               {osintTelegram && (
-                <a 
-                  href={osintTelegram} 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="flex items-center justify-between p-2.5 border border-slate-800 hover:bg-[#1b2230]/40 text-xs font-mono font-bold rounded text-slate-300"
+                <button 
+                  onClick={() => setPendingLink(osintTelegram)}
+                  className="flex items-center justify-between p-2.5 border border-slate-800 hover:bg-[#1b2230]/40 text-xs font-mono font-bold rounded text-slate-300 text-left w-full cursor-pointer"
                 >
                   <span>Open Telegram Chat</span>
                   <ExternalLink className="w-3.5 h-3.5 text-slate-500" />
-                </a>
+                </button>
               )}
             </div>
           </div>
@@ -569,6 +566,52 @@ export default function TraffickerProfileView() {
           </div>
         </div>
       </div>
+
+      {/* Safety Warning Interstitial Modal */}
+      {pendingLink && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+          <div className="w-full max-w-md bg-[#111318] border border-slate-800 rounded-xl p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center gap-3 text-red-500">
+              <ShieldAlert className="w-6 h-6 animate-pulse" />
+              <h3 className="text-sm font-bold font-mono uppercase tracking-wider">
+                Do No Harm Safety Gate
+              </h3>
+            </div>
+            
+            <p className="text-xs text-slate-350 leading-relaxed font-mono">
+              <strong>WARNING: DIRECT CONTACT RISK</strong>
+              <br /><br />
+              You are opening an external search or messaging channel referencing a suspected trafficking handle.
+              <br /><br />
+              Under UN Do No Harm guidelines, analysts must:
+              <br />
+              • NEVER initiate contact with suspected threat profiles.
+              <br />
+              • NEVER alert targets of ongoing OSINT monitoring.
+              <br />
+              • Utilize isolated VMs/VPNs and mock profiles only.
+            </p>
+
+            <div className="pt-2 flex justify-end gap-3 font-mono text-xs">
+              <button
+                onClick={() => setPendingLink(null)}
+                className="px-4 py-2 border border-slate-800 hover:bg-[#1b2230]/40 text-slate-400 rounded transition-colors cursor-pointer"
+              >
+                [ Cancel ]
+              </button>
+              <button
+                onClick={() => {
+                  window.open(pendingLink, '_blank', 'noopener,noreferrer');
+                  setPendingLink(null);
+                }}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded transition-colors cursor-pointer"
+              >
+                [ Confirm & Open ]
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

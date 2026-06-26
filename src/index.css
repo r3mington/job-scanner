@@ -82,4 +82,22 @@
     50%       { top: 98%; }
   }
   .animate-laser-sweep { animation: laser-sweep 2.2s ease-in-out infinite; }
+
+  /* Custom scrollbars for a premium dark interface */
+  ::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #475569;
+  }
 }
+

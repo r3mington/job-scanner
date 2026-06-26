@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Network } from 'vis-network';
 import { useNavigate } from 'react-router-dom';
-import { ZoomIn, RotateCcw, AlertTriangle, ArrowRight, ShieldAlert, CheckCircle2, AlertCircle, Play, Pause } from 'lucide-react';
+import { ZoomIn, RotateCcw, AlertTriangle, ArrowRight, ShieldAlert, CheckCircle2, AlertCircle, Play, Pause, Eye, EyeOff, Briefcase } from 'lucide-react';
 
 export default function NetworkGraphView({ scans }) {
   const containerRef = useRef(null);
@@ -9,6 +9,20 @@ export default function NetworkGraphView({ scans }) {
   const navigate = useNavigate();
   const [selectedNode, setSelectedNode] = useState(null);
   const [physicsEnabled, setPhysicsEnabled] = useState(true);
+  const [showContacts, setShowContacts] = useState(true);
+  const [showCompanies, setShowCompanies] = useState(true);
+  const [minConnections, setMinConnections] = useState(3);
+
+  // Reset selected node if it gets filtered out
+  useEffect(() => {
+    if (selectedNode) {
+      if (selectedNode.type === 'employer' && !showCompanies) {
+        setSelectedNode(null);
+      } else if (selectedNode.type === 'contact' && !showContacts) {
+        setSelectedNode(null);
+      }
+    }
+  }, [showCompanies, showContacts, selectedNode]);
 
   // Parse contact method to extract clean identifier and type
   const parseContacts = (contactStr) => {
@@ -98,7 +112,7 @@ export default function NetworkGraphView({ scans }) {
       });
 
       // 2. Employer Node
-      if (scan.employer && scan.employer.trim()) {
+      if (showCompanies && scan.employer && scan.employer.trim()) {
         const empClean = scan.employer.trim();
         const empId = `emp_${empClean.toLowerCase()}`;
 
@@ -135,49 +149,84 @@ export default function NetworkGraphView({ scans }) {
       }
 
       // 3. Contact Nodes
-      const contacts = parseContacts(scan.extractedData?.contact_method);
-      contacts.forEach((contact) => {
-        if (!nodesMap.has(contact.id)) {
-          nodesMap.set(contact.id, {
-            id: contact.id,
-            label: contact.label,
-            shape: 'box',
-            color: {
-              background: '#faf5ff', // purple bg
-              border: '#d8b4fe',
-              highlight: {
-                background: '#f3e8ff',
-                border: '#a855f7'
-              }
-            },
-            font: { color: '#581c87', size: 12 },
-            margin: 8,
-            type: 'contact',
-            contactInfo: contact,
-            connectedScansCount: 0
-          });
-        }
-        nodesMap.get(contact.id).connectedScansCount += 1;
+      if (showContacts) {
+        const contacts = parseContacts(scan.extractedData?.contact_method);
+        contacts.forEach((contact) => {
+          if (!nodesMap.has(contact.id)) {
+            nodesMap.set(contact.id, {
+              id: contact.id,
+              label: contact.label,
+              shape: 'box',
+              color: {
+                background: '#faf5ff', // purple bg
+                border: '#d8b4fe',
+                highlight: {
+                  background: '#f3e8ff',
+                  border: '#a855f7'
+                }
+              },
+              font: { color: '#581c87', size: 12 },
+              margin: 8,
+              type: 'contact',
+              contactInfo: contact,
+              connectedScansCount: 0
+            });
+          }
+          nodesMap.get(contact.id).connectedScansCount += 1;
 
-        edgesList.push({
-          from: scanId,
-          to: contact.id,
-          color: { color: '#c084fc', opacity: 0.6 },
-          width: 1
+          edgesList.push({
+            from: scanId,
+            to: contact.id,
+            color: { color: '#c084fc', opacity: 0.6 },
+            width: 1
+          });
         });
-      });
+      }
+    });
+
+    // 1. Initial filter for aggregate nodes based on connections
+    const allowedAggregateNodeIds = new Set();
+    nodesMap.forEach((node, id) => {
+      if (node.type === 'employer' && node.connectedScansCount >= minConnections) {
+        allowedAggregateNodeIds.add(id);
+      } else if (node.type === 'contact' && node.connectedScansCount >= minConnections) {
+        allowedAggregateNodeIds.add(id);
+      }
+    });
+
+    // 2. Filter edges: must connect to a visible/allowed aggregate node
+    const filteredEdgesList = edgesList.filter(edge => 
+      allowedAggregateNodeIds.has(edge.to)
+    );
+
+    // 3. Collect scan IDs that actually have at least one visible connection
+    const connectedScanIds = new Set();
+    filteredEdgesList.forEach(edge => {
+      connectedScanIds.add(edge.from);
+    });
+
+    // 4. Build final filteredNodesMap containing only connected scans and allowed aggregate nodes
+    const filteredNodesMap = new Map();
+    nodesMap.forEach((node, id) => {
+      if (node.type === 'scan') {
+        if (connectedScanIds.has(id)) {
+          filteredNodesMap.set(id, node);
+        }
+      } else if (allowedAggregateNodeIds.has(id)) {
+        filteredNodesMap.set(id, node);
+      }
     });
 
     // Apply dynamic styling based on final connection counts for dark-mode integration
-    nodesMap.forEach((node) => {
+    filteredNodesMap.forEach((node) => {
       if (node.type === 'contact') {
         const isHub = node.connectedScansCount > 1;
         node.color = {
           background: isHub ? '#4c1d95' : '#1e1b4b',
-          border: isHub ? '#f43f5e' : '#6366f1',
+          border: isHub ? '#a855f7' : '#6366f1',
           highlight: {
             background: isHub ? '#5b21b6' : '#2e1065',
-            border: isHub ? '#f43f5e' : '#818cf8'
+            border: isHub ? '#a855f7' : '#818cf8'
           }
         };
         node.font = {
@@ -188,7 +237,7 @@ export default function NetworkGraphView({ scans }) {
         };
         if (isHub) {
           node.borderWidth = 2.5;
-          node.label = `🚨 HUB: ${node.label.replace(/^[^\s]+\s/, '')}`;
+          node.label = `HUB: ${node.label.replace(/^[^\s]+\s/, '')}`;
         } else {
           node.borderWidth = 1;
         }
@@ -220,8 +269,8 @@ export default function NetworkGraphView({ scans }) {
       }
     });
 
-    const nodes = Array.from(nodesMap.values());
-    const data = { nodes, edges: edgesList };
+    const nodes = Array.from(filteredNodesMap.values());
+    const data = { nodes, edges: filteredEdgesList };
 
     const options = {
       physics: {
@@ -253,20 +302,20 @@ export default function NetworkGraphView({ scans }) {
     network.on('click', (params) => {
       if (params.nodes.length > 0) {
         const nodeId = params.nodes[0];
-        const node = nodesMap.get(nodeId);
+        const node = filteredNodesMap.get(nodeId);
         
         // Find connected scans for aggregate nodes
         let connectedScans = [];
-        if (node.type === 'employer' || node.type === 'contact') {
-          edgesList.forEach(edge => {
+        if (node && (node.type === 'employer' || node.type === 'contact')) {
+          filteredEdgesList.forEach(edge => {
             if (edge.to === nodeId && edge.from.startsWith('scan_')) {
-              const scanNode = nodesMap.get(edge.from);
+              const scanNode = filteredNodesMap.get(edge.from);
               if (scanNode) connectedScans.push(scanNode.data);
             }
           });
         }
 
-        setSelectedNode({ ...node, connectedScans });
+        setSelectedNode(node ? { ...node, connectedScans } : null);
       } else {
         setSelectedNode(null);
       }
@@ -277,7 +326,7 @@ export default function NetworkGraphView({ scans }) {
         networkRef.current.destroy();
       }
     };
-  }, [scans, physicsEnabled]);
+  }, [scans, physicsEnabled, showContacts, showCompanies, minConnections]);
 
   const fitGraph = () => {
     if (networkRef.current) {
@@ -298,7 +347,7 @@ export default function NetworkGraphView({ scans }) {
     <div className="flex flex-col flex-1 bg-[#111318] border border-slate-800 rounded-xl overflow-hidden shadow-sm min-h-[700px]">
       
       {/* Top Details Panel */}
-      <div className="border-b border-slate-800 p-4 bg-[#0a0c12]/40 min-h-[120px] flex flex-col justify-center">
+      <div className="border-b border-slate-800 p-5 bg-[#0e121a] min-h-[140px] flex flex-col justify-center transition-all">
         {!selectedNode ? (
           <div className="flex items-center gap-3 text-slate-400">
             <AlertCircle className="w-5 h-5 text-emerald-500 flex-shrink-0" />
@@ -309,125 +358,195 @@ export default function NetworkGraphView({ scans }) {
             
             {/* Scan Detail Node */}
             {selectedNode.type === 'scan' && (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
-                <div className="min-w-0">
-                  <span className="text-[10px] font-extrabold uppercase px-1.5 py-0.5 rounded text-white bg-slate-500 mr-2">
-                    Posting
-                  </span>
-                  <span className={`text-[10px] font-extrabold uppercase px-1.5 py-0.5 rounded text-white ${
-                    selectedNode.data.riskScore >= 60 ? 'bg-red-500' : selectedNode.data.riskScore >= 30 ? 'bg-amber-500' : 'bg-emerald-500'
-                  }`}>
-                    {selectedNode.data.riskLevel} ({selectedNode.data.riskScore}%)
-                  </span>
-                  <h3 className="text-base font-bold text-slate-900 dark:text-white truncate mt-1">
-                    {selectedNode.data.jobTitle || 'Unknown Job'}
-                  </h3>
-                  <p className="text-xs text-slate-500 truncate">{selectedNode.data.employer || 'Unknown Employer'}</p>
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                
+                {/* Left: Job Info */}
+                <div className="flex items-start gap-4 min-w-0 md:max-w-[45%]">
+                  <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-450 flex-shrink-0">
+                    <CheckCircle2 className="w-6 h-6" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
+                      <span className="text-[9px] font-mono font-bold tracking-wider uppercase px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-350">
+                        Job Posting
+                      </span>
+                      <span className={`text-[9px] font-mono font-bold tracking-wider uppercase px-2 py-0.5 rounded border ${
+                        selectedNode.data.riskScore >= 60 
+                          ? 'bg-red-500/15 border-red-500/25 text-red-400' 
+                          : selectedNode.data.riskScore >= 30 
+                            ? 'bg-amber-500/15 border-amber-500/25 text-amber-400' 
+                            : 'bg-emerald-500/15 border-emerald-500/25 text-emerald-400'
+                      }`}>
+                        {selectedNode.data.riskLevel} ({selectedNode.data.riskScore}%)
+                      </span>
+                    </div>
+                    <h3 className="text-base font-bold text-white truncate font-mono">
+                      {selectedNode.data.jobTitle || 'Unknown Job'}
+                    </h3>
+                    <p className="text-xs text-slate-500 truncate mt-0.5">{selectedNode.data.employer || 'Unknown Employer'}</p>
+                  </div>
                 </div>
 
-                <div className="min-w-0 overflow-x-auto">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Triggered Flags</span>
-                  <div className="flex gap-1 overflow-x-auto pb-1 max-w-xs md:max-w-none">
+                {/* Center: Triggered Flags */}
+                <div className="flex-1 min-w-0">
+                  <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-widest block mb-2">
+                    Triggered Flags
+                  </span>
+                  <div className="flex flex-wrap gap-1.5 max-h-[80px] overflow-y-auto pr-1">
                     {selectedNode.data.activeFlags?.length > 0 ? (
                       selectedNode.data.activeFlags.map(flag => (
-                        <span key={flag} className="text-[9px] font-bold bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400 border border-red-100 dark:border-red-900/20 px-1.5 py-0.5 rounded whitespace-nowrap">
+                        <span 
+                          key={flag} 
+                          className="text-[9px] font-mono font-bold bg-red-950/20 text-red-400 border border-red-900/30 px-2 py-0.5 rounded"
+                        >
                           {flag}
                         </span>
                       ))
                     ) : (
-                      <span className="text-xs text-slate-400">No flags triggered</span>
+                      <span className="text-[11px] font-mono text-slate-500">No risk flags detected</span>
                     )}
                   </div>
                 </div>
 
-                <div className="flex justify-end">
+                {/* Right: Action Button */}
+                <div className="flex-shrink-0 flex justify-end">
                   <button
                     onClick={() => handleScanClick(selectedNode.data)}
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-3 rounded-lg text-xs transition-all shadow-sm flex items-center gap-1.5"
+                    className="bg-amber-500 hover:bg-amber-600 text-[#0d1117] font-bold py-2.5 px-4 rounded-lg text-xs transition-all active:scale-[0.97] shadow-lg shadow-amber-500/5 flex items-center gap-1.5 font-mono uppercase tracking-wider"
                   >
-                    View Full Review <ArrowRight className="w-3.5 h-3.5" />
+                    View Review <ArrowRight className="w-3.5 h-3.5" />
                   </button>
                 </div>
+                
               </div>
             )}
 
             {/* Employer Detail Node */}
             {selectedNode.type === 'employer' && (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
-                <div className="min-w-0">
-                  <span className="text-[10px] font-extrabold uppercase px-1.5 py-0.5 rounded text-white bg-slate-500">
-                    Employer Entity
-                  </span>
-                  <h3 className="text-base font-bold text-slate-900 dark:text-white truncate mt-1">
-                    {selectedNode.name}
-                  </h3>
-                  <p className="text-xs text-slate-500 font-semibold">{selectedNode.connectedScansCount} job posting{selectedNode.connectedScansCount !== 1 ? 's' : ''}</p>
-                </div>
-
-                <div className="min-w-0 col-span-2">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Connected Postings</span>
-                  <div className="flex gap-2 overflow-x-auto pb-1 max-w-full">
-                    {selectedNode.connectedScans.map(scan => (
-                      <div 
-                        key={scan.id}
-                        onClick={() => handleScanClick(scan)}
-                        className="flex-shrink-0 p-1.5 border border-slate-200 dark:border-slate-800 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition-colors flex items-center gap-2"
-                      >
-                        <span className="text-[10px] font-bold text-slate-700 dark:text-slate-300 max-w-[120px] truncate">{scan.jobTitle}</span>
-                        <span className={`text-[8px] font-extrabold px-1 py-0.2 rounded text-white ${
-                          scan.riskScore >= 60 ? 'bg-red-500' : scan.riskScore >= 30 ? 'bg-amber-500' : 'bg-emerald-500'
-                        }`}>
-                          {scan.riskScore}%
-                        </span>
-                      </div>
-                    ))}
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                
+                {/* Left: Employer Info Card */}
+                <div className="flex items-start gap-4 min-w-0 md:max-w-[35%]">
+                  <div className="p-3 bg-slate-800/50 border border-slate-700/60 rounded-xl text-slate-350 flex-shrink-0">
+                    <Briefcase className="w-6 h-6 text-slate-400" />
+                  </div>
+                  <div className="min-w-0">
+                    <span className="text-[9px] font-mono font-bold tracking-wider uppercase px-2 py-0.5 rounded bg-slate-800/40 border border-slate-700/40 text-slate-450">
+                      Employer Entity
+                    </span>
+                    <h3 className="text-base font-bold text-white truncate font-mono mt-1.5">
+                      {selectedNode.name}
+                    </h3>
+                    <p className="text-[11px] text-slate-500 font-mono mt-0.5">
+                      Connected to {selectedNode.connectedScansCount} job posting{selectedNode.connectedScansCount !== 1 ? 's' : ''}
+                    </p>
                   </div>
                 </div>
+
+                {/* Right: Connected Postings Grid */}
+                <div className="flex-1 min-w-0">
+                  <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-widest block mb-2">
+                    Connected Postings ({selectedNode.connectedScansCount})
+                  </span>
+                  
+                  <div className="flex flex-wrap gap-2.5 max-h-[160px] overflow-y-auto pr-1">
+                    {selectedNode.connectedScans.map(scan => {
+                      const isHighRisk = scan.riskScore >= 60;
+                      const isMedRisk = scan.riskScore >= 30;
+                      const riskColor = isHighRisk ? 'text-red-400 border-red-500/20 bg-red-950/10' : isMedRisk ? 'text-amber-450 border-amber-500/20 bg-amber-950/10' : 'text-[#3fb950] border-[#3fb950]/20 bg-[#3fb950]/5';
+                      
+                      return (
+                        <div 
+                          key={scan.id}
+                          onClick={() => handleScanClick(scan)}
+                          className="flex items-center justify-between gap-3 p-2 bg-[#171a21] hover:bg-[#202530] border border-slate-800 rounded-lg cursor-pointer transition-all duration-200 active:scale-[0.98] group flex-1 min-w-[200px] max-w-[280px]"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <h4 className="text-[11px] font-mono font-bold text-slate-200 group-hover:text-amber-400 transition-colors truncate">
+                              {scan.jobTitle || 'Unknown Job'}
+                            </h4>
+                            <span className="text-[9px] font-mono text-slate-500 truncate block mt-0.5">
+                              {scan.employer || 'Unknown Employer'}
+                            </span>
+                          </div>
+                          
+                          <span className={`text-[9px] font-mono font-black px-2 py-0.5 rounded border flex-shrink-0 ${riskColor}`}>
+                            {scan.riskScore}%
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                
               </div>
             )}
 
             {/* Contact Detail Node */}
             {selectedNode.type === 'contact' && (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] font-extrabold uppercase px-1.5 py-0.5 rounded text-white bg-purple-600">
-                      Contact Handle
-                    </span>
-                    {selectedNode.connectedScansCount > 1 && (
-                      <span className="text-[9px] font-bold text-red-600 bg-red-50 dark:bg-red-950/40 px-1.5 py-0.5 rounded border border-red-100 dark:border-red-900/30 flex items-center gap-1">
-                        ⚠️ Hub Detected
-                      </span>
-                    )}
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                
+                {/* Left: Contact Info Card */}
+                <div className="flex items-start gap-4 min-w-0 md:max-w-[35%]">
+                  <div className="p-3 bg-purple-550/15 border border-purple-500/35 rounded-xl text-purple-400 flex-shrink-0 shadow-[0_0_15px_rgba(168,85,247,0.15)]">
+                    <ShieldAlert className="w-6 h-6" />
                   </div>
-                  <h3 className="text-base font-bold text-slate-900 dark:text-white truncate mt-1">
-                    {selectedNode.contactInfo.label}
-                  </h3>
-                  <p className="text-xs text-slate-500 font-semibold">Shared across {selectedNode.connectedScansCount} listing{selectedNode.connectedScansCount !== 1 ? 's' : ''}</p>
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
+                      <span className="text-[9px] font-mono font-bold tracking-wider uppercase px-2 py-0.5 rounded bg-purple-950/40 border border-purple-500/25 text-purple-400">
+                        Contact Handle
+                      </span>
+                      {selectedNode.connectedScansCount > 1 && (
+                        <span className="text-[9px] font-mono font-bold tracking-wider uppercase px-2 py-0.5 rounded bg-red-950/40 border border-red-500/25 text-red-400 flex items-center gap-1">
+                          ⚠️ Hub
+                        </span>
+                      )}
+                    </div>
+                    <h3 className="text-base font-bold text-white truncate font-mono">
+                      {selectedNode.contactInfo.label.replace(/^[^\s]+\s/, '')}
+                    </h3>
+                    <p className="text-[11px] text-slate-500 font-mono mt-0.5">
+                      Shared across {selectedNode.connectedScansCount} listing{selectedNode.connectedScansCount !== 1 ? 's' : ''}
+                    </p>
+                  </div>
                 </div>
 
-                <div className="min-w-0 col-span-2">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Associated Scans</span>
-                  <div className="flex gap-2 overflow-x-auto pb-1 max-w-full">
-                    {selectedNode.connectedScans.map(scan => (
-                      <div 
-                        key={scan.id}
-                        onClick={() => handleScanClick(scan)}
-                        className="flex-shrink-0 p-1.5 border border-slate-200 dark:border-slate-800 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition-colors flex items-center gap-2"
-                      >
-                        <div className="flex flex-col">
-                          <span className="text-[10px] font-bold text-slate-700 dark:text-slate-300 max-w-[120px] truncate">{scan.jobTitle}</span>
-                          <span className="text-[8px] text-slate-400 truncate">{scan.employer || 'Unknown'}</span>
+                {/* Right: Associated Scans Grid */}
+                <div className="flex-1 min-w-0">
+                  <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-widest block mb-2">
+                    Associated Scans ({selectedNode.connectedScansCount})
+                  </span>
+                  
+                  <div className="flex flex-wrap gap-2.5 max-h-[160px] overflow-y-auto pr-1">
+                    {selectedNode.connectedScans.map(scan => {
+                      const isHighRisk = scan.riskScore >= 60;
+                      const isMedRisk = scan.riskScore >= 30;
+                      const riskColor = isHighRisk ? 'text-red-400 border-red-500/20 bg-red-950/10' : isMedRisk ? 'text-amber-450 border-amber-500/20 bg-amber-950/10' : 'text-[#3fb950] border-[#3fb950]/20 bg-[#3fb950]/5';
+                      
+                      return (
+                        <div 
+                          key={scan.id}
+                          onClick={() => handleScanClick(scan)}
+                          className="flex items-center justify-between gap-3 p-2 bg-[#171a21] hover:bg-[#202530] border border-slate-800 rounded-lg cursor-pointer transition-all duration-200 active:scale-[0.98] group flex-1 min-w-[200px] max-w-[280px]"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <h4 className="text-[11px] font-mono font-bold text-slate-200 group-hover:text-amber-400 transition-colors truncate">
+                              {scan.jobTitle || 'Unknown Job'}
+                            </h4>
+                            <span className="text-[9px] font-mono text-slate-500 truncate block mt-0.5">
+                              {scan.employer || 'Unknown Employer'}
+                            </span>
+                          </div>
+                          
+                          <span className={`text-[9px] font-mono font-black px-2 py-0.5 rounded border flex-shrink-0 ${riskColor}`}>
+                            {scan.riskScore}%
+                          </span>
                         </div>
-                        <span className={`text-[8px] font-extrabold px-1 py-0.2 rounded text-white ${
-                          scan.riskScore >= 60 ? 'bg-red-500' : scan.riskScore >= 30 ? 'bg-amber-500' : 'bg-emerald-500'
-                        }`}>
-                          {scan.riskScore}%
-                        </span>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
+                
               </div>
             )}
 
@@ -440,24 +559,66 @@ export default function NetworkGraphView({ scans }) {
         <div ref={containerRef} className="w-full h-full absolute inset-0" />
         
         {/* Float Controls */}
-        <div className="absolute bottom-4 left-4 flex gap-2 z-10">
-          <button 
-            onClick={fitGraph}
-            className="p-2 bg-[#111318] hover:bg-slate-800 text-slate-300 rounded-lg shadow border border-slate-800 transition-colors flex items-center gap-1.5 text-xs font-semibold"
-          >
-            <RotateCcw className="w-4 h-4" /> Recenter
-          </button>
-          <button 
-            onClick={() => setPhysicsEnabled(prev => !prev)}
-            className={`p-2 rounded-lg shadow border transition-colors flex items-center gap-1.5 text-xs font-semibold ${
-              physicsEnabled 
-                ? 'bg-[#111318] hover:bg-slate-800 border-slate-800 text-slate-300' 
-                : 'bg-amber-500/10 border-amber-500/30 text-amber-500 hover:bg-amber-500/20'
-            }`}
-          >
-            {physicsEnabled ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-            {physicsEnabled ? 'Freeze Physics' : 'Unfreeze Physics'}
-          </button>
+        <div className="absolute bottom-4 left-4 right-4 flex flex-wrap justify-between items-center z-10 gap-2 pointer-events-none">
+          <div className="flex gap-2 pointer-events-auto">
+            <button 
+              onClick={fitGraph}
+              className="p-2 bg-[#111318] hover:bg-slate-800 text-slate-300 rounded-lg shadow border border-slate-800 transition-colors flex items-center gap-1.5 text-xs font-semibold"
+            >
+              <RotateCcw className="w-4 h-4" /> Recenter
+            </button>
+            <button 
+              onClick={() => setPhysicsEnabled(prev => !prev)}
+              className={`p-2 rounded-lg shadow border transition-colors flex items-center gap-1.5 text-xs font-semibold ${
+                physicsEnabled 
+                  ? 'bg-[#111318] hover:bg-slate-800 border-slate-800 text-slate-300' 
+                  : 'bg-amber-500/10 border-amber-500/30 text-amber-500 hover:bg-amber-500/20'
+              }`}
+            >
+              {physicsEnabled ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+              {physicsEnabled ? 'Freeze Physics' : 'Unfreeze Physics'}
+            </button>
+          </div>
+
+          <div className="flex gap-2 pointer-events-auto items-center">
+            {/* Min Connections Dropdown Filter */}
+            <div className="flex items-center gap-1.5 bg-[#111318] border border-slate-800 rounded-lg p-1">
+              <span className="text-[9px] font-mono text-slate-400 uppercase pl-1.5 pr-0.5 font-bold">Min Connections:</span>
+              <select
+                value={minConnections}
+                onChange={(e) => setMinConnections(Number(e.target.value))}
+                className="bg-[#0a0c12] border border-slate-800 rounded px-2 py-1 text-[10px] text-slate-300 focus:outline-none focus:ring-1 focus:ring-amber-500 cursor-pointer font-mono"
+              >
+                <option value={1}>1+ connection</option>
+                <option value={2}>2+ connections (Hubs)</option>
+                <option value={3}>3+ connections</option>
+                <option value={4}>4+ connections</option>
+                <option value={5}>5+ connections</option>
+              </select>
+            </div>
+            <button 
+              onClick={() => setShowContacts(prev => !prev)}
+              className={`p-2 rounded-lg shadow border transition-colors flex items-center gap-1.5 text-xs font-semibold ${
+                showContacts 
+                  ? 'bg-purple-950/20 border-purple-500/30 text-purple-400 hover:bg-purple-950/45' 
+                  : 'bg-[#111318] hover:bg-slate-850 border-slate-800 text-slate-500'
+              }`}
+            >
+              {showContacts ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+              Contacts
+            </button>
+            <button 
+              onClick={() => setShowCompanies(prev => !prev)}
+              className={`p-2 rounded-lg shadow border transition-colors flex items-center gap-1.5 text-xs font-semibold ${
+                showCompanies 
+                  ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700/80' 
+                  : 'bg-[#111318] hover:bg-slate-850 border-slate-800 text-slate-500'
+              }`}
+            >
+              {showCompanies ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+              Companies
+            </button>
+          </div>
         </div>
       </div>
 

@@ -31,7 +31,7 @@ export default function DashboardView() {
   const [loading, setLoading] = useState(true);
   const [showBriefing, setShowBriefing] = useState(() => {
     const saved = localStorage.getItem('sentinel_show_dashboard_briefing');
-    return saved === null ? true : saved === 'true';
+    return saved === 'true';
   });
 
   useEffect(() => {

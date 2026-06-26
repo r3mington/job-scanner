@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase, mapDbToRecord } from '../utils/supabaseClient';
-import { Search, ChevronRight, ChevronDown, ChevronUp, AlertTriangle, Briefcase, MapPin, Folder, Trash2, Globe, DollarSign, Languages, FileText, ShieldAlert } from 'lucide-react';
+import { Search, ChevronRight, ChevronDown, ChevronUp, AlertTriangle, Briefcase, MapPin, Folder, Trash2, Globe, DollarSign, Languages, FileText, ShieldAlert, List, Network } from 'lucide-react';
 import { format } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import { getCleanContactValue } from './DashboardView';
@@ -19,35 +19,27 @@ const formatSalary = (val) => {
 };
 
 const getSeverityColors = (score) => {
-  const s = score || 0;
-  if (s >= 60) {
-    return {
-      border: 'border-red-500/20',
-      hoverBorder: 'hover:border-red-500/40',
-      text: 'text-red-400',
-      bg: 'bg-red-950/20',
-      glow: 'hover:shadow-[0_0_15px_-3px_rgba(239,68,68,0.12)]',
-      pill: 'bg-red-500/10 border border-red-500/25 text-red-400'
-    };
-  }
-  if (s >= 30) {
-    return {
-      border: 'border-amber-500/20',
-      hoverBorder: 'hover:border-amber-500/40',
-      text: 'text-amber-455',
-      bg: 'bg-amber-950/20',
-      glow: 'hover:shadow-[0_0_15px_-3px_rgba(245,158,11,0.10)]',
-      pill: 'bg-amber-500/10 border border-amber-500/25 text-amber-400'
-    };
-  }
   return {
-    border: 'border-[#3fb950]/20',
-    hoverBorder: 'hover:border-[#3fb950]/40',
-    text: 'text-[#3fb950]',
-    bg: 'bg-[#3fb950]/5',
-    glow: 'hover:shadow-[0_0_15px_-3px_rgba(63,185,80,0.10)]',
-    pill: 'bg-[#3fb950]/10 border border-[#3fb950]/25 text-[#3fb950]'
+    border: 'border-slate-800/80',
+    hoverBorder: 'hover:border-slate-700/80',
+    bg: 'bg-[#111318]',
+    glow: '',
+    text: 'text-slate-400',
+    pill: 'bg-slate-900/40 border border-slate-800/80 text-slate-300'
   };
+};
+
+const renderStatusBadge = (status) => {
+  const s = status || 'pending';
+  let text = 'Pending';
+  if (s === 'reviewed') text = 'Reviewed';
+  if (s === 'waiting_action') text = 'Action Req';
+
+  return (
+    <span className="flex-shrink-0 px-1.5 py-0.5 bg-slate-900/40 border border-slate-800/80 text-slate-400 font-mono font-semibold rounded text-[8px] uppercase tracking-wider">
+      {text}
+    </span>
+  );
 };
 
 export default function HistoryView() {
@@ -55,11 +47,12 @@ export default function HistoryView() {
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedBatches, setExpandedBatches] = useState([]);
   const [viewType, setViewType] = useState('list'); // 'list', 'graph'
+  const [sortBy, setSortBy] = useState('date'); // 'date', 'status', 'risk'
   const [scans, setScans] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showBriefing, setShowBriefing] = useState(() => {
     const saved = localStorage.getItem('sentinel_show_history_briefing');
-    return saved !== 'false';
+    return saved === 'true';
   });
 
   const fetchScans = async () => {
@@ -145,6 +138,22 @@ export default function HistoryView() {
     });
   };
 
+  const getStatusSortValue = (status) => {
+    const s = status || 'pending';
+    if (s === 'waiting_action') return 3;
+    if (s === 'pending') return 2;
+    if (s === 'reviewed') return 1;
+    return 0;
+  };
+
+  const getGroupStatusVal = (group) => {
+    if (group.isBatch) {
+      const vals = group.items.map(item => getStatusSortValue(item.extractedData?.audit_status));
+      return Math.max(...vals, 0);
+    }
+    return getStatusSortValue(group.scan.extractedData?.audit_status);
+  };
+
   // Group scans by batchId
   const getGroupedScans = () => {
     if (!filteredScans) return [];
@@ -182,13 +191,41 @@ export default function HistoryView() {
       }
     });
 
-    return groups.sort((a, b) => b.timestamp - a.timestamp);
+    // Sort items inside batches first
+    groups.forEach(g => {
+      if (g.isBatch) {
+        g.items.sort((a, b) => {
+          if (sortBy === 'status') {
+            const valA = getStatusSortValue(a.extractedData?.audit_status);
+            const valB = getStatusSortValue(b.extractedData?.audit_status);
+            if (valB !== valA) return valB - valA;
+          } else if (sortBy === 'risk') {
+            if (b.riskScore !== a.riskScore) return b.riskScore - a.riskScore;
+          }
+          return b.timestamp - a.timestamp;
+        });
+      }
+    });
+
+    // Sort the groups
+    return groups.sort((a, b) => {
+      if (sortBy === 'status') {
+        const valA = getGroupStatusVal(a);
+        const valB = getGroupStatusVal(b);
+        if (valB !== valA) return valB - valA;
+      } else if (sortBy === 'risk') {
+        const scoreA = a.isBatch ? Math.round(a.items.reduce((acc, item) => acc + item.riskScore, 0) / a.items.length) : a.scan.riskScore;
+        const scoreB = b.isBatch ? Math.round(b.items.reduce((acc, item) => acc + item.riskScore, 0) / b.items.length) : b.scan.riskScore;
+        if (scoreB !== scoreA) return scoreB - scoreA;
+      }
+      return b.timestamp - a.timestamp;
+    });
   };
 
   const groupedScans = getGroupedScans();
 
   return (
-    <div className={`flex flex-col flex-1 h-full mt-4 w-full mx-auto transition-all ${viewType === 'list' ? 'max-w-lg' : 'max-w-screen-md'}`}>
+    <div className="flex flex-col flex-1 h-full mt-4 w-full mx-auto transition-all max-w-screen-md">
       
       {/* System Briefing / Onboarding Panel */}
       <div className="bg-[#0a0c12] border border-slate-800 rounded mb-4 overflow-hidden transition-all duration-300">
@@ -255,24 +292,41 @@ export default function HistoryView() {
             placeholder="Search scans by job or employer..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 bg-[#0a0c12] border border-slate-800 rounded text-sm font-mono focus:outline-none focus:ring-1 focus:ring-amber-500 transition-shadow text-slate-200"
+            className="w-full pl-10 pr-4 py-2.5 bg-[#0a0c12] border border-slate-800 rounded text-sm font-mono focus:outline-none focus:ring-1 focus:ring-slate-700 transition-shadow text-slate-200"
           />
         </div>
 
-        {/* View Toggle */}
-        <div className="flex bg-[#0a0c12] border border-slate-800 p-0.5 rounded text-[10px] font-mono uppercase tracking-wider mt-3">
-          <button
-            onClick={() => setViewType('list')}
-            className={`flex-1 py-1.5 rounded transition-all duration-200 ${viewType === 'list' ? 'bg-[#1b2230] text-amber-500 font-bold border border-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-300 font-medium'}`}
-          >
-            [ List View ]
-          </button>
-          <button
-            onClick={() => setViewType('graph')}
-            className={`flex-1 py-1.5 rounded transition-all duration-200 ${viewType === 'graph' ? 'bg-[#1b2230] text-amber-500 font-bold border border-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-300 font-medium'}`}
-          >
-            [ Connections Graph ]
-          </button>
+        {/* View Toggle & Sort Options */}
+        <div className="flex items-center justify-between mt-3 text-[10px] font-mono uppercase tracking-wider gap-3">
+          <div className="flex bg-[#0a0c12] border border-slate-800 p-0.5 rounded flex-1">
+            <button
+              onClick={() => setViewType('list')}
+              className={`flex items-center justify-center gap-1.5 flex-1 py-1.5 rounded transition-all duration-200 ${viewType === 'list' ? 'bg-slate-800 text-amber-500 font-bold border border-slate-700 shadow-md' : 'text-slate-400 hover:text-white font-medium'}`}
+            >
+              <List className="w-3.5 h-3.5" />
+              <span>List View</span>
+            </button>
+            <button
+              onClick={() => setViewType('graph')}
+              className={`flex items-center justify-center gap-1.5 flex-1 py-1.5 rounded transition-all duration-200 ${viewType === 'graph' ? 'bg-slate-800 text-amber-500 font-bold border border-slate-700 shadow-md' : 'text-slate-400 hover:text-white font-medium'}`}
+            >
+              <Network className="w-3.5 h-3.5" />
+              <span>Connections Graph</span>
+            </button>
+          </div>
+
+          <div className="flex items-center gap-1.5 bg-[#0a0c12] border border-slate-800 rounded px-2.5 py-1">
+            <span className="text-slate-500 font-bold">SORT:</span>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="bg-transparent border-0 rounded p-0 text-[10px] font-mono font-bold text-slate-300 focus:outline-none cursor-pointer outline-none"
+            >
+              <option value="date" className="text-slate-300 bg-[#0d1117]">DATE (NEWEST)</option>
+              <option value="status" className="text-slate-300 bg-[#0d1117]">STATUS (ACTION REQ)</option>
+              <option value="risk" className="text-slate-300 bg-[#0d1117]">RISK (HIGHEST)</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -299,7 +353,7 @@ export default function HistoryView() {
                       className="p-4 flex items-center justify-between cursor-pointer hover:bg-[#1b2230]/40 transition-colors"
                     >
                       <div className="flex items-center gap-3 flex-1 min-w-0">
-                        <div className="p-2.5 bg-amber-500/10 text-amber-500 rounded">
+                        <div className="p-2.5 bg-slate-800/40 text-slate-400 rounded">
                           <Folder className="w-5 h-5" />
                         </div>
                         <div className="min-w-0 flex-1">
@@ -313,13 +367,14 @@ export default function HistoryView() {
                           </div>
                           <div className="flex items-center justify-between">
                             <p className="text-xs text-slate-400 font-medium font-mono">
-                              {batchItems.length} scans • Avg Risk: <span className={avgScore >= 60 ? 'text-red-500 font-bold' : avgScore >= 30 ? 'text-amber-500 font-bold' : 'text-[#3fb950] font-bold'}>{avgScore}%</span>
+                              {batchItems.length} scans • Avg Risk: <span className="text-slate-300 font-bold">{avgScore}%</span>
                             </p>
                             <button
                               onClick={(e) => handleDeleteBatch(e, group.batchId, group.batchName)}
-                              className="text-xs text-red-400 hover:text-red-300 flex items-center gap-0.5 px-2 py-0.5 rounded border border-red-500/25 bg-red-500/10 transition-colors mr-2 font-mono"
+                              title="Delete Batch"
+                              className="p-1.5 hover:bg-red-500/10 text-slate-500 hover:text-red-400 rounded transition-colors mr-2"
                             >
-                              <Trash2 className="w-3.5 h-3.5" /> Delete
+                              <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           </div>
                         </div>
@@ -358,9 +413,12 @@ export default function HistoryView() {
                               <div className="flex-1 min-w-0 flex flex-col justify-between">
                                 <div>
                                   <div className="flex items-start justify-between gap-2 mb-1">
-                                    <h4 className="font-bold text-slate-350 truncate text-sm group-hover:text-amber-400 transition-colors">
-                                      {scan.jobTitle || 'Unknown Position'}
-                                    </h4>
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <h4 className="font-bold text-slate-350 truncate text-sm group-hover:text-slate-100 transition-colors">
+                                        {scan.jobTitle || 'Unknown Position'}
+                                      </h4>
+                                      {renderStatusBadge(scan.extractedData?.audit_status)}
+                                    </div>
                                   </div>
                                   
                                   <div className="flex items-center gap-1.5 text-xs text-slate-500">
@@ -395,14 +453,14 @@ export default function HistoryView() {
                                       <Globe className="w-3 h-3 text-slate-500 flex-shrink-0" />
                                       <span>{scan.detectedLanguage.toUpperCase()}</span>
                                       {scan.isTranslated && (
-                                        <span className="text-[8px] text-[#3fb950] font-bold px-0.5 border border-[#3fb950]/20 rounded bg-[#3fb950]/5">
+                                        <span className="text-[8px] text-slate-450 font-bold px-0.5 border border-slate-800 rounded bg-[#0a0c12]">
                                           TRANS
                                         </span>
                                       )}
                                     </span>
                                   )}
                                   {scan.notes && (
-                                    <span className="flex items-center gap-0.5 text-amber-500/80" title="Has investigation notes">
+                                    <span className="flex items-center gap-0.5 text-slate-400" title="Has investigation notes">
                                       <FileText className="w-3 h-3 flex-shrink-0" />
                                       <span>NOTES</span>
                                     </span>
@@ -432,7 +490,7 @@ export default function HistoryView() {
                                       <button
                                         onClick={() => handleScanClick(scan)}
                                         title={`Find Similar Ads (${simCount} found)`}
-                                        className="p-1 hover:bg-slate-800 text-amber-500 rounded transition-colors flex items-center gap-0.5 text-[9px] font-mono font-black bg-amber-500/10"
+                                        className="p-1 hover:bg-slate-800 text-slate-300 rounded transition-colors flex items-center gap-0.5 text-[9px] font-mono font-black bg-slate-800/40"
                                       >
                                         <Search className="w-3 h-3" />
                                         <span>{simCount}</span>
@@ -453,7 +511,7 @@ export default function HistoryView() {
                                     title="Delete Scan"
                                     className="p-1 hover:bg-red-500/10 text-slate-500 hover:text-red-400 rounded transition-colors"
                                   >
-                                    <Trash2 className="w-3 h-3" />
+                                    <Trash2 className="w-3.5 h-3.5" />
                                   </button>
                                 </div>
                               </div>
@@ -486,9 +544,12 @@ export default function HistoryView() {
                   <div className="flex-1 min-w-0 flex flex-col justify-between">
                     <div>
                       <div className="flex items-start justify-between gap-2 mb-1">
-                        <h3 className="font-bold text-slate-200 truncate text-base group-hover:text-amber-400 transition-colors">
-                          {scan.jobTitle || 'Unknown Position'}
-                        </h3>
+                        <div className="flex items-center gap-2 min-w-0">
+                          <h3 className="font-bold text-slate-200 truncate text-base group-hover:text-slate-100 transition-colors">
+                            {scan.jobTitle || 'Unknown Position'}
+                          </h3>
+                          {renderStatusBadge(scan.extractedData?.audit_status)}
+                        </div>
                         <span className="text-xs text-slate-500 font-mono whitespace-nowrap pt-0.5">
                           {format(new Date(scan.timestamp), 'yyyy-MM-dd HH:mm')}
                         </span>
@@ -526,17 +587,17 @@ export default function HistoryView() {
                           <Globe className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
                           <span>{scan.detectedLanguage.toUpperCase()}</span>
                           {scan.isTranslated && (
-                            <span className="text-[9px] text-[#3fb950] font-bold px-1 border border-[#3fb950]/20 rounded bg-[#3fb950]/5">
-                              TRANS
-                            </span>
-                          )}
-                        </span>
-                      )}
-                      {scan.notes && (
-                        <span className="flex items-center gap-1 text-amber-500/80" title="Has investigation notes">
-                          <FileText className="w-3.5 h-3.5 flex-shrink-0" />
-                          <span>NOTES</span>
-                        </span>
+                            <span className="text-[9px] text-slate-450 font-bold px-1 border border-slate-800 rounded bg-[#0a0c12]">
+                               TRANS
+                             </span>
+                           )}
+                         </span>
+                       )}
+                       {scan.notes && (
+                         <span className="flex items-center gap-1 text-slate-400" title="Has investigation notes">
+                           <FileText className="w-3.5 h-3.5 flex-shrink-0" />
+                           <span>NOTES</span>
+                         </span>
                       )}
                     </div>
 
@@ -563,7 +624,7 @@ export default function HistoryView() {
                           <button
                             onClick={() => handleScanClick(scan)}
                             title={`Find Similar Ads (${simCount} found)`}
-                            className="p-1.5 hover:bg-slate-800 text-amber-500 rounded transition-colors flex items-center gap-1 text-[10px] font-mono font-black bg-amber-500/10"
+                            className="p-1.5 hover:bg-slate-800 text-slate-300 rounded transition-colors flex items-center gap-1 text-[10px] font-mono font-black bg-slate-800/40"
                           >
                             <Search className="w-3.5 h-3.5" />
                             <span>{simCount}</span>

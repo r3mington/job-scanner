@@ -216,15 +216,15 @@ function highlightWords(text, spans, showHighlights, isTranslationActive, hovere
           if (isAnyHovered) {
             if (isCurrentHovered) {
               highlightClass = isHigh
-                ? 'text-red-400 border-b-2 border-red-500 bg-red-500/10 scale-[1.02] shadow-[0_0_12px_rgba(239,68,68,0.25)]'
-                : 'text-amber-400 border-b-2 border-amber-500 bg-amber-400/10 scale-[1.02] shadow-[0_0_12px_rgba(245,158,11,0.2)]';
+                ? 'text-white border-b-2 border-red-500 bg-transparent scale-[1.02] shadow-[0_0_12px_rgba(239,68,68,0.15)]'
+                : 'text-white border-b-2 border-amber-500 bg-transparent scale-[1.02] shadow-[0_0_12px_rgba(245,158,11,0.12)]';
             } else {
-              highlightClass = 'text-slate-600 border-transparent bg-transparent opacity-25';
+              highlightClass = 'text-slate-650 border-transparent bg-transparent opacity-25';
             }
           } else {
             highlightClass = isHigh
-              ? 'text-red-300 border-b-2 border-red-500/80 bg-red-500/10'
-              : 'text-amber-300 border-b border-amber-500/70 bg-amber-400/10';
+              ? 'text-white border-b-2 border-red-500/80 bg-transparent'
+              : 'text-white border-b border-amber-500/70 bg-transparent';
           }
 
           return (
@@ -289,15 +289,28 @@ function CountUp({ end, duration = 1000, delay = 150 }) {
 
 export default function ReviewScan() {
   const location = useLocation();
-  const scanInput = location.state;
   const navigate = useNavigate();
   const { user, profile } = useAuth();
+
+  // Normalize raw database records to the camelCase schema used in this view
+  const scanInput = React.useMemo(() => {
+    const rawInput = location.state;
+    if (!rawInput) return null;
+    if (rawInput.isExistingScan && (rawInput.job_title !== undefined || rawInput.extracted_data !== undefined)) {
+      return {
+        ...mapDbToRecord(rawInput),
+        isExistingScan: true
+      };
+    }
+    return rawInput;
+  }, [location.state]);
   
   const [loading, setLoading] = useState(true);
   const [recordDbId, setRecordDbId] = useState(scanInput?.id || null);
   const [isExistingScan, setIsExistingScan] = useState(scanInput?.isExistingScan || false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [auditStatus, setAuditStatus] = useState('pending');
   
   const [formData, setFormData] = useState({
     job_title: '',
@@ -346,7 +359,7 @@ export default function ReviewScan() {
   const [activeActionToast, setActiveActionToast] = useState(null);
   const [showBriefing, setShowBriefing] = useState(() => {
     const saved = localStorage.getItem('sentinel_show_review_briefing');
-    return saved !== 'false';
+    return saved === 'true';
   });
 
   // Localized Poster Generator States
@@ -1569,6 +1582,7 @@ export default function ReviewScan() {
       setPostDate(scanInput.postDate || 'unspecified');
       setSuspiciousSpans(scanInput.extractedData?.suspicious_spans || []);
       setPredictedPlaybook(scanInput.extractedData?.predicted_playbook || []);
+      setAuditStatus(scanInput.extractedData?.audit_status || 'pending');
       setLoading(false);
     } else {
       // New scan - call Gemini API
@@ -1805,6 +1819,7 @@ export default function ReviewScan() {
         riskLevel: level.label,
         extractedData: {
           ...formData,
+          audit_status: auditStatus,
           suspicious_spans: suspiciousSpans,
           predicted_playbook: predictedPlaybook
         },
@@ -2055,7 +2070,7 @@ export default function ReviewScan() {
   const stickyScoreColor = score >= 60 ? 'text-red-400 bg-red-500/10 border-red-500/30' : score >= 30 ? 'text-amber-400 bg-amber-500/10 border-amber-500/30' : 'text-amber-400 bg-amber-500/10 border-amber-500/30';
 
   return (
-    <div className="flex flex-col flex-1 p-4 max-w-4xl w-full mx-auto space-y-6">
+    <div className="flex flex-col flex-1 p-4 max-w-screen-md w-full mx-auto space-y-6">
       
       {/* Header */}
       <div className="flex items-center gap-4">
@@ -2095,7 +2110,7 @@ export default function ReviewScan() {
         </button>
 
         {showBriefing && (
-          <div className="p-4 border-t border-slate-800 bg-[#0a0c12]/40 text-xs font-mono space-y-4 grid grid-cols-1 md:grid-cols-3 gap-4 md:space-y-0">
+          <div className="p-4 border-t border-slate-800 bg-[#0a0c12]/40 text-xs font-mono space-y-4 grid grid-cols-1 md:grid-cols-4 gap-4 md:space-y-0">
             <div className="space-y-1.5">
               <div className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">
                 1. Audit Highlights
@@ -2122,6 +2137,17 @@ export default function ReviewScan() {
                 Click `Update` in the top sticky bar to save this scan profile to the database and finalize the audit.
               </p>
             </div>
+
+            <div className="space-y-1.5 border-t md:border-t-0 md:border-l border-slate-800/80 md:pl-4">
+              <div className="text-[10px] text-amber-500 uppercase font-bold tracking-wider flex items-center gap-1">
+                <ShieldAlert className="w-3.5 h-3.5" /> 4. Do No Harm
+              </div>
+              <ul className="text-slate-400 leading-relaxed text-[10px] list-disc pl-1 space-y-1">
+                <li>Never log PII or survivor contact handles.</li>
+                <li>Strip EXIF device tags before downloading media.</li>
+                <li>Use strictly synthetic profiles for decoy engagements.</li>
+              </ul>
+            </div>
           </div>
         )}
       </div>
@@ -2141,6 +2167,19 @@ export default function ReviewScan() {
               {suspiciousSpans.length} flags
             </span>
           )}
+          {/* Audit Status Dropdown */}
+          <div className="flex items-center gap-1.5 bg-[#111318]/90 border border-slate-800 rounded px-2.5 py-0.5">
+            <span className="text-[9px] font-mono text-slate-500 uppercase font-bold">STATUS:</span>
+            <select
+              value={auditStatus}
+              onChange={(e) => setAuditStatus(e.target.value)}
+              className="bg-transparent border-0 rounded p-0 text-[10px] font-mono font-bold text-slate-400 focus:outline-none cursor-pointer outline-none"
+            >
+              <option value="pending" className="text-slate-400 bg-[#0d1117]">PENDING</option>
+              <option value="reviewed" className="text-slate-400 bg-[#0d1117]">REVIEWED</option>
+              <option value="waiting_action" className="text-slate-400 bg-[#0d1117]">ACTION REQ</option>
+            </select>
+          </div>
           <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${stickyScoreColor}`}>
             RISK {score}
           </span>
