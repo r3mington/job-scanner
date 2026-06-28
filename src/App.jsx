@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
-import { Shield, Database, Settings, BarChart3, LogOut, Loader2, HelpCircle, Home } from 'lucide-react';
+import { Shield, Database, Settings, BarChart3, LogOut, Loader2, HelpCircle, Home, Flame, Tag, GitCommit, BookOpen } from 'lucide-react';
 import ScannerView from './pages/ScannerView';
 import FaqView from './pages/FaqView';
 import logoImg from './assets/logo.png';
@@ -9,9 +9,13 @@ import SettingsView from './pages/SettingsView';
 import ReviewScan from './pages/ReviewScan';
 import DashboardView from './pages/DashboardView';
 import LoginView from './pages/LoginView';
-import TraffickerProfileView from './pages/TraffickerProfileView';
+import PosterProfileView from './pages/PosterProfileView';
 import DecoyContactView from './pages/DecoyContactView';
+import LearnView from './pages/LearnView';
 import HomeView from './pages/HomeView';
+import MemorialView from './pages/MemorialView';
+import PriceTagView from './pages/PriceTagView';
+import RopeView from './pages/RopeView';
 import { AuthProvider, useAuth } from './context/AuthContext';
 
 
@@ -74,6 +78,30 @@ function Layout({ children }) {
               <HelpCircle className="w-4 h-4" />
               <span>FAQ</span>
             </Link>
+            <Link to="/learn" className={`flex items-center gap-3 px-3 py-2.5 rounded transition-all border ${location.pathname === '/learn' ? 'bg-[#0a0f18] border-slate-800 text-amber-400 font-bold' : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/30'}`}>
+              <BookOpen className="w-4 h-4" />
+              <span>Learn</span>
+            </Link>
+
+            <div className="mt-4 pt-3 border-t border-slate-800/60">
+              <div className="text-[9px] font-mono uppercase tracking-widest text-slate-500 px-3 pb-2 font-bold">
+                Arts Exhibition
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Link to="/witness" className={`flex items-center gap-3 px-3 py-2.5 rounded transition-all border ${location.pathname === '/witness' ? 'bg-[#0a0f18] border-slate-800 text-slate-400 font-bold' : 'border-transparent text-slate-600 hover:text-slate-400 hover:bg-slate-900/20'}`}>
+                  <Flame className="w-4 h-4" />
+                  <span>Witness</span>
+                </Link>
+                <Link to="/price-tags" className={`flex items-center gap-3 px-3 py-2.5 rounded transition-all border ${location.pathname === '/price-tags' ? 'bg-[#0a0f18] border-slate-800 text-slate-400 font-bold' : 'border-transparent text-slate-600 hover:text-slate-400 hover:bg-slate-900/20'}`}>
+                  <Tag className="w-4 h-4" />
+                  <span>Price Tags</span>
+                </Link>
+                <Link to="/the-rope" className={`flex items-center gap-3 px-3 py-2.5 rounded transition-all border ${location.pathname === '/the-rope' ? 'bg-[#0a0f18] border-slate-800 text-slate-400 font-bold' : 'border-transparent text-slate-600 hover:text-slate-400 hover:bg-slate-900/20'}`}>
+                  <GitCommit className="w-4 h-4" />
+                  <span>The Rope</span>
+                </Link>
+              </div>
+            </div>
           </nav>
         </div>
         <div className="border-t border-slate-800 pt-4 flex flex-col gap-3">
@@ -163,19 +191,30 @@ function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <Layout>
-          <Routes>
-            <Route path="/" element={<HomeView />} />
-            <Route path="/scanner" element={<ScannerView />} />
-            <Route path="/review" element={<ReviewScan />} />
-            <Route path="/history" element={<HistoryView />} />
-            <Route path="/dashboard" element={<DashboardView />} />
-            <Route path="/settings" element={<SettingsView />} />
-            <Route path="/trafficker/:contactId" element={<TraffickerProfileView />} />
-            <Route path="/decoy-contact" element={<DecoyContactView />} />
-            <Route path="/faq" element={<FaqView />} />
-          </Routes>
-        </Layout>
+        <Routes>
+          {/* Full-screen standalone routes — no Layout wrapper */}
+          <Route path="/witness" element={<MemorialView />} />
+          <Route path="/price-tags" element={<PriceTagView />} />
+          <Route path="/the-rope" element={<RopeView />} />
+
+          {/* All other routes inside Layout */}
+          <Route path="/*" element={
+            <Layout>
+              <Routes>
+                <Route path="/" element={<HomeView />} />
+                <Route path="/scanner" element={<ScannerView />} />
+                <Route path="/review" element={<ReviewScan />} />
+                <Route path="/history" element={<HistoryView />} />
+                <Route path="/dashboard" element={<DashboardView />} />
+                <Route path="/settings" element={<SettingsView />} />
+                <Route path="/poster/:contactId" element={<PosterProfileView />} />
+                <Route path="/decoy-contact" element={<DecoyContactView />} />
+                <Route path="/faq" element={<FaqView />} />
+                <Route path="/learn" element={<LearnView />} />
+              </Routes>
+            </Layout>
+          } />
+        </Routes>
       </AuthProvider>
     </BrowserRouter>
   );

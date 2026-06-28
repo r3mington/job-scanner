@@ -25,11 +25,11 @@ import {
 
 const PERSONA_AGES = [21, 23, 24, 25, 27, 29, 31];
 const PERSONA_BACKSTORIES = [
-  "Former hotel clerk. Lost job due to compound closures. Has credit card debt of $1,500. Willing to work long shifts for high wage.",
-  "High school graduate. Basic computer knowledge, no technical skills. Needs visa sponsorship. Seeking remote support roles.",
-  "Call center employee. Experience in customer handling, speaks basic English and Thai. Seeking entry-level desk jobs.",
-  "Agricultural worker seeking relocation. Willing to perform any online administrative task, desperate for cash to pay loan sharks.",
-  "Freelance driver. Experienced in logistics, wants to move to office work. Eager for fast visa processing."
+  "Hotel industry background. Seeking a transition to office-based work. Has experience with customer service and basic administration.",
+  "Recent secondary school graduate with foundational computer skills. Looking for an entry-level role with on-the-job training.",
+  "Customer support experience in a call center. Conversational English and Thai. Open to entry-level desk or remote roles.",
+  "Agricultural and logistics background. Interested in transitioning to administrative or data-entry work.",
+  "Freelance transport and delivery background. Looking to move into a stable office-based position."
 ];
 
 const PERSONAS_BY_COUNTRY = {

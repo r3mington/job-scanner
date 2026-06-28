@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase, mapDbToRecord } from '../utils/supabaseClient';
 import { getCleanContactValue } from './DashboardView';
-import { generateTraffickerSummary } from '../services/geminiService';
+import { generatePosterSummary } from '../services/geminiService';
 import { useAuth } from '../context/AuthContext';
 import { ArrowLeft, Loader2, PhoneCall, AlertTriangle, ShieldAlert, Award, FileText, Globe, ExternalLink, RefreshCw, Save, MapPin, ChevronUp, ChevronDown } from 'lucide-react';
 
@@ -27,13 +27,13 @@ const COUNTRY_COORDINATES = {
   'Unknown / Remote': { x: 50, y: 50 }
 };
 
-export default function TraffickerProfileView() {
+export default function PosterProfileView() {
   const { contactId } = useParams();
   const navigate = useNavigate();
   const { profile: authProfile } = useAuth();
   
   const [scans, setScans] = useState([]);
-  const [flaggedRecruiterProfile, setFlaggedRecruiterProfile] = useState({ id: contactId, notes: '', ai_summary: '' });
+  const [posterProfile, setPosterProfile] = useState({ id: contactId, notes: '', ai_summary: '' });
   const [loading, setLoading] = useState(true);
   const [savingNotes, setSavingNotes] = useState(false);
   const [generatingSummary, setGeneratingSummary] = useState(false);
@@ -55,7 +55,7 @@ export default function TraffickerProfileView() {
         
         const mappedScans = (scansData || []).map(mapDbToRecord);
         
-        // Filter scans matching this contact ID
+        // Filter scans matching this poster contact
         const matched = mappedScans.filter(scan => {
           const contactMethod = scan.extractedData?.contact_method;
           const clean = getCleanContactValue(contactMethod);
@@ -65,27 +65,38 @@ export default function TraffickerProfileView() {
         // Sort chronologically (newest first)
         matched.sort((a, b) => b.timestamp - a.timestamp);
         setScans(matched);
+ 
+        // Load local backups first
+        const localNotes = localStorage.getItem(`sentinel_poster_notes_${contactId}`) || '';
+        const localSummary = localStorage.getItem(`sentinel_poster_summary_${contactId}`) || '';
 
-        // 2. Fetch or initialize flagged recruiter profile notes & summaries
-        const { data: profData, error: profErr } = await supabase
-          .from('trafficker_profiles')
-          .select('*')
-          .eq('id', contactId)
-          .maybeSingle();
-          
-        if (profErr && profErr.code !== 'PGRST116') {
-          console.error("Error fetching profile details:", profErr);
+        // 2. Fetch or initialize poster profile notes & summaries from database
+        let profData = null;
+        try {
+          const { data, error: profErr } = await supabase
+            .from('poster_profiles')
+            .select('*')
+            .eq('id', contactId)
+            .maybeSingle();
+            
+          if (profErr && profErr.code !== 'PGRST116') {
+            console.warn("Supabase poster_profiles table query failed, utilizing localStorage fallback:", profErr);
+          } else {
+            profData = data;
+          }
+        } catch (dbErr) {
+          console.warn("Exception querying Supabase poster_profiles, utilizing localStorage fallback:", dbErr);
         }
-
+ 
         if (profData) {
-          setFlaggedRecruiterProfile(profData);
-          setNotesText(profData.notes || '');
+          setPosterProfile(profData);
+          setNotesText(profData.notes || localNotes || '');
         } else {
-          setFlaggedRecruiterProfile({ id: contactId, notes: '', ai_summary: '' });
-          setNotesText('');
+          setPosterProfile({ id: contactId, notes: localNotes, ai_summary: localSummary });
+          setNotesText(localNotes);
         }
       } catch (err) {
-        console.error("Failed to load recruiter dossier:", err);
+        console.error("Failed to load poster profile:", err);
       } finally {
         setLoading(false);
       }
@@ -96,19 +107,25 @@ export default function TraffickerProfileView() {
   const handleSaveNotes = async () => {
     try {
       setSavingNotes(true);
+      localStorage.setItem(`sentinel_poster_notes_${contactId}`, notesText);
+      setPosterProfile(prev => ({ ...prev, notes: notesText }));
+    } catch (err) {
+      console.error("Failed to save investigator notes locally:", err);
+    }
+
+    try {
       const { error } = await supabase
-        .from('trafficker_profiles')
+        .from('poster_profiles')
         .upsert({
           id: contactId,
           notes: notesText,
           updated_at: new Date().toISOString()
         });
-      if (error) throw error;
-      
-      setFlaggedRecruiterProfile(prev => ({ ...prev, notes: notesText }));
-    } catch (err) {
-      console.error("Failed to save investigator notes:", err);
-      alert("Failed to save notes: " + (err.message || err.toString()));
+      if (error) {
+        console.warn("Failed to sync notes to Supabase (saved locally instead):", error);
+      }
+    } catch (dbErr) {
+      console.warn("Supabase write error during notes sync (saved locally instead):", dbErr);
     } finally {
       setSavingNotes(false);
     }
@@ -123,27 +140,36 @@ export default function TraffickerProfileView() {
       return;
     }
 
+    let summary = '';
     try {
       setGeneratingSummary(true);
-      const summary = await generateTraffickerSummary(apiKey, modelName, {
+      summary = await generatePosterSummary(apiKey, modelName, {
         contactMethod: contactId,
         scansData: scans
       });
 
-      // Update database profile
+      localStorage.setItem(`sentinel_poster_summary_${contactId}`, summary);
+      setPosterProfile(prev => ({ ...prev, ai_summary: summary }));
+    } catch (err) {
+      console.error("Failed to generate AI intelligence profile:", err);
+      alert("Error generating summary: " + (err.message || err.toString()));
+      setGeneratingSummary(false);
+      return;
+    }
+
+    try {
       const { error } = await supabase
-        .from('trafficker_profiles')
+        .from('poster_profiles')
         .upsert({
           id: contactId,
           ai_summary: summary,
           updated_at: new Date().toISOString()
         });
-      if (error) throw error;
-
-      setFlaggedRecruiterProfile(prev => ({ ...prev, ai_summary: summary }));
-    } catch (err) {
-      console.error("Failed to generate AI intelligence profile:", err);
-      alert("Error generating summary: " + (err.message || err.toString()));
+      if (error) {
+        console.warn("Failed to sync AI summary to Supabase (saved locally instead):", error);
+      }
+    } catch (dbErr) {
+      console.warn("Supabase write error during summary sync (saved locally instead):", dbErr);
     } finally {
       setGeneratingSummary(false);
     }
@@ -153,7 +179,7 @@ export default function TraffickerProfileView() {
     return (
       <div className="flex-1 flex flex-col items-center justify-center py-20">
         <Loader2 className="w-10 h-10 text-amber-500 animate-spin mb-3" />
-        <p className="text-slate-400 text-sm font-mono">Loading recruiter dossier...</p>
+        <p className="text-slate-400 text-sm font-mono">Loading poster profile...</p>
       </div>
     );
   }
@@ -224,7 +250,7 @@ export default function TraffickerProfileView() {
 
           <div>
             <h1 className="text-xl font-bold text-slate-100 truncate max-w-[400px] font-mono tracking-wide uppercase">
-              Recruiter Dossier
+              Poster Profile
             </h1>
             <p className="text-slate-500 text-xs font-mono mt-0.5 truncate">{contactId}</p>
           </div>
@@ -251,7 +277,7 @@ export default function TraffickerProfileView() {
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
             <h2 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-200">
-              System Briefing: Recruiter Dossier Console
+              System Briefing: Poster Profile Console
             </h2>
           </div>
           <div className="flex items-center gap-1.5 font-mono text-[10px] text-slate-500 uppercase">
@@ -268,10 +294,10 @@ export default function TraffickerProfileView() {
           <div className="p-4 border-t border-slate-800 bg-[#0a0c12]/40 text-xs font-mono space-y-4 grid grid-cols-1 md:grid-cols-3 gap-4 md:space-y-0">
             <div className="space-y-1.5">
               <div className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">
-                1. Threat Profile
+                1. Risk Overview
               </div>
               <p className="text-slate-400 leading-relaxed text-[11px]">
-                Review aggregated risk metrics, total linked advertisements, and first/last sighting dates for this recruiter handle.
+                Review aggregated risk metrics, total linked postings, and first/last sighting dates for this contact handle.
               </p>
             </div>
             
@@ -280,7 +306,7 @@ export default function TraffickerProfileView() {
                 2. AI Intelligence Profile
               </div>
               <p className="text-slate-400 leading-relaxed text-[11px]">
-                Click `Generate Summary` to run a Gemini LLM audit on all associated advertisements and extract active exploitation tactics.
+                Click `Generate Summary` to run a Gemini LLM analysis on all associated postings and identify deceptive recruitment patterns.
               </p>
             </div>
 
@@ -289,7 +315,7 @@ export default function TraffickerProfileView() {
                 3. Case Documentation
               </div>
               <p className="text-slate-400 leading-relaxed text-[11px]">
-                Add custom internal investigator notes, link associated syndicates, and click `Save Notes` to store evidence permanently.
+                Add custom investigator notes, link associated postings, and click `Save Notes` to store evidence permanently.
               </p>
             </div>
           </div>
@@ -389,7 +415,7 @@ export default function TraffickerProfileView() {
           <div className="bg-[#111318] border border-slate-800 rounded p-5 space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="font-mono text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
-                <Globe className="w-4 h-4 text-amber-500 animate-pulse" /> AI Threat Intelligence Profile
+                <Globe className="w-4 h-4 text-amber-500 animate-pulse" /> AI Recruitment Pattern Analysis
               </h3>
               <button 
                 onClick={handleGenerateSummary}
@@ -408,9 +434,9 @@ export default function TraffickerProfileView() {
               </button>
             </div>
             
-            {flaggedRecruiterProfile.ai_summary ? (
+            {posterProfile.ai_summary ? (
               <div className="p-3.5 bg-[#0a0c12] border border-slate-800 rounded font-mono text-[11.5px] leading-relaxed text-slate-300">
-                {flaggedRecruiterProfile.ai_summary}
+                {posterProfile.ai_summary}
               </div>
             ) : (
               <div className="p-6 border border-dashed border-slate-800 rounded text-center">
@@ -428,7 +454,7 @@ export default function TraffickerProfileView() {
               </h3>
               <button 
                 onClick={handleSaveNotes}
-                disabled={savingNotes || notesText === flaggedRecruiterProfile.notes}
+                disabled={savingNotes || notesText === posterProfile.notes}
                 className="px-2.5 py-1.5 bg-[#1b2230] border border-slate-850 hover:bg-[#1b2230]/80 disabled:opacity-50 text-slate-300 font-mono text-[10px] font-bold uppercase tracking-wider rounded transition-all flex items-center gap-1"
               >
                 <Save className="w-3 h-3" /> {savingNotes ? 'Saving...' : 'Save Notes'}
@@ -438,7 +464,7 @@ export default function TraffickerProfileView() {
             <textarea 
               value={notesText}
               onChange={(e) => setNotesText(e.target.value)}
-              placeholder="Record cross-referenced identities, physical compounds, syndicate flags, phone logs, or any other threat information..."
+              placeholder="Record cross-referenced identities, linked postings, contact logs, or other case-relevant information..."
               rows={4}
               className="w-full p-3.5 bg-[#0a0c12] border border-slate-800 rounded text-xs text-slate-200 focus:ring-1 focus:ring-amber-500 focus:border-amber-500 outline-none resize-none transition-all placeholder:italic font-mono"
             />
@@ -581,15 +607,15 @@ export default function TraffickerProfileView() {
             <p className="text-xs text-slate-350 leading-relaxed font-mono">
               <strong>WARNING: DIRECT CONTACT RISK</strong>
               <br /><br />
-              You are opening an external search or messaging channel referencing a suspected trafficking handle.
+              You are opening an external search or messaging channel referencing this contact handle.
               <br /><br />
               Under UN Do No Harm guidelines, analysts must:
               <br />
-              • NEVER initiate contact with suspected threat profiles.
+              • NEVER initiate direct contact without a supervised investigation protocol.
               <br />
-              • NEVER alert targets of ongoing OSINT monitoring.
+              • NEVER alert the subject of ongoing OSINT monitoring.
               <br />
-              • Utilize isolated VMs/VPNs and mock profiles only.
+              • Utilize isolated VMs/VPNs and authorised cover profiles only.
             </p>
 
             <div className="pt-2 flex justify-end gap-3 font-mono text-xs">

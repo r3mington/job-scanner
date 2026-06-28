@@ -9,6 +9,39 @@ import { getCleanContactValue } from './DashboardView';
 import { useAuth } from '../context/AuthContext';
 import { calculateSimilarity, computeWordDiff, computeKeywordMatches, STOP_WORDS, GENERIC_JOB_WORDS } from '../utils/similarity';
 
+const sanitizeTraumaLanguage = (text) => {
+  if (!text) return text;
+  return text.replace(/\bvictim\b/gi, "worker").replace(/\bvictims\b/gi, "workers");
+};
+
+const makeTentative = (text) => {
+  if (!text) return text;
+  let t = sanitizeTraumaLanguage(text.trim());
+  
+  // If it already starts with a tentative prefix, leave it
+  if (/^(it's probable|it is probable|it's possible|it is possible|it might|recruiter might|workers might|probably|possibly)/i.test(t)) {
+    return t.charAt(0).toUpperCase() + t.slice(1);
+  }
+
+  // Handle present participle (-ing) verb starts
+  if (/^[a-zA-Z]+ing\b/i.test(t)) {
+    t = t.charAt(0).toLowerCase() + t.slice(1);
+    return `It is probable that this stage involves ${t}`;
+  }
+  
+  // Specific replacements for common patterns
+  t = t.replace(/^workers are subjected to/i, "it's probable that workers are subjected to");
+  t = t.replace(/^recruiter will likely use/i, "it's probable that the recruiter will use");
+  t = t.replace(/^recruiter will use/i, "it's probable that the recruiter will use");
+  t = t.replace(/^workers might be/i, "it's possible that workers might be");
+  t = t.replace(/^workers are/i, "it is possible that workers are");
+  t = t.replace(/^recruiter requests/i, "it is probable that the recruiter will request");
+  t = t.replace(/^recruiter demands/i, "it is probable that the recruiter will demand");
+  t = t.replace(/^arranges/i, "it is probable that the recruiter will arrange");
+  
+  return t.charAt(0).toUpperCase() + t.slice(1);
+};
+
 const BUBBLE_FLOAT_CLASSES = [
   'threat-bubble-1', 'threat-bubble-2', 'threat-bubble-3', 'threat-bubble-4',
   'threat-bubble-5', 'threat-bubble-6', 'threat-bubble-7', 'threat-bubble-8'
@@ -36,7 +69,7 @@ const getTakedownDetails = (contactMethod, jobUrl) => {
       target: 'abuse@telegram.org',
       webLink: 'https://telegram.org/support',
       subject: `[ALERT] Severe Exploitation & Trafficking Activity - Telegram Handle: @${handle}`,
-      body: `Dear Telegram Trust & Safety Team,\n\nI am writing to report the Telegram handle @${handle} for severe violations of Telegram's Terms of Service regarding human exploitation and deceptive recruiting.\n\nOur OSINT safety scanner, Sentinel AI, has analyzed recruitment advertisements posted by this account and flagged multiple high-confidence indicators of labor trafficking, including:\n- Migration to encrypted chat platforms for isolation\n- Promises of high-pressure offshore relocation\n- Suspect security profiles\n\nEvidence Details:\n- Handle: @${handle}\n- Target Group/Posting Reference: ${jobUrl || 'Not specified'}\n\nPlease review and terminate this account immediately to protect vulnerable job seekers from exploitation.\n\nSincerely,\nSentinel AI Safety Operations & Investigators`
+      body: `Dear Telegram Trust & Safety Team,\n\nI am writing to report the Telegram handle @${handle} for severe violations of Telegram's Terms of Service regarding human exploitation and deceptive recruiting.\n\nOur OSINT safety scanner, Sentinel AI, has analyzed recruitment advertisements posted by this account and flagged multiple high-confidence indicators of labor trafficking, including:\n- Migration to encrypted chat platforms for isolation\n- Promises of high-pressure offshore relocation\n- Suspect security profiles\n\nEvidence Details:\n- Handle: @${handle}\n- Target Group/Posting Reference: ${jobUrl || 'Not specified'}\n\nPlease review and terminate this account immediately to protect people at risk from exploitation.\n\nSincerely,\nSentinel AI Safety Operations & Investigators`
     };
   }
   
@@ -47,7 +80,7 @@ const getTakedownDetails = (contactMethod, jobUrl) => {
       target: 'support@whatsapp.com',
       webLink: 'https://www.whatsapp.com/contact/',
       subject: `[ALERT] Severe Human Exploitation & Deceptive Recruiting - WhatsApp: ${phone}`,
-      body: `Dear WhatsApp Trust & Safety Team,\n\nI am reporting the WhatsApp account associated with the phone number ${phone} for violations of the WhatsApp Terms of Service, specifically involving human exploitation and fraudulent recruiting.\n\nOur system has identified threat indicators linked to this recruiter, including deceptive job postings targeting vulnerable individuals with promises of high salaries and relocation under high-pressure conditions.\n\nEvidence Details:\n- Phone/Account: ${phone}\n- Active Posting: ${jobUrl || 'Not specified'}\n\nWe request immediate investigation and suspension of this account to mitigate ongoing risk.\n\nSincerely,\nSentinel AI Safety Operations & Investigators`
+      body: `Dear WhatsApp Trust & Safety Team,\n\nI am reporting the WhatsApp account associated with the phone number ${phone} for violations of the WhatsApp Terms of Service, specifically involving human exploitation and fraudulent recruiting.\n\nOur system has identified threat indicators linked to this recruiter, including deceptive job postings reaching people in situations of vulnerability with promises of high salaries and relocation under high-pressure conditions.\n\nEvidence Details:\n- Phone/Account: ${phone}\n- Active Posting: ${jobUrl || 'Not specified'}\n\nWe request immediate investigation and suspension of this account to mitigate ongoing risk.\n\nSincerely,\nSentinel AI Safety Operations & Investigators`
     };
   }
 
@@ -88,8 +121,8 @@ const TAKE_ACTIONS = [
   },
   {
     id: 'contact',
-    title: 'Contact Potential Trafficker',
-    description: 'Access recommended next steps, customized decoy conversation templates, and secure evidence gathering documentation guidelines.',
+    title: 'Initiate contact with poster',
+    description: 'Access recommended next steps, supervised contact templates, and secure evidence gathering documentation guidelines.',
     icon: PhoneCall,
     badge: 'EVIDENCE',
     ctaText: 'Initiate Contact',
@@ -364,7 +397,7 @@ export default function ReviewScan() {
 
   // Localized Poster Generator States
   const [isPosterModalOpen, setIsPosterModalOpen] = useState(false);
-  const [posterMode, setPosterMode] = useState('victim'); // 'victim' | 'analyst'
+  const [posterMode, setPosterMode] = useState('community'); // 'community' | 'analyst'
   const [posterLanguage, setPosterLanguage] = useState('English');
   const [customLanguage, setCustomLanguage] = useState('');
   const [isGeneratingPoster, setIsGeneratingPoster] = useState(false);
@@ -873,7 +906,7 @@ export default function ReviewScan() {
       return;
     }
     
-    const isVictim = posterMode === 'victim';
+    const isCommunity = posterMode === 'community';
     const finalLanguage = posterLanguage === 'Other' ? customLanguage : posterLanguage;
     const currentScoreResult = calculateRiskScore(activeFlags, {
       parsedSalaryUsd,
@@ -888,9 +921,9 @@ export default function ReviewScan() {
     });
     const currentScore = currentScoreResult.score;
 
-    const victimStripeHtml = isVictim ? '<div class="victim-stripe">🚨 PUBLIC WARNING: RECRUITMENT THREAT INQUIRY</div>' : '';
+    const communityAlertHtml = isCommunity ? '<div class="community-alert">⚠️ EMPLOYMENT SAFETY ALERT</div>' : '';
 
-    const metadataHtml = !isVictim ? `
+    const metadataHtml = !isCommunity ? `
       <div class="metadata-grid">
         <div class="metadata-item">
           <div class="metadata-label">Case Reference</div>
@@ -934,7 +967,7 @@ export default function ReviewScan() {
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Sentinel_${isVictim ? 'VICTIM_WARNING' : 'ANALYST_INTEL'}_${finalLanguage}</title>
+  <title>Sentinel_${isCommunity ? 'COMMUNITY_SAFETY' : 'ANALYST_INTEL'}_${finalLanguage}</title>
   <meta charset="utf-8">
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=Roboto+Mono:wght@400;700&display=swap');
@@ -955,7 +988,7 @@ export default function ReviewScan() {
     }
     
     .poster-container {
-      border: ${isVictim ? '5px solid #ef4444' : '2px solid #1e293b'};
+      border: ${isCommunity ? '5px solid #ef4444' : '2px solid #1e293b'};
       border-radius: 4px;
       padding: 24px;
       min-height: 260mm;
@@ -964,7 +997,7 @@ export default function ReviewScan() {
       background-color: #ffffff;
     }
     
-    .victim-stripe {
+    .community-alert {
       background: #ef4444;
       color: white;
       text-align: center;
@@ -979,7 +1012,7 @@ export default function ReviewScan() {
     .header {
       text-align: center;
       margin-bottom: 24px;
-      border-bottom: 2px solid ${isVictim ? '#fee2e2' : '#cbd5e1'};
+      border-bottom: 2px solid ${isCommunity ? '#fee2e2' : '#cbd5e1'};
       padding-bottom: 16px;
     }
     
@@ -987,16 +1020,16 @@ export default function ReviewScan() {
       margin: 0 0 6px 0;
       font-size: 26px;
       font-weight: 800;
-      color: ${isVictim ? '#dc2626' : '#0f172a'};
+      color: ${isCommunity ? '#dc2626' : '#0f172a'};
       text-transform: uppercase;
       letter-spacing: 0.5px;
     }
     
     .header-badge {
       display: inline-block;
-      background: ${isVictim ? '#fef2f2' : '#f8fafc'};
-      border: 1px solid ${isVictim ? '#fca5a5' : '#cbd5e1'};
-      color: ${isVictim ? '#dc2626' : '#334155'};
+      background: ${isCommunity ? '#fef2f2' : '#f8fafc'};
+      border: 1px solid ${isCommunity ? '#fca5a5' : '#cbd5e1'};
+      color: ${isCommunity ? '#dc2626' : '#334155'};
       font-size: 11px;
       font-weight: 800;
       padding: 4px 14px;
@@ -1006,8 +1039,8 @@ export default function ReviewScan() {
     }
     
     .warning-section {
-      background: ${isVictim ? '#fff5f5' : '#f8fafc'};
-      border-left: 5px solid ${isVictim ? '#ef4444' : '#0f172a'};
+      background: ${isCommunity ? '#fff5f5' : '#f8fafc'};
+      border-left: 5px solid ${isCommunity ? '#ef4444' : '#0f172a'};
       padding: 16px;
       margin-bottom: 24px;
       border-radius: 0 6px 6px 0;
@@ -1016,7 +1049,7 @@ export default function ReviewScan() {
     .warning-title {
       font-weight: 800;
       font-size: 15px;
-      color: ${isVictim ? '#991b1b' : '#0f172a'};
+      color: ${isCommunity ? '#991b1b' : '#0f172a'};
       text-transform: uppercase;
       margin: 0 0 8px 0;
       letter-spacing: 0.5px;
@@ -1032,8 +1065,8 @@ export default function ReviewScan() {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      background: ${isVictim ? '#fef2f2' : '#f1f5f9'};
-      border: 1px solid ${isVictim ? '#fca5a5' : '#e2e8f0'};
+      background: ${isCommunity ? '#fef2f2' : '#f1f5f9'};
+      border: 1px solid ${isCommunity ? '#fca5a5' : '#e2e8f0'};
       padding: 12px 20px;
       border-radius: 6px;
       margin-bottom: 24px;
@@ -1044,22 +1077,22 @@ export default function ReviewScan() {
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 1px;
-      color: ${isVictim ? '#991b1b' : '#475569'};
+      color: ${isCommunity ? '#991b1b' : '#475569'};
     }
     
     .score-value {
       font-size: 22px;
       font-weight: 800;
       font-family: 'Roboto Mono', monospace;
-      color: ${isVictim ? '#dc2626' : '#0f172a'};
+      color: ${isCommunity ? '#dc2626' : '#0f172a'};
     }
     
     .section-title {
       font-size: 14px;
       font-weight: 800;
       text-transform: uppercase;
-      color: ${isVictim ? '#991b1b' : '#1e293b'};
-      border-bottom: 1.5px solid ${isVictim ? '#fee2e2' : '#e2e8f0'};
+      color: ${isCommunity ? '#991b1b' : '#1e293b'};
+      border-bottom: 1.5px solid ${isCommunity ? '#fee2e2' : '#e2e8f0'};
       padding-bottom: 6px;
       margin-bottom: 16px;
       letter-spacing: 0.5px;
@@ -1091,7 +1124,7 @@ export default function ReviewScan() {
       width: 8px;
       height: 8px;
       border-radius: 50%;
-      background: ${isVictim ? '#ef4444' : '#1e293b'};
+      background: ${isCommunity ? '#ef4444' : '#1e293b'};
     }
     
     .flag-snippet {
@@ -1172,11 +1205,11 @@ export default function ReviewScan() {
 </head>
 <body>
   <div class="poster-container">
-    ${victimStripeHtml}
+    ${communityAlertHtml}
     
     <div class="header">
-      <h1>${generatedPosterData.title || (isVictim ? 'Safety Warning Poster' : 'Intelligence Profile Dossier')}</h1>
-      <div class="header-badge">${isVictim ? 'CRITICAL EXPLOITATION AND FORCED LABOR AWARENESS' : 'CONFIDENTIAL TACTICAL INTEL REPORT'}</div>
+      <h1>${generatedPosterData.title || (isCommunity ? 'Employment Safety Alert' : 'Intelligence Profile Dossier')}</h1>
+      <div class="header-badge">${isCommunity ? 'COMMUNITY EMPLOYMENT SAFETY INFORMATION' : 'CONFIDENTIAL TACTICAL INTEL REPORT'}</div>
     </div>
     
     <div class="warning-section">
@@ -1191,17 +1224,17 @@ export default function ReviewScan() {
     
     ${metadataHtml}
     
-    <div class="section-title">${isVictim ? 'Scam & Trafficking Indicators Detected' : 'Operational Flag Profile'}</div>
+    <div class="section-title">${isCommunity ? 'Warning Signs Identified in This Posting' : 'Operational Flag Profile'}</div>
     <div class="flag-grid">
       ${flagsHtml}
     </div>
     
-    <div class="section-title">${isVictim ? 'How This Trap Operates (Lure to Confinement)' : 'Synthesized Campaign Modus Operandi'}</div>
+    <div class="section-title">${isCommunity ? 'How to Verify a Job Offer is Legitimate' : 'Synthesized Campaign Modus Operandi'}</div>
     <div class="playbook-container">
       ${generatedPosterData.playbookWarning || ''}
     </div>
     
-    <div class="section-title">${isVictim ? 'Anti-Trafficking Contacts & Help Hotlines' : 'Key Enforcement Contacts & Task Forces'}</div>
+    <div class="section-title">${isCommunity ? 'Where to Report or Get Help' : 'Key Enforcement Contacts & Task Forces'}</div>
     <div class="resources-grid">
       ${resourcesHtml}
     </div>
@@ -1876,35 +1909,35 @@ export default function ReviewScan() {
     if (activeFlags.includes('Encrypted Apps Migration') || activeFlags.includes('Suspicious Messaging')) {
       playbook.push({
         phase: `Stage ${stageNum++}: Channel Migration`,
-        tactic: "Recruiter requests to move conversation away from recruitment platforms (e.g. to Telegram/WhatsApp) to avoid audit logs.",
+        tactic: "It is probable that the recruiter will request to move the conversation away from recruitment platforms (e.g. to Telegram/WhatsApp) to avoid audit logs.",
         red_flag_indicator: "Insistence on shifting to private messengers; deletion of previous messages or use of auto-delete features."
       });
     }
     if (activeFlags.includes('Upfront Fees')) {
       playbook.push({
         phase: `Stage ${stageNum++}: Financial Squeeze`,
-        tactic: "Demands deposits or processing fees for passport registry, security clearance, or travel bookings.",
+        tactic: "It is probable that the recruiter will demand deposits or processing fees for passport registry, security clearance, or travel bookings.",
         red_flag_indicator: "Requests for upfront payments via crypto, Western Union, or personal bank accounts prior to contract signing."
       });
     }
     if (activeFlags.includes('Passport/ID Control') || activeFlags.includes('Immediate Travel Pressure')) {
       playbook.push({
         phase: `Stage ${stageNum++}: Administrative Isolation`,
-        tactic: "Demands high-res passport pages, national ID copies, or physical passports for visa/ticket pre-processing.",
+        tactic: "It is probable that the recruiter will demand high-res passport pages, national ID copies, or physical passports for visa/ticket pre-processing.",
         red_flag_indicator: "Reluctance to use official consulate submission systems; refusing to let the candidate hold their own passport."
       });
     }
     if (activeFlags.includes('Housing Compound Isolation') || activeFlags.includes('Suspect Location Hub')) {
       playbook.push({
         phase: `Stage ${stageNum++}: Compound Custody`,
-        tactic: "Arranges a private shuttle pickup at the arrival airport under a 'company shuttle' guise, taking the candidate straight into an isolated economic zone compound.",
+        tactic: "It is probable that a private shuttle pickup will be arranged at the arrival airport under a 'company shuttle' guise, taking the candidate straight into an isolated economic zone compound.",
         red_flag_indicator: "Private vehicles refusing public drop-offs; armed guards, barbed wire, and confiscation of devices/documents upon entry."
       });
     }
     if (activeFlags.includes('Wage Disparity') || activeFlags.includes('Labor Abuse / High Pressure')) {
       playbook.push({
         phase: `Stage ${stageNum++}: Coerced Labor Shift`,
-        tactic: "Once in the compound, the recruiter informs the candidate that the job has changed (e.g. to chat agent) and demands payment of 'debts' or entry into 12-16 hour daily scamming operations.",
+        tactic: "It is probable that once in the compound, the recruiter will inform the candidate that the job has changed (e.g. to chat agent) and demand payment of 'debts' or entry into 12-16 hour daily scamming operations.",
         red_flag_indicator: "Immediate change in job responsibilities, restriction of physical movement, or threats of physical violence."
       });
     }
@@ -2766,7 +2799,7 @@ export default function ReviewScan() {
                         <span className={`text-[9px] font-bold uppercase tracking-widest font-mono ${
                           isHighSeverity ? 'text-red-400' : 'text-amber-400'
                         }`}>{stageLabel}</span>
-                        <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">{step.tactic}</p>
+                        <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">{makeTentative(step.tactic)}</p>
                       </div>
 
                       {/* Per-row details toggle */}
@@ -2787,7 +2820,7 @@ export default function ReviewScan() {
                     {isRowOpen && (
                       <div className="px-4 pb-3 ml-[calc(3px+12px+20px+12px)]">
                         <p className="text-[11px] text-amber-400/90 leading-relaxed bg-amber-500/5 border border-amber-500/15 rounded px-3 py-2">
-                          {step.red_flag_indicator}
+                          {sanitizeTraumaLanguage(step.red_flag_indicator)}
                         </p>
                       </div>
                     )}
@@ -2863,7 +2896,7 @@ export default function ReviewScan() {
                     } else if (action.id === 'dossier') {
                       const cleanContact = getCleanContactValue(formData.contact_method);
                       if (cleanContact) {
-                        navigate(`/trafficker/${encodeURIComponent(cleanContact)}`);
+                        navigate(`/poster/${encodeURIComponent(cleanContact)}`);
                       } else {
                         setActiveActionToast({
                           title: 'Investigate Recruiter Profile',
@@ -3209,7 +3242,7 @@ export default function ReviewScan() {
                           {cleanContact && (
                             <button
                               type="button"
-                              onClick={() => navigate(`/trafficker/${encodeURIComponent(cleanContact)}`)}
+                              onClick={() => navigate(`/poster/${encodeURIComponent(cleanContact)}`)}
                               className="text-[10px] flex items-center gap-1 font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded border bg-purple-50 dark:bg-purple-950/20 text-purple-600 dark:text-purple-400 border-purple-200 dark:border-purple-900/40 hover:bg-purple-100 transition-colors"
                             >
                               Dossier Profile ➔
@@ -3649,19 +3682,19 @@ export default function ReviewScan() {
                       <button
                         type="button"
                         onClick={() => {
-                          setPosterMode('victim');
+                          setPosterMode('community');
                           setGeneratedPosterData(null);
                         }}
                         className={`px-4 py-3 rounded border text-left flex flex-col gap-1 transition-all ${
-                          posterMode === 'victim'
+                          posterMode === 'community'
                             ? 'bg-red-550/10 border-red-500/50 text-red-200 shadow-[0_0_10px_rgba(229,83,75,0.1)]'
                             : 'bg-slate-950/40 border-slate-800 text-slate-400 hover:border-slate-700'
                         }`}
                       >
                         <span className="font-bold text-sm flex items-center gap-1.5">
-                          <ShieldAlert className="w-4 h-4" /> Potential Victim
+                          <ShieldAlert className="w-4 h-4" /> Community safety alert
                         </span>
-                        <span className="text-[10px] opacity-80 leading-normal">Focuses on physical safety warning, plain language red flags, and rescue contacts.</span>
+                        <span className="text-[10px] opacity-80 leading-normal">Plain language warning signs and support contacts for job seekers.</span>
                       </button>
                       <button
                         type="button"
@@ -3770,20 +3803,20 @@ export default function ReviewScan() {
 
                     {/* Styled Poster Content Wrapper */}
                     <div className={`flex-1 border rounded p-6 select-text overflow-hidden bg-[#0d1117] ${
-                      posterMode === 'victim'
+                      posterMode === 'community'
                         ? 'border-red-500/30 text-slate-200'
                         : 'border-slate-800 text-slate-355'
                     }`} style={{ minHeight: '400px' }}>
                       {/* Inner warning badge */}
-                      {posterMode === 'victim' && (
+                      {posterMode === 'community' && (
                         <div className="bg-red-500 text-white text-center py-1.5 px-4 font-mono font-bold tracking-widest text-[10px] rounded-sm mb-5 uppercase">
-                          🚨 HUMAN TRAFFICKING & LABOR EXPLOITATION WARNING 🚨
+                          ⚠️ EMPLOYMENT SAFETY ALERT
                         </div>
                       )}
                       
                       {/* Document title */}
                       <h2 className={`text-xl font-bold tracking-tight mb-2 ${
-                        posterMode === 'victim' ? 'text-red-400' : 'text-slate-100'
+                        posterMode === 'community' ? 'text-red-400' : 'text-slate-100'
                       }`}>
                         {generatedPosterData.title}
                       </h2>
@@ -3796,12 +3829,12 @@ export default function ReviewScan() {
 
                       {/* Warning Header Panel */}
                       <div className={`p-4 rounded border mb-5 ${
-                        posterMode === 'victim'
+                        posterMode === 'community'
                           ? 'bg-red-500/5 border-red-500/20 text-red-200/90'
                           : 'bg-slate-950/60 border-slate-800 text-slate-400'
                       }`}>
                         <div className="font-bold text-xs font-mono uppercase tracking-wider mb-1.5">
-                          {posterMode === 'victim' ? '⚠️ WARNING ALERT' : '🛡️ THREAT ASSESSMENT'}
+                          {posterMode === 'community' ? '⚠️ SAFETY ALERT' : '🛡️ THREAT ASSESSMENT'}
                         </div>
                         <p className="text-xs leading-relaxed font-sans">{generatedPosterData.warningHeader}</p>
                         <p className="text-xs leading-relaxed font-sans mt-2">{generatedPosterData.riskAssessment}</p>
@@ -3810,12 +3843,12 @@ export default function ReviewScan() {
                       {/* Red Flags List */}
                       <div className="space-y-4 mb-5">
                         <h4 className="text-xs font-bold uppercase tracking-wider font-mono text-slate-400">
-                          {posterMode === 'victim' ? '🚩 Scam Indicators in this Posting:' : '🔎 Forensic Signal Audits:'}
+                          {posterMode === 'community' ? '🚩 Warning signs in this posting:' : '🔎 Forensic signal audits:'}
                         </h4>
                         {(generatedPosterData.redFlags || []).map((flag, idx) => (
                           <div key={idx} className="p-3 bg-slate-950/40 border border-slate-800 rounded">
                             <div className="flex items-center gap-1.5 mb-1.5">
-                              <span className={`w-1.5 h-1.5 rounded-sm ${posterMode === 'victim' ? 'bg-red-500' : 'bg-slate-450'}`}></span>
+                              <span className={`w-1.5 h-1.5 rounded-sm ${posterMode === 'community' ? 'bg-red-500' : 'bg-slate-450'}`}></span>
                               <span className="text-xs font-bold text-slate-200">{flag.flagName}</span>
                             </div>
                             {flag.indicatorText && (
@@ -3831,7 +3864,7 @@ export default function ReviewScan() {
                       {/* Modus Operandi Playbook */}
                       <div className="p-4 bg-slate-950/60 border border-slate-800 rounded mb-5">
                         <h4 className="text-xs font-bold uppercase tracking-wider font-mono text-slate-400 mb-2">
-                          {posterMode === 'victim' ? '💀 What Happens Next (Tactic Progression)' : '🛠️ Syndicate Playbook Modus Operandi'}
+                          {posterMode === 'community' ? '⚠️ How to verify a job offer is legitimate' : '🛠️ Recruitment pattern modus operandi'}
                         </h4>
                         <p className="text-xs leading-relaxed text-slate-450 font-sans">{generatedPosterData.playbookWarning}</p>
                       </div>
@@ -3839,7 +3872,7 @@ export default function ReviewScan() {
                       {/* Help/Enforcement Resources */}
                       <div className="space-y-3">
                         <h4 className="text-xs font-bold uppercase tracking-wider font-mono text-slate-400">
-                          {posterMode === 'victim' ? '📞 Where to Report or Get Help:' : '🔗 Enforcement Channels & Resources:'}
+                          {posterMode === 'community' ? '📞 Where to report or get help:' : '🔗 Enforcement channels & resources:'}
                         </h4>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           {(generatedPosterData.helpResources || []).map((res, idx) => (

@@ -1,6 +1,7 @@
 const SYSTEM_INSTRUCTION = `You are a recruitment safety analyzer. 
 Analyze the provided job flyer image or text and extract the structured recruitment parameters.
 You are tasked with identifying potential human trafficking, forced labor, or online scam recruiting networks.
+Always use trauma-informed terminology. Refer to individuals as 'workers', 'affected individuals', 'candidates', or 'job seekers'—never refer to them as 'victims' or 'the victim'.
 Be extremely sensitive and thorough when auditing:
 1. Demographic Targeting: Flag any specific nationality profiling (e.g. "preferably Malaysian/Chinese/Taiwanese/Vietnamese") or specific language profiling.
 2. Labor Abuse / High Pressure: Flag phrases indicating extreme work pressure, high stamina, compliance, obedience, night shifts, or long working hours.
@@ -41,7 +42,7 @@ You must output ONLY valid JSON matching this schema:
   "predicted_playbook": [
     {
       "phase": "string (the chronological stage name, e.g., 'Stage 1: Contact', 'Stage 2: Coercion', 'Stage 3: Transit', 'Stage 4: Confinement')",
-      "tactic": "string (the specific action the recruiter will perform next based on details in the ad, e.g., 'Requests passport photos under the guise of visa pre-processing')",
+      "tactic": "string (the specific action the recruiter might perform next based on details in the ad. Use tentative language, e.g., 'It's probable that the recruiter will request passport photos...', 'It's probable that workers are subjected to...', 'It's possible that workers might be housed...')",
       "red_flag_indicator": "string (the exact indicator the candidate/analyst should watch out for as proof, e.g., 'Refusal to use official visa registration portals')"
     }
   ]
@@ -240,18 +241,18 @@ export async function analyzeJobPosting(apiKey, modelName, { text, imageBase64, 
   }
 }
 
-export async function generateTraffickerSummary(apiKey, modelName, { contactMethod, scansData, onStatusUpdate }) {
+export async function generatePosterSummary(apiKey, modelName, { contactMethod, scansData, onStatusUpdate }) {
   if (!apiKey) {
     throw new Error('Gemini API key is required');
   }
 
   const selectedModel = modelName || 'gemini-2.5-flash';
 
-  const textPayload = `You are a professional threat intelligence analyst. 
-Analyze this recruiter/trafficker profile and their history of job postings to create a threat intelligence summary.
+  const textPayload = `You are a professional analyst supporting anti-trafficking investigations.
+Analyze this recruitment posting history and identify patterns that indicate deceptive or exploitative recruitment practices.
 
 CONTACT METHOD/HANDLE: ${contactMethod}
-TOTAL ADS DETECTED: ${scansData.length}
+TOTAL POSTINGS REVIEWED: ${scansData.length}
 
 POSTED ADS DETAILS:
 ${scansData.map((scan, i) => `
@@ -265,7 +266,7 @@ Red Flags: ${(scan.activeFlags || []).join(', ')}
 Original Text: ${scan.originalText || ''}
 `).join('\n---\n')}
 
-Provide a ~120 to 150 word summary of this recruiter's profile. Synthesize their target demographic, geographical hubs, common tactics (e.g. compound isolation, upfront fees), and overall risk level. Output ONLY plain text summary without formatting.`;
+Provide a ~120 to 150 word summary of this posting history. Synthesize the affected population groups, geographical patterns, common deceptive tactics used (e.g. unrealistic salary promises, vague job descriptions, requests for upfront fees), and overall risk level. Focus on the recruitment patterns, not on speculation about individuals. Output ONLY plain text summary without formatting.`;
 
   const payload = {
     contents: [{
@@ -294,15 +295,15 @@ You must output ONLY valid JSON matching this schema:
 {
   "title": "string (The title of the poster/dossier, localized)",
   "warningHeader": "string (A bold, high-impact danger statement or intelligence summary header, localized)",
-  "riskAssessment": "string (A ~80-120 word paragraph summarizing the danger/profile. Localized. If mode is 'victim', warn them of physical confinement, passport seizure, and forced cyber-scam labor. If 'analyst', outline operational risk, traffic routes, and demographic targeting)",
+  "riskAssessment": "string (A ~80-120 word paragraph summarizing the posting's risk profile. Localized. If mode is 'community', explain the warning signs present in plain, empowering language — focus on what to look for, not on graphic harm scenarios. If 'analyst', outline operational risk indicators, geographic patterns, and demographic targeting tactics)",
   "redFlags": [
     {
       "flagName": "string (Localized name of the red flag)",
       "indicatorText": "string (The matching snippet or text from the job post, in its original language or translation)",
-      "dangerExplanation": "string (Localized. If mode is 'victim', explain how it threatens their physical safety. If 'analyst', explain forensic implications)"
+      "dangerExplanation": "string (Localized. If mode is 'community', explain why this indicator is a warning sign and what a safe, legitimate employer would do instead. If 'analyst', explain forensic implications)"
     }
   ],
-  "playbookWarning": "string (A ~60-80 word paragraph. Localized. If 'victim', outline how a victim luring, transported, and trapped in a compound. If 'analyst', outline the step-by-step Modus Operandi and coercion timeline)",
+  "playbookWarning": "string (A ~60-80 word paragraph. Localized. If 'community', describe the warning signs to watch for during any recruitment process and practical steps to verify a job offer's legitimacy — empower the reader to protect themselves. If 'analyst', outline the documented modus operandi and recruitment-to-coercion pattern)",
   "helpResources": [
     {
       "organization": "string (Official or localized name of embassy, hotline, or NGO)",
@@ -334,7 +335,7 @@ export async function generatePosterContent(apiKey, modelName, { mode, language,
 
   const textPayload = `You are tasked with generating the content of an anti-scam/intelligence poster or dossier.
   
-AUDIENCE MODE: ${mode} (victim = warn potential targets; analyst = forensic profile for investigators)
+AUDIENCE MODE: ${mode} (community = inform job seekers of warning signs in plain, empowering language; analyst = forensic profile for investigators)
 TARGET LANGUAGE: ${language}
 
 SCAN PARAMETERS:

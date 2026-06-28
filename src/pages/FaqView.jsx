@@ -136,7 +136,7 @@ export default function FaqView() {
             Interacting with suspected human trafficking recruiters requires high operational security (OpSec). The **Decoy Engagement Control** panel provides tools that allow analysts to safely converse with recruiters, extract location details, and document transaction channels.
           </p>
           <ul className="list-disc pl-5 space-y-2">
-            <li><strong>Synthetic Personas:</strong> To prevent target profiling, the system dynamically rolls randomized candidate identities complete with native regional names, ages, hometowns, and realistic background profiles designed to match typical target demographics.</li>
+            <li><strong>Synthetic Personas:</strong> To prevent reverse profiling by recruiters, the system dynamically rolls randomized candidate identities complete with native regional names, ages, hometowns, and realistic background profiles reflecting the demographics commonly sought by exploitative recruiters.</li>
             <li><strong>Sanitized PDF Resume Builder:</strong> Automatically generates custom PDF CVs using professional templates. The generator outputs clean binary files that strip out EXIF metadata, tracking identifiers, creation timestamps, and GPS headers, preventing recruiters from tracing back the analyst's workstation.</li>
             <li><strong>Phased Conversation Blueprints:</strong> Organizes communication strategies into structured phases. Standard Outreach (establishing contact), Visa Audit (checking if passport withholding is mandatory), and Location Discovery (asking for compound transit details) help gather evidence systematically.</li>
           </ul>

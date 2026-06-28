@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { supabase, mapDbToRecord } from '../utils/supabaseClient';
 import { Search, ChevronRight, ChevronDown, ChevronUp, AlertTriangle, Briefcase, MapPin, Folder, Trash2, Globe, DollarSign, Languages, FileText, ShieldAlert, List, Network } from 'lucide-react';
 import { format } from 'date-fns';
@@ -124,9 +124,33 @@ export default function HistoryView() {
     }
   };
 
+  const similarityCounts = useMemo(() => {
+    if (!scans) return {};
+    const counts = {};
+    scans.forEach(s => {
+      counts[s.id] = 0;
+    });
+
+    const n = scans.length;
+    for (let i = 0; i < n; i++) {
+      const s1 = scans[i];
+      if (!s1.normalizedText) continue;
+
+      for (let j = i + 1; j < n; j++) {
+        const s2 = scans[j];
+        if (!s2.normalizedText) continue;
+
+        if (calculateSimilarity(s1.normalizedText, s2.normalizedText) > 0.40) {
+          counts[s1.id]++;
+          counts[s2.id]++;
+        }
+      }
+    }
+    return counts;
+  }, [scans]);
+
   const getSimilarCount = (targetScan) => {
-    if (!scans || !targetScan.normalizedText) return 0;
-    return scans.filter(s => s.id !== targetScan.id && s.normalizedText && calculateSimilarity(targetScan.normalizedText, s.normalizedText) > 0.40).length;
+    return similarityCounts[targetScan.id] || 0;
   };
 
   const handleScanClick = (scan) => {
@@ -155,7 +179,7 @@ export default function HistoryView() {
   };
 
   // Group scans by batchId
-  const getGroupedScans = () => {
+  const groupedScans = useMemo(() => {
     if (!filteredScans) return [];
 
     const groups = [];
@@ -220,9 +244,7 @@ export default function HistoryView() {
       }
       return b.timestamp - a.timestamp;
     });
-  };
-
-  const groupedScans = getGroupedScans();
+  }, [filteredScans, sortBy]);
 
   return (
     <div className="flex flex-col flex-1 h-full mt-4 w-full mx-auto transition-all max-w-screen-md">

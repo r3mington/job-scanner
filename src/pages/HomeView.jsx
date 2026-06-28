@@ -235,7 +235,7 @@ export default function HomeView() {
             </span>
           </h1>
           <p className="text-sm md:text-base text-slate-400 leading-relaxed max-w-lg">
-            Sentinel AI is a trauma-informed OSINT platform built to identify fraudulent recruitment postings, map syndicate networks, and protect vulnerable job seekers under UN Do No Harm guidelines.
+            Sentinel AI is a trauma-informed OSINT platform built to identify fraudulent recruitment postings, map syndicate networks, and protect people at risk under UN Do No Harm guidelines.
           </p>
           <div className="pt-3 flex flex-wrap gap-4">
             <button
@@ -283,7 +283,7 @@ export default function HomeView() {
       <div className="space-y-6">
         <div className="flex items-center gap-2 border-b border-slate-850 pb-3">
           <Shield className="w-5 h-5 text-amber-500" />
-          <h3 className="font-bold text-sm text-slate-200 uppercase tracking-wider font-mono">Ingested Threat Imagery</h3>
+          <h3 className="font-bold text-sm text-slate-200 uppercase tracking-wider font-mono">Flagged Recruitment Postings</h3>
         </div>
 
         {/* Custom Premium Do No Harm Banner */}
@@ -387,14 +387,14 @@ export default function HomeView() {
         )}
       </div>
 
-      {/* Victim Protection & Safety (Do No Harm) Section */}
+      {/* Person-Centered Safety (Do No Harm) Section */}
       <div className="rounded-xl border border-slate-800 bg-[#111318] p-6 space-y-4">
         <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
           <ShieldAlert className="w-5 h-5 text-amber-500" />
-          <h3 className="font-bold text-sm text-slate-200 uppercase tracking-wider font-mono">Victim Protection & Safety Framework</h3>
+          <h3 className="font-bold text-sm text-slate-200 uppercase tracking-wider font-mono">Person-Centered Safety Framework</h3>
         </div>
         <p className="text-xs text-slate-400 leading-relaxed">
-          Sentinel AI operates under strict **UN Do No Harm principles** to protect vulnerable individuals and investigators:
+          Sentinel AI operates under strict **UN Do No Harm principles** to protect people in situations of vulnerability and investigators:
         </p>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="p-3 bg-[#0a0c12] border border-slate-800/80 rounded-lg flex items-start gap-3">

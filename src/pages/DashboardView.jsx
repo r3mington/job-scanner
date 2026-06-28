@@ -327,7 +327,7 @@ export default function DashboardView() {
               networkHubs.map(hub => (
                 <div 
                   key={hub.contact} 
-                  onClick={() => navigate(`/trafficker/${encodeURIComponent(hub.contact)}`)}
+                  onClick={() => navigate(`/poster/${encodeURIComponent(hub.contact)}`)}
                   className="p-2.5 rounded border border-purple-900/20 bg-[#0a0c12] flex items-center justify-between hover:border-purple-550/30 cursor-pointer transition-colors group"
                 >
                   <div className="min-w-0 pr-2">
