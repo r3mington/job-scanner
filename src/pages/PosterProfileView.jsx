@@ -195,7 +195,7 @@ export default function PosterProfileView() {
   const lastSpotted = totalAds > 0 ? new Date(scans[0].timestamp).toLocaleDateString() : 'N/A';
 
   // Risk Classification
-  const threatClass = avgRisk >= 80 
+  const riskClass = avgRisk >= 80 
     ? { label: 'CRITICAL RISK / HIGH DANGER', color: 'text-red-500 bg-red-500/10 border-red-500/30' }
     : avgRisk >= 50
     ? { label: 'MODERATE TO HIGH RISK', color: 'text-amber-500 bg-amber-500/10 border-amber-500/30' }
@@ -329,8 +329,8 @@ export default function PosterProfileView() {
           
           {/* Risk Card */}
           <div className="bg-[#111318] border border-slate-800 rounded p-4 space-y-4">
-            <div className={`p-2.5 rounded border text-center font-mono text-[10px] font-bold uppercase tracking-wider ${threatClass.color}`}>
-              {threatClass.label}
+            <div className={`p-2.5 rounded border text-center font-mono text-[10px] font-bold uppercase tracking-wider ${riskClass.color}`}>
+              {riskClass.label}
             </div>
             
             <div className="grid grid-cols-2 gap-4 pt-2 border-t border-slate-800 font-mono">
@@ -513,7 +513,7 @@ export default function PosterProfileView() {
 
       </div>
 
-      {/* Geographic Threat Map */}
+      {/* Geographic Risk Map */}
       <div className="bg-[#111318] border border-slate-800 rounded p-5 space-y-4">
         <style>{`
           @keyframes radar-sweep {

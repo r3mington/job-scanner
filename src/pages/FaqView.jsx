@@ -20,7 +20,7 @@ export default function FaqView() {
       details: (
         <div className="space-y-3 leading-relaxed text-slate-355 text-slate-300">
           <p>
-            Sentinel AI processes job listings and uploaded threat graphics using Google’s enterprise-tier developer API endpoints (specifically <strong>Gemini 2.5 Flash</strong> and <strong>Gemini 1.5 Pro</strong>).
+            Sentinel AI processes job listings and uploaded graphics using Google’s enterprise-tier developer API endpoints (specifically <strong>Gemini 2.5 Flash</strong> and <strong>Gemini 1.5 Pro</strong>).
           </p>
           <ul className="list-disc pl-5 space-y-2">
             <li><strong>Data Retention Policy:</strong> To align with UN Do No Harm guidelines, all API calls are made directly from the analyst's browser to the official Google API endpoint. No text, image metadata, or document bytes are stored on intermediary servers.</li>
@@ -77,7 +77,7 @@ export default function FaqView() {
       id: 'scoring',
       icon: <BarChart3 className="w-4 h-4 text-amber-500" />,
       title: 'Risk Scoring Calculation Heuristics',
-      summary: 'How threat scores are calculated based on job flags, salary ratios, and operational opacity.',
+      summary: 'How risk scores are calculated based on job flags, salary ratios, and operational opacity.',
       details: (
         <div className="space-y-3 leading-relaxed text-slate-350">
           <p>
@@ -85,12 +85,12 @@ export default function FaqView() {
           </p>
           <div className="p-3 bg-[#0a0c12] border border-slate-800 rounded font-mono text-[11px] text-slate-400 space-y-3">
             <div>
-              <strong className="text-slate-300">1. Base Threat Weights (Additive):</strong>
+              <strong className="text-slate-300">1. Base Risk Weights (Additive):</strong>
               <div className="text-slate-500 mt-0.5">Every detected indicator has a pre-defined severity weight. For example, "Passport/ID Control" adds +40, "Labor Abuse & Restrictions" adds +25, and "Excessive Enticements" adds +15.</div>
             </div>
             <div>
               <strong className="text-slate-300">2. Co-occurrence Combo Multipliers (Synergy):</strong>
-              <div className="text-slate-500 mt-0.5">When multiple critical flags appear together, they suggest an active threat campaign. If flags like "Passport Control" and "High Pressure / Restrictions" are present simultaneously, the base score is scaled by a combo multiplier (e.g., 1.25×), adding a compounding threat bonus.</div>
+              <div className="text-slate-500 mt-0.5">When multiple critical flags appear together, they suggest an active risk campaign. If flags like "Passport Control" and "High Pressure / Restrictions" are present simultaneously, the base score is scaled by a combo multiplier (e.g., 1.25×), adding a compounding risk bonus.</div>
             </div>
             <div>
               <strong className="text-slate-300">3. Contextual Anomalies (Adjustments):</strong>
@@ -129,7 +129,7 @@ export default function FaqView() {
       id: 'decoy',
       icon: <MessageSquare className="w-4 h-4 text-amber-500" />,
       title: 'Decoy Engagement Control',
-      summary: 'Generating burner personas and operational templates to safely engage threat actors.',
+      summary: 'Generating burner personas and operational templates to safely engage deceptive recruiters.',
       details: (
         <div className="space-y-3 leading-relaxed text-slate-350">
           <p>
@@ -184,7 +184,7 @@ export default function FaqView() {
             <li><strong>Software Footprints:</strong> Detects editing applications (such as Photoshop, Canva, or screenshot tools) used to modify the flyer, along with original creation timestamps.</li>
           </ul>
           <p>
-            This forensic evidence is displayed in a dedicated panel on the review screen, providing key location leads to help trace threat actors.
+            This forensic evidence is displayed in a dedicated panel on the review screen, providing key location leads to help trace recruiter networks.
           </p>
         </div>
       )
@@ -206,7 +206,7 @@ export default function FaqView() {
             The analyzer checks for literal word-for-word translations, unusual character choices (e.g. mixing Simplified Chinese symbols into regional scripts), or incorrect syntax. The system then outputs a probability profile highlighting the writer's native language origin.
           </p>
           <p>
-            This analysis is logged to the investigation notes to help identify the location of the threat syndicate's operators.
+            This analysis is logged to the investigation notes to help identify the location of the recruiting syndicate's operators.
           </p>
         </div>
       )

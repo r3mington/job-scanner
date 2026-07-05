@@ -283,7 +283,7 @@ export default function HistoryView() {
                 Audit Trail Overview
               </div>
               <p className="text-slate-400 leading-relaxed">
-                This console acts as a secure, local repository of your scanned jobs and ingested batches. Review historical risk trends, investigate threat dossiers, and track syndicates.
+                This console acts as a secure, local repository of your scanned jobs and ingested batches. Review historical risk trends, investigate risk profiles, and track syndicates.
               </p>
             </div>
             

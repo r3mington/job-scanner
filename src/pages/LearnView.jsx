@@ -473,7 +473,7 @@ const CONTEXT_MODULES = [
             },
             {
               title: 'ILO Forced Labour Convention (No. 29) and Protocol (2014)',
-              body: 'The ILO forced labour framework covers labour exploitation more broadly than the Palermo Protocol. The 2014 Protocol specifically requires states to take measures to prevent forced labour, protect victims, and ensure access to remedies including compensation.'
+              body: 'The ILO forced labour framework covers labour exploitation more broadly than the Palermo Protocol. The 2014 Protocol specifically requires states to take measures to prevent forced labour, protect affected workers, and ensure access to remedies including compensation.'
             },
             {
               title: 'Cambodian legal context',
@@ -496,7 +496,7 @@ const CONTEXT_MODULES = [
         "NGOs are legally prohibited from reporting cases to local law enforcement."
       ],
       correctIndex: 1,
-      explanation: "The non-prosecution principle ensures that victims are not penalized for immigration, document, or other coerced offenses resulting from their trafficking."
+      explanation: "The non-prosecution principle ensures that affected individuals are not penalized for immigration, document, or other coerced offenses resulting from their trafficking."
     }
   },
   {
@@ -806,7 +806,7 @@ CRITICAL ETHICAL UNDERSTANDING:
    suspicious indicators, but humans make the final assessment.
 2. Data Dignity: Personal identifiers of affected individuals must 
    NEVER be stored in investigator notes.
-3. Non-Prosecution: Ensure that potential victims are protected, not
+3. Non-Prosecution: Ensure that potential affected individuals are protected, not
    penalized for coerced offenses.
 4. Referral Principle: All case referrals must go through established
    survivor-centered local organizations.

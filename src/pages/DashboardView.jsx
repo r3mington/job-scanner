@@ -185,7 +185,7 @@ export default function DashboardView() {
                 Console Overview
               </div>
               <p className="text-slate-400 leading-relaxed">
-                This dashboard aggregates threat intelligence gathered from historical scans to track exploitation metrics, isolate syndicated recruiters, and map syndicate hubs globally.
+                This dashboard aggregates risk intelligence gathered from historical scans to track exploitation metrics, isolate syndicated recruiters, and map syndicate hubs globally.
               </p>
               <div className="grid grid-cols-2 gap-2 pt-1.5">
                 <div className="border border-slate-800 bg-[#111318]/50 p-2 rounded">
@@ -201,7 +201,7 @@ export default function DashboardView() {
 
             <div className="space-y-2">
               <div className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">
-                Threat Metrics Explanation
+                Risk Metrics Explanation
               </div>
               <ul className="space-y-1.5 text-slate-400">
                 <li className="flex items-start gap-2">
@@ -214,7 +214,7 @@ export default function DashboardView() {
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-amber-500/80">•</span>
-                  <span><strong>Geographic Distribution:</strong> Average threat levels grouped by country or operating jurisdiction.</span>
+                  <span><strong>Geographic Distribution:</strong> Average risk levels grouped by country or operating jurisdiction.</span>
                 </li>
               </ul>
             </div>
@@ -268,7 +268,7 @@ export default function DashboardView() {
         {/* KPI 4 */}
         <div className="bg-[#111318] p-4 rounded border border-slate-800 shadow-sm flex flex-col justify-between">
           <div className="flex items-center justify-between text-slate-555">
-            <span className="text-[10px] font-bold font-mono uppercase tracking-wider">Scammer Hubs</span>
+            <span className="text-[10px] font-bold font-mono uppercase tracking-wider">Recruiter Hubs</span>
             <Users className="w-4 h-4 text-purple-400" />
           </div>
           <div className="mt-2">

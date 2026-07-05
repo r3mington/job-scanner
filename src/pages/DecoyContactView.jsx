@@ -637,7 +637,7 @@ export default function DecoyContactView() {
               This profile and CV are generated with <strong>synthetic/fake data</strong>:
               <ul className="list-disc list-inside mt-1 space-y-0.5 pl-1">
                 <li>Under no circumstances should live contact occur without active investigator oversight.</li>
-                <li>Used strictly for defensive OSINT simulation and profile threat mitigation.</li>
+                <li>Used strictly for defensive OSINT simulation and safety profile mitigation.</li>
               </ul>
             </div>
 

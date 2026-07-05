@@ -45,7 +45,7 @@ export function generateStixBundle({
     description: "Anti-trafficking intelligence investigator using Sentinel AI Safety platform."
   });
 
-  // 2. Threat Actor (Recruiter/Trafficker)
+  // 2. Threat Actor (Recruiter/Advertiser)
   const threatActorId = `threat-actor--${generateUUID()}`;
   const recruiterContact = formData.contact_method || "Unknown Contact";
   const recruiterEmployer = formData.employer_identity || "Unknown Organization";
@@ -84,7 +84,7 @@ export function generateStixBundle({
   indicatorDesc += `Salary Offered: ${formData.salary_range || 'Unspecified'}\n`;
 
   if (stixOptions.includeFlags && activeFlags.length > 0) {
-    indicatorDesc += `\nIdentified Threat Indicators:\n` + activeFlags.map(f => `- ${f}`).join('\n') + `\n`;
+    indicatorDesc += `\nIdentified Risk Indicators:\n` + activeFlags.map(f => `- ${f}`).join('\n') + `\n`;
   }
 
   if (stixOptions.includeGemini && aiReview) {
@@ -136,7 +136,7 @@ export function generateStixBundle({
     relationship_type: "indicates",
     source_ref: indicatorId,
     target_ref: threatActorId,
-    description: `Indicator indicates presence of threat actor recruiters.`
+    description: `Indicator indicates presence of recruiter networks.`
   });
 
   // 5. Relationship: Reporter (Identity) created/observed the Indicator

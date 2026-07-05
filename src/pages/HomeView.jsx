@@ -55,7 +55,7 @@ export default function HomeView() {
   const [logs, setLogs] = useState([
     { id: 1, time: '20:30:11', text: 'SYSTEM: Sentinel AI Core engine initialized. Version 1.0.4' },
     { id: 2, time: '20:30:14', text: 'INGESTION: Local database cache synchronised (Dexie PWA enabled)' },
-    { id: 3, time: '20:31:05', text: 'OSINT: Threat intelligence feeds loaded successfully.' }
+    { id: 3, time: '20:31:05', text: 'OSINT: Risk intelligence feeds loaded successfully.' }
   ]);
 
   // Load actual numbers and latest logs from Supabase to show live telemetry
@@ -181,7 +181,7 @@ export default function HomeView() {
         `OSINT: Evaluated ${stats.totalHubs} active communication handles/channels.`,
         `COMPLIANCE: Human-in-the-loop checkpoint validated for pending investigations.`,
         `DECOY SANDBOX: Stripping camera metadata profiles from active templates.`,
-        `SAFETY WARNING: Direct victim data filters active. Biometric profiling disabled.`
+        `SAFETY WARNING: Direct personal data filters active. Biometric profiling disabled.`
       ];
       
       const randomMsg = randomMessages[Math.floor(Math.random() * randomMessages.length)];
@@ -265,7 +265,7 @@ export default function HomeView() {
         </div>
         <div className="p-5 bg-[#111318] border border-slate-800 rounded-xl flex items-center justify-between shadow-sm">
           <div className="space-y-1">
-            <span className="text-[10px] font-mono text-slate-500 uppercase tracking-wider">High Risk Threats Mapped</span>
+            <span className="text-[10px] font-mono text-slate-500 uppercase tracking-wider">High Risk Signals Mapped</span>
             <h2 className="text-2xl font-bold text-red-450 font-mono text-red-500">{stats.highRiskScans || 4}</h2>
           </div>
           <AlertTriangle className="w-8 h-8 text-red-500/30" />
@@ -295,7 +295,7 @@ export default function HomeView() {
               <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-amber-400">Do No Harm Safety Attestation</span>
             </div>
             <p className="text-xs text-slate-355 leading-relaxed font-sans text-slate-405 text-slate-400">
-              Sentinel AI adheres to strict humanitarian guidelines. To protect victims, this gallery showcases public, simulated, or synthetic recruitment flyers. All sensitive metadata, GPS locations, and device EXIF parameters are automatically stripped.
+              Sentinel AI adheres to strict humanitarian guidelines. To protect affected individuals, this gallery showcases public, simulated, or synthetic recruitment flyers. All sensitive metadata, GPS locations, and device EXIF parameters are automatically stripped.
             </p>
           </div>
           <div className="flex-shrink-0 z-10">
@@ -307,7 +307,7 @@ export default function HomeView() {
 
         {recentScans.length === 0 ? (
           <div className="p-8 border border-dashed border-slate-850 bg-[#111318]/50 rounded-xl text-center text-slate-500 font-mono text-xs">
-            No recently processed threat flyers in history.
+            No recently processed recruitment postings in history.
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
