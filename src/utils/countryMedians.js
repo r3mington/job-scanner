@@ -37,8 +37,19 @@ export const COUNTRY_MEDIANS_USD = {
   "United Arab Emirates": 35000,
   "SA": 25000,
   "Saudi Arabia": 25000,
-  "KH": 2000,
-  "Cambodia": 2000,
+  // Southeast Asia (ILO/World Bank Wage Data)
+  "TH": 6000,
+  "Thailand": 6000, // ILO 2024: ~18,000 THB/month median
+  "MM": 1800,
+  "Myanmar": 1800, // World Bank 2024: ~150 USD/month median
+  "LA": 2000,
+  "Laos": 2000, // ILO 2024: ~167 USD/month median
+  "VN": 4200,
+  "Vietnam": 4200, // General Statistics Office 2024: ~8.4M VND/month median
+  "KH": 3600,
+  "Cambodia": 3600, // ILO 2024: ~300 USD/month urban median (minimum garment is $204/mo)
+  "TW": 18000,
+  "Taiwan": 18000, // DGBAS 2024: ~43,000 NTD/month median
 
   // Default fallback if a recognized country is not heavily specified
   "GLOBAL_AVERAGE": 15000

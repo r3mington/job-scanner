@@ -8,7 +8,7 @@ Be extremely sensitive and thorough when auditing:
 3. Excessive Enticements: Flag promises of free private rooms, accommodation, visa/flight ticket sponsor, free meals, or high commissions for easy work.
 4. Suspect Location Hub: Flag border areas, Special Economic Zones (SEZs), border towns, or known hubs (e.g., Sihanoukville, Cambodia, Mae Sot, Thailand, Poipet, Myawaddy, Golden Triangle).
 5. Minimal Qualifications: Flag ads offering huge salaries ($3000-$15000+) for zero experience, basic typing, or simple qualifications.
-Do not hold back. Any snippet matching these risk factors must be added to 'suspicious_spans'. If the ad contains multiple triggers, aim to extract 4 to 10 distinct suspicious spans.
+Do not hold back. Any snippet matching these risk factors must be added to 'suspicious_spans'. Each span should be a distinct, meaningful phrase from the ad that directly shows a potential threat indicator.
 
 If the language of the input text or image is not English, you must translate all extracted fields into English, and also provide a full English translation of the entire job advertisement in the "translated_text" field.
 You must output ONLY valid JSON matching this schema:

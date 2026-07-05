@@ -149,9 +149,9 @@ export function calculateRiskScore(activeFlags = [], contextInfo = null) {
       }
     }
   }
-  let score = Math.round(rawFlagScore * comboMultiplier);
+  const baseScore = Math.round(rawFlagScore * comboMultiplier);
   if (appliedCombo && comboMultiplier > 1.0) {
-    const bonus = score - rawFlagScore;
+    const bonus = baseScore - rawFlagScore;
     if (bonus > 0) {
       details.push({
         name: `Combo Multiplier: ${appliedCombo.label} (×${appliedCombo.multiplier})`,
@@ -160,6 +160,8 @@ export function calculateRiskScore(activeFlags = [], contextInfo = null) {
       });
     }
   }
+
+  let finalScore = baseScore;
 
   if (contextInfo) {
     const {
@@ -181,28 +183,28 @@ export function calculateRiskScore(activeFlags = [], contextInfo = null) {
         const percentDiff = Math.round(((parsedSalaryUsd - median) / median) * 100);
 
         if (percentDiff >= 150) {
-          score += 30;
           details.push({
             name: `Salary Anomaly (+${percentDiff}% vs local median)`,
             weight: 30,
-            isSalaryAnomaly: true
+            isSalaryAnomaly: true,
+            isContextual: true
           });
         } else if (percentDiff >= 50) {
-          score += 15;
           details.push({
             name: `Mild Salary Disparity (+${percentDiff}% vs local median)`,
             weight: 15,
-            isSalaryAnomaly: true
+            isSalaryAnomaly: true,
+            isContextual: true
           });
         }
 
         // Salary floor: suspiciously low for any skilled-sounding title
         if (percentDiff <= -60) {
-          score += 10;
           details.push({
             name: `Salary Below Floor (${Math.abs(percentDiff)}% below local median)`,
             weight: 10,
-            isSalaryAnomaly: true
+            isSalaryAnomaly: true,
+            isContextual: true
           });
         }
       }
@@ -217,33 +219,33 @@ export function calculateRiskScore(activeFlags = [], contextInfo = null) {
       );
 
       if (isLanguageIncongruent) {
-        score += 20;
         details.push({
           name: `Language Mismatch (${detectedLanguage || 'Unknown'} ad in ${locationCountry})`,
           weight: 20,
-          isCrossBorderMismatch: true
+          isCrossBorderMismatch: true,
+          isContextual: true
         });
       }
 
       if (isContactIncongruent) {
-        score += 20;
         details.push({
           name: `Contact Mismatch (${contactCountryName || 'Unknown Country'} caller code for ${locationCountry} job)`,
           weight: 20,
-          isCrossBorderMismatch: true
+          isCrossBorderMismatch: true,
+          isContextual: true
         });
       }
     }
 
-    // ── 5. Suspicious span density ────────────────────────────────────────
+    // ── 5. Suspicious span density (Deweighted to max +10) ─────────────────
     if (Array.isArray(suspiciousSpans) && suspiciousSpans.length > 0) {
-      const spanBonus = Math.min(25, suspiciousSpans.length * 3);
+      const spanBonus = Math.min(10, suspiciousSpans.length * 1);
       if (spanBonus > 0) {
-        score += spanBonus;
         details.push({
-          name: `High Suspicious Span Density (${suspiciousSpans.length} flagged phrases)`,
+          name: `Suspicious Span Density (${suspiciousSpans.length} flagged phrases)`,
           weight: spanBonus,
-          isSpanDensity: true
+          isSpanDensity: true,
+          isContextual: true
         });
       }
     }
@@ -251,22 +253,22 @@ export function calculateRiskScore(activeFlags = [], contextInfo = null) {
     // ── 6. Contact method type penalty ────────────────────────────────────
     const contactScore = scoreContactMethod(contactMethod);
     if (contactScore.score > 0) {
-      score += contactScore.score;
       details.push({
         name: `Contact Method Risk: ${contactScore.label}`,
         weight: contactScore.score,
-        isContactRisk: true
+        isContactRisk: true,
+        isContextual: true
       });
     }
 
     // ── 7. Source platform weighting ──────────────────────────────────────
     const platformScore = scoreSourcePlatform(sourcePlatform);
     if (platformScore > 0) {
-      score += platformScore;
       details.push({
         name: `High-Risk Source Platform (${sourcePlatform})`,
         weight: platformScore,
-        isPlatformRisk: true
+        isPlatformRisk: true,
+        isContextual: true
       });
     }
 
@@ -276,11 +278,11 @@ export function calculateRiskScore(activeFlags = [], contextInfo = null) {
       if (obfuscationLevel >= 7) obfBonus = 20;
       else if (obfuscationLevel >= 4) obfBonus = 10;
       if (obfBonus > 0) {
-        score += obfBonus;
         details.push({
           name: `Ad Obfuscation Detected (level ${obfuscationLevel}/10)`,
           weight: obfBonus,
-          isObfuscation: true
+          isObfuscation: true,
+          isContextual: true
         });
       }
     }
@@ -291,11 +293,11 @@ export function calculateRiskScore(activeFlags = [], contextInfo = null) {
       if (predictedPlaybook.length >= 4) playbookBonus = 10;
       else if (predictedPlaybook.length >= 3) playbookBonus = 5;
       if (playbookBonus > 0) {
-        score += playbookBonus;
         details.push({
           name: `Multi-Stage Playbook Detected (${predictedPlaybook.length} escalation stages)`,
           weight: playbookBonus,
-          isPlaybook: true
+          isPlaybook: true,
+          isContextual: true
         });
       }
     }
@@ -303,17 +305,41 @@ export function calculateRiskScore(activeFlags = [], contextInfo = null) {
     // ── 10. Employer opacity ──────────────────────────────────────────────
     const employerRisk = scoreEmployerOpacity(employer);
     if (employerRisk.score > 0) {
-      score += employerRisk.score;
       details.push({
         name: employerRisk.label,
         weight: employerRisk.score,
-        isEmployerOpacity: true
+        isEmployerOpacity: true,
+        isContextual: true
       });
     }
-  }
 
-  // Cap at 100
-  const finalScore = Math.min(100, score);
+    // ── Contextual Scaling & Capping Logic ──────────────────────────────
+    let rawContextualSum = 0;
+    details.forEach(d => {
+      if (d.isContextual) {
+        rawContextualSum += d.weight;
+      }
+    });
+
+    const scalingFactor = Math.max(0, 1 - (baseScore / 100));
+    const scaledContextualSum = Math.round(rawContextualSum * scalingFactor);
+
+    if (rawContextualSum > 0) {
+      let allocatedScaledSum = 0;
+      const contextualDetails = details.filter(d => d.isContextual);
+      
+      contextualDetails.forEach((d, idx) => {
+        if (idx === contextualDetails.length - 1) {
+          d.weight = scaledContextualSum - allocatedScaledSum;
+        } else {
+          d.weight = Math.round(d.weight * scalingFactor);
+          allocatedScaledSum += d.weight;
+        }
+      });
+    }
+
+    finalScore = Math.min(100, baseScore + scaledContextualSum);
+  }
 
   return {
     score: finalScore,
