@@ -2923,6 +2923,19 @@ export default function ReviewScan() {
                           description: 'No valid recruiter contact method (Telegram, WhatsApp, Email) found in this ad to view a dossier.'
                         });
                       }
+                    } else if (action.id === 'related') {
+                      if (similarScans.length > 0) {
+                        document.getElementById('similar-postings-section')?.scrollIntoView({ behavior: 'smooth' });
+                        setActiveActionToast({
+                          title: 'Find Matches',
+                          description: `Scrolling to ${similarScans.length} similar ad postings found in history.`
+                        });
+                      } else {
+                        setActiveActionToast({
+                          title: 'Find Matches',
+                          description: 'No other ads with similar text, advertiser ID, or contact details were found in history.'
+                        });
+                      }
                     } else if (action.id === 'takedown') {
                       const details = getTakedownDetails(formData.contact_method, formData.source_url);
                       setTakedownDetails(details);
@@ -3028,7 +3041,7 @@ export default function ReviewScan() {
 
       {/* Similar Job Postings Section */}
       {similarScans.length > 0 && (
-        <div className="rounded overflow-hidden border border-slate-800/80" style={{background:'#111318'}}>
+        <div id="similar-postings-section" className="rounded overflow-hidden border border-slate-800/80" style={{background:'#111318'}}>
           <div className="p-4 border-b border-slate-800 flex items-center justify-between">
             <div>
               <h3 className="font-bold text-slate-200">Similar Job Ads Detected</h3>
