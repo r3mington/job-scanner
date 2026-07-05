@@ -2847,7 +2847,9 @@ export default function ReviewScan() {
            <p className="text-xs text-slate-600 mt-1">Tap fields to correct any inaccuracies.</p>
         </div>
         <div className="p-4 space-y-4">
-           {Object.keys(formData).map(key => (
+           {Object.keys(formData)
+              .filter(key => !['suspicious_spans', 'predicted_playbook', 'audit_status'].includes(key))
+              .map(key => (
              <div key={key}>
                <div className="flex items-center justify-between mb-1.5">
                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider">
@@ -2897,7 +2899,8 @@ export default function ReviewScan() {
                  type="text"
                  value={formData[key] || ''}
                  onChange={(e) => setFormData({...formData, [key]: e.target.value})}
-                 className="w-full px-3 py-2 bg-[#0a0c12] border border-slate-800 rounded-sm text-sm text-slate-300 focus:ring-1 focus:ring-amber-500/50 focus:border-amber-500/30 transition-all outline-none font-mono"
+                 placeholder="<not detected>"
+                 className="w-full px-3 py-2 bg-[#0a0c12] border border-slate-800 rounded-sm text-sm text-slate-300 placeholder-slate-600 focus:ring-1 focus:ring-amber-500/50 focus:border-amber-500/30 transition-all outline-none font-mono"
                />
                
                {/* Salary Delta Logic */}
