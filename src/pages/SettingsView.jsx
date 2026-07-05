@@ -136,7 +136,7 @@ export default function SettingsView() {
               onChange={(e) => setModelName(e.target.value)}
               className="w-full px-4 py-3 rounded border border-slate-800 bg-[#0a0c12] text-slate-200 focus:outline-none focus:ring-1 focus:ring-amber-500 transition-shadow text-sm font-mono"
             >
-              {(availableModels.length > 0 ? availableModels : Array.from(new Set([modelName, 'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-1.5-flash-latest', 'gemini-2.5-flash', 'gemini-2.0-flash-exp']))).map(m => (
+              {(availableModels.length > 0 ? availableModels : Array.from(new Set([modelName, 'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash-exp']))).map(m => (
                 <option key={m} value={m}>{m}</option>
               ))}
             </select>
