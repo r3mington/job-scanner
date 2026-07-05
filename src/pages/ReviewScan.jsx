@@ -187,6 +187,9 @@ const TAKE_ACTIONS = [
   }
 ];
 
+const PRIMARY_ACTIONS = TAKE_ACTIONS.filter(a => ['poster', 'takedown', 'related'].includes(a.id));
+const ADVANCED_ACTIONS = TAKE_ACTIONS.filter(a => !['poster', 'takedown', 'related'].includes(a.id));
+
 function ThreatBubbles({ spans, showHighlights }) {
   if (!showHighlights || !spans || spans.length === 0) return null;
   const unique = Array.from(new Map(spans.map(s => [s.red_flag, s])).values());
@@ -392,6 +395,8 @@ export default function ReviewScan() {
   const [expandedPlaybookRows, setExpandedPlaybookRows] = useState(new Set());
   const [scoreBarsVisible, setScoreBarsVisible] = useState(false);
   const [activeActionToast, setActiveActionToast] = useState(null);
+  const [isOcrExpanded, setIsOcrExpanded] = useState(false);
+  const [showAdvancedTools, setShowAdvancedTools] = useState(false);
   const [showBriefing, setShowBriefing] = useState(() => {
     const saved = localStorage.getItem('sentinel_show_review_briefing');
     return saved === 'true';
@@ -805,6 +810,94 @@ export default function ReviewScan() {
 
     printWindow.document.write(htmlContent);
     printWindow.document.close();
+  };
+
+  const handleTakeAction = (actionId) => {
+    if (actionId === 'poster') {
+      setIsPosterModalOpen(true);
+      setPosterError('');
+    } else if (actionId === 'contact') {
+      navigate('/decoy-contact', {
+        state: {
+          scanId: scanInput?.id || 'NEW',
+          jobTitle: formData.job_title,
+          employer: formData.employer_identity,
+          contactMethod: formData.contact_method,
+          locationCountry: locationCountry,
+          location: formData.location,
+          parsedSalaryUsd: parsedSalaryUsd,
+          activeFlags: activeFlags,
+          ocrText: ocrText,
+          translatedText: translatedText,
+          suspiciousSpans: suspiciousSpans,
+          predictedPlaybook: predictedPlaybook,
+          extractedData: {
+            ...formData,
+            suspicious_spans: suspiciousSpans,
+            predicted_playbook: predictedPlaybook
+          }
+        }
+      });
+    } else if (actionId === 'dossier') {
+      const cleanContact = getCleanContactValue(formData.contact_method);
+      if (cleanContact) {
+        navigate(`/poster/${encodeURIComponent(cleanContact)}`);
+      } else {
+        setActiveActionToast({
+          title: 'Investigate Recruiter Profile',
+          description: 'No valid recruiter contact method (Telegram, WhatsApp, Email) found in this ad to view a dossier.'
+        });
+      }
+    } else if (actionId === 'related') {
+      if (similarScans.length > 0) {
+        document.getElementById('similar-postings-section')?.scrollIntoView({ behavior: 'smooth' });
+        setActiveActionToast({
+          title: 'Find Matches',
+          description: `Scrolling to ${similarScans.length} similar ad postings found in history.`
+        });
+      } else {
+        setActiveActionToast({
+          title: 'Find Matches',
+          description: 'No other ads with similar text, advertiser ID, or contact details were found in history.'
+        });
+      }
+    } else if (actionId === 'takedown') {
+      const details = getTakedownDetails(formData.contact_method, formData.source_url);
+      setTakedownDetails(details);
+      setIsTakedownModalOpen(true);
+    } else if (actionId === 'stix') {
+      setIsStixModalOpen(true);
+    } else if (actionId === 'image_osint') {
+      if (scanInput?.image || scanInput?.originalImage) {
+        setIsOsintModalOpen(true);
+        setOsintError('');
+        setCropAnalysisResult(null);
+      } else {
+        setActiveActionToast({
+          title: 'Reverse Image OSINT',
+          description: 'No physical flyer reference image associated with this scan to perform OSINT analysis.'
+        });
+      }
+    } else if (actionId === 'file_forensics') {
+      if (scanInput?.image || scanInput?.originalImage) {
+        setIsFileForensicsModalOpen(true);
+      } else {
+        setActiveActionToast({
+          title: 'EXIF & Metadata Forensics',
+          description: 'No physical flyer reference image associated with this scan to perform file analysis.'
+        });
+      }
+    } else if (actionId === 'language_osint') {
+      const rawText = ocrText || formData.job_title || '';
+      if (rawText && rawText.trim() !== '') {
+        setIsLanguageOsintModalOpen(true);
+      } else {
+        setActiveActionToast({
+          title: 'Dialect & Language Heuristics',
+          description: 'No job advertisement text found to perform dialect analysis.'
+        });
+      }
+    }
   };
 
   const textContainerRef = useRef(null);
@@ -1796,8 +1889,8 @@ export default function ReviewScan() {
 
       {/* Risk Score Widget — Radial Gauge */}
       {(() => {
-        const gaugeSize = 180;
-        const strokeW = 14;
+        const gaugeSize = 120;
+        const strokeW = 10;
         const r = (gaugeSize / 2) - strokeW;
         // Arc spans 240 degrees (from 150° to 390°/30°)
         const arcDeg = 240;
@@ -1985,28 +2078,28 @@ export default function ReviewScan() {
                   )}
                   {/* Center score label */}
                   <text
-                    x={gaugeSize/2} y={gaugeSize/2 + 2}
+                    x={gaugeSize/2} y={gaugeSize/2}
                     textAnchor="middle" dominantBaseline="middle"
-                    fontSize="40" fontWeight="900" fontFamily="monospace"
+                    fontSize="26" fontWeight="900" fontFamily="monospace"
                     fill="white"
                   >
                     {scoreBarsVisible ? <CountUp end={score} /> : '0'}
                   </text>
                   <text
-                    x={gaugeSize/2} y={gaugeSize/2 + 26}
+                    x={gaugeSize/2} y={gaugeSize/2 + 20}
                     textAnchor="middle" dominantBaseline="middle"
-                    fontSize="9" fontWeight="700" fontFamily="monospace"
+                    fontSize="8" fontWeight="700" fontFamily="monospace"
                     fill={scoreColor}
-                    letterSpacing="3"
+                    letterSpacing="2"
                   >{riskInfo.label.toUpperCase()}</text>
                 </svg>
               </div>
 
               {/* Breakdown bars */}
               <div className="flex-1 min-w-0">
-                <p className="text-[10px] font-mono font-bold text-slate-600 uppercase tracking-widest mb-2">Risk Breakdown</p>
+                <p className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-widest mb-3">Risk Breakdown</p>
                 {scoreDetails && scoreDetails.length > 0 ? (
-                  <div className="space-y-1.5">
+                  <div className="space-y-3.5">
                     {[...scoreDetails].sort((a, b) => b.weight - a.weight).map((detail, idx) => {
                       const maxWeight = Math.max(...scoreDetails.map(d => d.weight));
                       const pct = Math.round((detail.weight / maxWeight) * 100);
@@ -2014,9 +2107,12 @@ export default function ReviewScan() {
                       const barColor = detail.isSalaryAnomaly || detail.isCrossBorderMismatch
                         ? '#f59e0b' : isCritical ? '#ef4444' : '#f87171';
                       return (
-                        <div key={detail.name} className="flex items-center gap-2">
-                          <span className="text-[10px] w-[46%] flex-shrink-0 truncate text-slate-400 font-mono">{detail.name}</span>
-                          <div className="flex-1 h-1 bg-slate-800 rounded-full overflow-hidden">
+                        <div key={detail.name} className="space-y-1">
+                          <div className="flex justify-between items-center text-xs font-mono">
+                            <span className="text-slate-300 font-medium truncate pr-2">{detail.name}</span>
+                            <span className="text-slate-450 font-bold flex-shrink-0">+{detail.weight} pts</span>
+                          </div>
+                          <div className="w-full h-2.5 bg-slate-900 border border-slate-800 rounded-full overflow-hidden">
                             <div
                               className="h-full rounded-full transition-all ease-out"
                               style={{
@@ -2027,17 +2123,16 @@ export default function ReviewScan() {
                               }}
                             />
                           </div>
-                          <span className="text-[9px] font-mono text-slate-500 w-5 text-right flex-shrink-0">+{detail.weight}</span>
                         </div>
                       );
                     })}
-                    <div className="flex justify-between items-center mt-2 pt-2 border-t border-slate-800">
-                      <span className="text-[10px] text-slate-600 uppercase tracking-widest font-mono">Total (capped)</span>
-                      <span className="text-xs font-black font-mono" style={{color: scoreColor}}>{score} / 100</span>
+                    <div className="flex justify-between items-center mt-3 pt-3 border-t border-slate-800">
+                      <span className="text-[10px] text-slate-500 uppercase tracking-widest font-mono font-bold">Total Risk Index (capped)</span>
+                      <span className="text-sm font-black font-mono" style={{color: scoreColor}}>{score} / 100</span>
                     </div>
                   </div>
                 ) : (
-                  <p className="text-[11px] text-slate-600 font-mono">No risk triggers detected.</p>
+                  <p className="text-xs text-slate-500 font-mono">No risk triggers detected.</p>
                 )}
               </div>
             </div>
@@ -2401,137 +2496,104 @@ export default function ReviewScan() {
 
       {/* Take Action Operational Dashboard */}
       <div className="rounded overflow-hidden border border-slate-800/80 p-5" style={{background:'#111318'}}>
-        <div className="border-b border-slate-800 pb-3 mb-4">
+        <div className="border-b border-slate-800 pb-3 mb-5">
           <h3 className="font-bold text-slate-200">Take Action</h3>
           <p className="text-xs text-slate-500 mt-1">Operational next steps and evidence-gathering tools for analysts.</p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {TAKE_ACTIONS.map(action => {
+        {/* Primary Actions Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
+          {PRIMARY_ACTIONS.map(action => {
             const Icon = action.icon;
             return (
               <div 
                 key={action.id} 
-                className="bg-[#0a0c12] border border-slate-800 rounded p-4 flex flex-col justify-between hover:border-amber-500/40 transition-colors duration-200 group"
+                className="bg-[#0f121d] border-2 border-slate-800/80 rounded-lg p-5 flex flex-col justify-between hover:border-amber-500/50 transition-all duration-300 shadow-md group"
               >
                 <div>
                   <div className="flex items-center justify-between">
-                    <div className="p-2 bg-slate-950 border border-slate-800 rounded text-slate-400 group-hover:text-amber-500 transition-colors">
-                      <Icon className="w-5 h-5 transition-transform duration-300" />
+                    <div className="p-2.5 bg-slate-900 border border-slate-700/60 rounded-md text-amber-400">
+                      <Icon className="w-5 h-5" />
                     </div>
-                    <span className="text-[9px] font-bold font-mono tracking-wider bg-slate-950 text-slate-400 px-2 py-0.5 rounded border border-slate-850">
+                    <span className="text-[9px] font-bold font-mono tracking-widest bg-amber-950/40 text-amber-400 px-2 py-0.5 rounded border border-amber-800/40">
                       {action.badge}
                     </span>
                   </div>
-                  <h4 className="text-sm font-bold text-slate-200 mt-3 select-text leading-snug">
+                  <h4 className="text-sm font-extrabold text-slate-100 mt-4 select-text leading-snug">
                     {action.title}
                   </h4>
-                  <p className="text-xs text-slate-450 mt-2 leading-relaxed select-text">
+                  <p className="text-xs text-slate-400 mt-2.5 leading-relaxed select-text">
                     {action.description}
                   </p>
                 </div>
                 
                 <button
                   type="button"
-                  onClick={() => {
-                    if (action.id === 'poster') {
-                      setIsPosterModalOpen(true);
-                      setPosterError('');
-                    } else if (action.id === 'contact') {
-                      navigate('/decoy-contact', {
-                        state: {
-                          scanId: scanInput?.id || 'NEW',
-                          jobTitle: formData.job_title,
-                          employer: formData.employer_identity,
-                          contactMethod: formData.contact_method,
-                          locationCountry: locationCountry,
-                          location: formData.location,
-                          parsedSalaryUsd: parsedSalaryUsd,
-                          activeFlags: activeFlags,
-                          ocrText: ocrText,
-                          translatedText: translatedText,
-                          suspiciousSpans: suspiciousSpans,
-                          predictedPlaybook: predictedPlaybook,
-                          extractedData: {
-                            ...formData,
-                            suspicious_spans: suspiciousSpans,
-                            predicted_playbook: predictedPlaybook
-                          }
-                        }
-                      });
-                    } else if (action.id === 'dossier') {
-                      const cleanContact = getCleanContactValue(formData.contact_method);
-                      if (cleanContact) {
-                        navigate(`/poster/${encodeURIComponent(cleanContact)}`);
-                      } else {
-                        setActiveActionToast({
-                          title: 'Investigate Recruiter Profile',
-                          description: 'No valid recruiter contact method (Telegram, WhatsApp, Email) found in this ad to view a dossier.'
-                        });
-                      }
-                    } else if (action.id === 'related') {
-                      if (similarScans.length > 0) {
-                        document.getElementById('similar-postings-section')?.scrollIntoView({ behavior: 'smooth' });
-                        setActiveActionToast({
-                          title: 'Find Matches',
-                          description: `Scrolling to ${similarScans.length} similar ad postings found in history.`
-                        });
-                      } else {
-                        setActiveActionToast({
-                          title: 'Find Matches',
-                          description: 'No other ads with similar text, advertiser ID, or contact details were found in history.'
-                        });
-                      }
-                    } else if (action.id === 'takedown') {
-                      const details = getTakedownDetails(formData.contact_method, formData.source_url);
-                      setTakedownDetails(details);
-                      setIsTakedownModalOpen(true);
-                    } else if (action.id === 'stix') {
-                      setIsStixModalOpen(true);
-                    } else if (action.id === 'image_osint') {
-                      if (scanInput?.image || scanInput?.originalImage) {
-                        setIsOsintModalOpen(true);
-                        setOsintError('');
-                        setCropAnalysisResult(null);
-                      } else {
-                        setActiveActionToast({
-                          title: 'Reverse Image OSINT',
-                          description: 'No physical flyer reference image associated with this scan to perform OSINT analysis.'
-                        });
-                      }
-                    } else if (action.id === 'file_forensics') {
-                      if (scanInput?.image || scanInput?.originalImage) {
-                        setIsFileForensicsModalOpen(true);
-                      } else {
-                        setActiveActionToast({
-                          title: 'EXIF & Metadata Forensics',
-                          description: 'No physical flyer reference image associated with this scan to perform file analysis.'
-                        });
-                      }
-                    } else if (action.id === 'language_osint') {
-                      const rawText = ocrText || formData.job_title || '';
-                      if (rawText && rawText.trim() !== '') {
-                        setIsLanguageOsintModalOpen(true);
-                      } else {
-                        setActiveActionToast({
-                          title: 'Dialect & Language Heuristics',
-                          description: 'No job advertisement text found to perform dialect analysis.'
-                        });
-                      }
-                    } else {
-                      setActiveActionToast({
-                        title: action.title,
-                        description: "This action workflow is configured. Functional integrations will be added in a future update."
-                      });
-                    }
-                  }}
-                  className="mt-4 w-full py-2 bg-slate-950 hover:bg-amber-500/10 border border-slate-850 hover:border-amber-500/30 text-slate-400 hover:text-amber-400 text-xs font-mono font-bold rounded transition-colors duration-200 tracking-wider flex items-center justify-center gap-1.5"
+                  onClick={() => handleTakeAction(action.id)}
+                  className="mt-5 w-full py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-mono font-black rounded-md transition-all duration-200 tracking-wider flex items-center justify-center gap-1.5 shadow"
                 >
                   {action.ctaText}
                 </button>
               </div>
             );
           })}
+        </div>
+
+        {/* Advanced Tools Section */}
+        <div className="border border-slate-800/60 rounded bg-[#0a0b0e] overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setShowAdvancedTools(prev => !prev)}
+            className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-slate-900/50 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+              <span className="text-xs font-mono font-bold uppercase tracking-wider text-slate-400">Advanced Operational Tools</span>
+              <span className="text-[10px] bg-slate-900 border border-slate-800 text-slate-450 px-2 py-0.5 rounded font-mono font-bold">
+                {ADVANCED_ACTIONS.length} tools
+              </span>
+            </div>
+            {showAdvancedTools ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
+          </button>
+          
+          {showAdvancedTools && (
+            <div className="p-4 border-t border-slate-900 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 bg-[#0a0c12]/50">
+              {ADVANCED_ACTIONS.map(action => {
+                const Icon = action.icon;
+                return (
+                  <div 
+                    key={action.id} 
+                    className="bg-[#0b0c10] border border-slate-850 rounded p-3.5 flex flex-col justify-between hover:border-slate-700 transition-colors duration-200 group"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <div className="p-1.5 bg-slate-950 border border-slate-850 rounded text-slate-450 group-hover:text-slate-200 transition-colors">
+                          <Icon className="w-4 h-4" />
+                        </div>
+                        <span className="text-[8px] font-bold font-mono tracking-wider bg-slate-950 text-slate-450 px-1.5 py-0.5 rounded border border-slate-900">
+                          {action.badge}
+                        </span>
+                      </div>
+                      <h5 className="text-xs font-bold text-slate-300 mt-2.5 select-text leading-snug">
+                        {action.title}
+                      </h5>
+                      <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed select-text">
+                        {action.description}
+                      </p>
+                    </div>
+                    
+                    <button
+                      type="button"
+                      onClick={() => handleTakeAction(action.id)}
+                      className="mt-3.5 w-full py-1.5 bg-slate-950 hover:bg-slate-900 border border-slate-850 hover:border-slate-750 text-slate-450 hover:text-slate-200 text-[10px] font-mono font-bold rounded transition-colors duration-200 tracking-wider flex items-center justify-center gap-1.5"
+                    >
+                      {action.ctaText}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
 
@@ -2914,15 +2976,24 @@ export default function ReviewScan() {
       {/* Raw OCR Text */}
       {ocrText && (
         <div className="rounded overflow-hidden border border-slate-800/80 mb-6" style={{background:'#111318'}}>
-          <div className="p-4 border-b border-slate-800">
-             <h3 className="font-bold text-slate-200 text-sm">Image OCR Output</h3>
-             <p className="text-xs text-slate-500 mt-1">Full text extracted from the image by the AI.</p>
-          </div>
-          <div className="p-4 bg-[#0a0c12]">
-             <div className="text-sm font-mono text-slate-300 whitespace-pre-wrap">
-               {ocrText}
-             </div>
-          </div>
+          <button
+            type="button"
+            onClick={() => setIsOcrExpanded(prev => !prev)}
+            className="w-full p-4 border-b border-slate-800 flex items-center justify-between text-left hover:bg-slate-850/20 transition-colors"
+          >
+            <div>
+              <h3 className="font-bold text-slate-200 text-sm">Image OCR Output</h3>
+              <p className="text-xs text-slate-500 mt-1">Full text extracted from the image by the AI.</p>
+            </div>
+            {isOcrExpanded ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
+          </button>
+          {isOcrExpanded && (
+            <div className="p-4 bg-[#0a0c12] border-t border-slate-900">
+               <div className="text-sm font-mono text-slate-300 whitespace-pre-wrap select-text">
+                 {ocrText}
+               </div>
+            </div>
+          )}
         </div>
       )}
 
