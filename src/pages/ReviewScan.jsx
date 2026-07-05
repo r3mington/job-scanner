@@ -8,6 +8,8 @@ import { getMedianSalary } from '../utils/countryMedians';
 import { getCleanContactValue } from './DashboardView';
 import { useAuth } from '../context/AuthContext';
 import { calculateSimilarity, computeWordDiff, computeKeywordMatches, STOP_WORDS, GENERIC_JOB_WORDS } from '../utils/similarity';
+import { generateStixBundle } from '../utils/stixExporter';
+import { buildPosterPrintHtml } from '../utils/posterGenerator';
 
 const sanitizeTraumaLanguage = (text) => {
   if (!text) return text;
@@ -479,148 +481,25 @@ export default function ReviewScan() {
     }
   }, [isOsintModalOpen, cropBox, generateCropSlice, scanInput]);
 
-  const generateUUID = () => {
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-      const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
-      return v.toString(16);
-    });
-  };
-
-  const generateStixBundle = () => {
-    const bundleId = `bundle--${generateUUID()}`;
-    const objects = [];
-
-    // 1. Identity (Reporter)
-    const identityId = `identity--${generateUUID()}`;
-    const analystName = stixOptions.redactInvestigator 
-      ? "Anonymous Sentinel Analyst" 
-      : (profile?.display_name || user?.email || "Sentinel AI Analyst");
-    
-    objects.push({
-      type: "identity",
-      spec_version: "2.1",
-      id: identityId,
-      created: new Date().toISOString(),
-      modified: new Date().toISOString(),
-      name: analystName,
-      identity_class: "individual",
-      description: "Anti-trafficking intelligence investigator using Sentinel AI Safety platform."
-    });
-
-    // 2. Threat Actor (Recruiter/Trafficker)
-    const threatActorId = `threat-actor--${generateUUID()}`;
-    const recruiterContact = formData.contact_method || "Unknown Contact";
-    const recruiterEmployer = formData.employer_identity || "Unknown Organization";
-    
-    objects.push({
-      type: "threat-actor",
-      spec_version: "2.1",
-      id: threatActorId,
-      created: new Date().toISOString(),
-      modified: new Date().toISOString(),
-      name: recruiterEmployer !== "Unknown Organization" ? recruiterEmployer : recruiterContact,
-      description: `Suspected recruitment operations handler. Reported recruitment channels: ${recruiterContact}. Target recruitment sector: ${formData.industry || 'Unspecified'}. Target geolocation: ${formData.location || 'Unknown'}.`,
-      threat_actor_types: ["sponsor"],
-      goals: ["Deceptive recruitment for forced labor or high-pressure relocation scams"],
-      sophistication: "minimal"
-    });
-
-    // 3. Indicator (Job advertisement / post)
-    const indicatorId = `indicator--${generateUUID()}`;
-    const riskScoreResult = calculateRiskScore(activeFlags, {
+  const getStixBundlePayload = () => {
+    return generateStixBundle({
+      stixOptions,
+      profile,
+      user,
+      formData,
+      activeFlags,
       parsedSalaryUsd,
       locationCountry,
       detectedLanguage,
-      contactMethod: formData.contact_method,
       suspiciousSpans,
       predictedPlaybook,
-      obfuscationLevel: heuristicsResult?.obfuscationLevel ?? null,
+      heuristicsResult,
       sourcePlatform,
-      employer: formData.employer_identity
+      sourceUrl,
+      ocrText,
+      translatedText,
+      aiReview
     });
-    const currentScore = riskScoreResult.score;
-
-    let indicatorDesc = `Job posting indicator flagged with Sentinel Risk Score of ${currentScore}/100.\n`;
-    indicatorDesc += `Title: ${formData.job_title || 'Unspecified'}\n`;
-    indicatorDesc += `Target Location: ${formData.location || 'Unspecified'}\n`;
-    indicatorDesc += `Salary Offered: ${formData.salary_range || 'Unspecified'}\n`;
-
-    if (stixOptions.includeFlags && activeFlags.length > 0) {
-      indicatorDesc += `\nIdentified Threat Indicators:\n` + activeFlags.map(f => `- ${f}`).join('\n') + `\n`;
-    }
-
-    if (stixOptions.includeGemini && aiReview) {
-      indicatorDesc += `\nSentinel AI Operational Assessment:\n${aiReview}\n`;
-    }
-
-    if (!stixOptions.redactText) {
-      const rawText = ocrText || formData.job_title; // fallback
-      indicatorDesc += `\nIngested Advertisement Text Reference:\n${rawText}\n`;
-      if (translatedText) {
-        indicatorDesc += `\nTranslated Text Reference:\n${translatedText}\n`;
-      }
-    } else {
-      indicatorDesc += `\n[Ingested Advertisement Text Reference Redacted for Safety/Privacy]\n`;
-    }
-
-    // Pattern representation
-    let patternParts = [];
-    if (formData.contact_method) {
-      patternParts.push(`contact-method = '${formData.contact_method}'`);
-    }
-    if (sourceUrl && sourceUrl !== 'unspecified') {
-      patternParts.push(`url = '${sourceUrl}'`);
-    }
-    const patternStr = patternParts.length > 0 ? `[${patternParts.join(' AND ')}]` : `[job-posting = '${formData.job_title}']`;
-
-    objects.push({
-      type: "indicator",
-      spec_version: "2.1",
-      id: indicatorId,
-      created: new Date().toISOString(),
-      modified: new Date().toISOString(),
-      name: `Sentinel Indicator: Deceptive Recruitment Campaign - ${formData.job_title || 'Unknown Title'}`,
-      description: indicatorDesc.trim(),
-      indicator_types: ["compromised-advertisement"],
-      pattern: patternStr,
-      pattern_type: "stix",
-      valid_from: new Date().toISOString()
-    });
-
-    // 4. Relationship: Threat Actor is linked to the Indicator
-    const relationshipId = `relationship--${generateUUID()}`;
-    objects.push({
-      type: "relationship",
-      spec_version: "2.1",
-      id: relationshipId,
-      created: new Date().toISOString(),
-      modified: new Date().toISOString(),
-      relationship_type: "indicates",
-      source_ref: indicatorId,
-      target_ref: threatActorId,
-      description: `Indicator indicates presence of threat actor recruiters.`
-    });
-
-    // 5. Relationship: Reporter (Identity) created/observed the Indicator
-    const observationRelationshipId = `relationship--${generateUUID()}`;
-    objects.push({
-      type: "relationship",
-      spec_version: "2.1",
-      id: observationRelationshipId,
-      created: new Date().toISOString(),
-      modified: new Date().toISOString(),
-      relationship_type: "attributed-to",
-      source_ref: indicatorId,
-      target_ref: identityId,
-      description: `Indicator observed and reported by analyst identity.`
-    });
-
-    return JSON.stringify({
-      type: "bundle",
-      id: bundleId,
-      spec_version: "2.1",
-      objects
-    }, null, 2);
   };
 
   const handleAnalyzeCrop = async () => {
@@ -905,358 +784,25 @@ export default function ReviewScan() {
       alert('Failed to open print window. Please allow popups for this site.');
       return;
     }
-    
-    const isCommunity = posterMode === 'community';
-    const finalLanguage = posterLanguage === 'Other' ? customLanguage : posterLanguage;
-    const currentScoreResult = calculateRiskScore(activeFlags, {
+
+    const htmlContent = buildPosterPrintHtml({
+      generatedPosterData,
+      posterMode,
+      posterLanguage,
+      customLanguage,
+      formData,
+      activeFlags,
       parsedSalaryUsd,
       locationCountry,
       detectedLanguage,
-      contactMethod: formData.contact_method,
       suspiciousSpans,
       predictedPlaybook,
-      obfuscationLevel: heuristicsResult?.obfuscationLevel ?? null,
+      heuristicsResult,
       sourcePlatform,
-      employer: formData.employer_identity
+      ingestionMethod,
+      scanInput
     });
-    const currentScore = currentScoreResult.score;
 
-    const communityAlertHtml = isCommunity ? '<div class="community-alert">⚠️ EMPLOYMENT SAFETY ALERT</div>' : '';
-
-    const metadataHtml = !isCommunity ? `
-      <div class="metadata-grid">
-        <div class="metadata-item">
-          <div class="metadata-label">Case Reference</div>
-          <div class="metadata-val">SENTINEL-SCAN-${(scanInput?.id || 'NEW').substring(0, 8).toUpperCase()}</div>
-        </div>
-        <div class="metadata-item">
-          <div class="metadata-label">Advertiser Handle</div>
-          <div class="metadata-val">${formData.contact_method || 'Unknown'}</div>
-        </div>
-        <div class="metadata-item">
-          <div class="metadata-label">Source Platform</div>
-          <div class="metadata-val">${sourcePlatform || 'Unspecified'}</div>
-        </div>
-        <div class="metadata-item">
-          <div class="metadata-label">Ingested By</div>
-          <div class="metadata-val">${ingestionMethod || 'Analyst Upload'}</div>
-        </div>
-      </div>
-    ` : '';
-
-    const flagsHtml = (generatedPosterData.redFlags || []).map(flag => 
-      '<div class="flag-card">' +
-        '<div class="flag-card-header">' +
-          '<span class="flag-badge"></span>' +
-          '<span>' + flag.flagName + '</span>' +
-        '</div>' +
-        (flag.indicatorText ? '<div class="flag-snippet">"' + flag.indicatorText + '"</div>' : '') +
-        '<div class="flag-desc">' + flag.dangerExplanation + '</div>' +
-      '</div>'
-    ).join('');
-
-    const resourcesHtml = (generatedPosterData.helpResources || []).map(res => 
-      '<div class="resource-card">' +
-        '<div class="resource-name">' + res.organization + '</div>' +
-        '<div class="resource-contact">' + res.contact + '</div>' +
-        '<div class="resource-desc">' + res.description + '</div>' +
-      '</div>'
-    ).join('');
-
-    const htmlContent = `
-<!DOCTYPE html>
-<html>
-<head>
-  <title>Sentinel_${isCommunity ? 'COMMUNITY_SAFETY' : 'ANALYST_INTEL'}_${finalLanguage}</title>
-  <meta charset="utf-8">
-  <style>
-    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=Roboto+Mono:wght@400;700&display=swap');
-    
-    @page {
-      size: A4;
-      margin: 12mm 15mm 15mm 15mm;
-    }
-    
-    body {
-      margin: 0;
-      font-family: 'Outfit', sans-serif;
-      color: #0f172a;
-      background: #ffffff;
-      -webkit-print-color-adjust: exact;
-      print-color-adjust: exact;
-      line-height: 1.5;
-    }
-    
-    .poster-container {
-      border: ${isCommunity ? '5px solid #ef4444' : '2px solid #1e293b'};
-      border-radius: 4px;
-      padding: 24px;
-      min-height: 260mm;
-      box-sizing: border-box;
-      position: relative;
-      background-color: #ffffff;
-    }
-    
-    .community-alert {
-      background: #ef4444;
-      color: white;
-      text-align: center;
-      padding: 10px;
-      font-weight: 800;
-      letter-spacing: 2px;
-      font-size: 14px;
-      margin: -24px -24px 24px -24px;
-      text-transform: uppercase;
-    }
-    
-    .header {
-      text-align: center;
-      margin-bottom: 24px;
-      border-bottom: 2px solid ${isCommunity ? '#fee2e2' : '#cbd5e1'};
-      padding-bottom: 16px;
-    }
-    
-    .header h1 {
-      margin: 0 0 6px 0;
-      font-size: 26px;
-      font-weight: 800;
-      color: ${isCommunity ? '#dc2626' : '#0f172a'};
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-    
-    .header-badge {
-      display: inline-block;
-      background: ${isCommunity ? '#fef2f2' : '#f8fafc'};
-      border: 1px solid ${isCommunity ? '#fca5a5' : '#cbd5e1'};
-      color: ${isCommunity ? '#dc2626' : '#334155'};
-      font-size: 11px;
-      font-weight: 800;
-      padding: 4px 14px;
-      border-radius: 4px;
-      font-family: 'Roboto Mono', monospace;
-      letter-spacing: 1px;
-    }
-    
-    .warning-section {
-      background: ${isCommunity ? '#fff5f5' : '#f8fafc'};
-      border-left: 5px solid ${isCommunity ? '#ef4444' : '#0f172a'};
-      padding: 16px;
-      margin-bottom: 24px;
-      border-radius: 0 6px 6px 0;
-    }
-    
-    .warning-title {
-      font-weight: 800;
-      font-size: 15px;
-      color: ${isCommunity ? '#991b1b' : '#0f172a'};
-      text-transform: uppercase;
-      margin: 0 0 8px 0;
-      letter-spacing: 0.5px;
-    }
-    
-    .warning-body {
-      font-size: 12.5px;
-      color: #334155;
-      line-height: 1.6;
-    }
-    
-    .score-banner {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      background: ${isCommunity ? '#fef2f2' : '#f1f5f9'};
-      border: 1px solid ${isCommunity ? '#fca5a5' : '#e2e8f0'};
-      padding: 12px 20px;
-      border-radius: 6px;
-      margin-bottom: 24px;
-    }
-    
-    .score-title {
-      font-size: 12px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      color: ${isCommunity ? '#991b1b' : '#475569'};
-    }
-    
-    .score-value {
-      font-size: 22px;
-      font-weight: 800;
-      font-family: 'Roboto Mono', monospace;
-      color: ${isCommunity ? '#dc2626' : '#0f172a'};
-    }
-    
-    .section-title {
-      font-size: 14px;
-      font-weight: 800;
-      text-transform: uppercase;
-      color: ${isCommunity ? '#991b1b' : '#1e293b'};
-      border-bottom: 1.5px solid ${isCommunity ? '#fee2e2' : '#e2e8f0'};
-      padding-bottom: 6px;
-      margin-bottom: 16px;
-      letter-spacing: 0.5px;
-    }
-    
-    .flag-grid {
-      margin-bottom: 24px;
-    }
-    
-    .flag-card {
-      margin-bottom: 14px;
-      padding: 12px;
-      background: #fbfbfb;
-      border: 1px solid #e2e8f0;
-      border-radius: 6px;
-    }
-    
-    .flag-card-header {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      font-weight: 700;
-      font-size: 13px;
-      color: #0f172a;
-    }
-    
-    .flag-badge {
-      display: inline-block;
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: ${isCommunity ? '#ef4444' : '#1e293b'};
-    }
-    
-    .flag-snippet {
-      font-family: 'Roboto Mono', monospace;
-      font-size: 11px;
-      background: #f1f5f9;
-      padding: 6px 10px;
-      border-radius: 4px;
-      margin: 6px 0;
-      color: #334155;
-      font-style: italic;
-      word-break: break-all;
-    }
-    
-    .flag-desc {
-      font-size: 12px;
-      color: #475569;
-      line-height: 1.5;
-    }
-    
-    .playbook-container {
-      margin-bottom: 24px;
-      font-size: 12.5px;
-      line-height: 1.6;
-      color: #334155;
-    }
-    
-    .resources-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 16px;
-      margin-bottom: 40px;
-    }
-    
-    .resource-card {
-      border: 1px solid #e2e8f0;
-      background: #fafafa;
-      border-radius: 6px;
-      padding: 12px;
-      font-size: 11.5px;
-    }
-    
-    .resource-name {
-      font-weight: 700;
-      font-size: 12.5px;
-      color: #0f172a;
-      margin-bottom: 4px;
-    }
-    
-    .resource-contact {
-      font-family: 'Roboto Mono', monospace;
-      font-size: 11.5px;
-      color: #dc2626;
-      font-weight: 700;
-      margin-bottom: 6px;
-    }
-    
-    .resource-desc {
-      color: #64748b;
-      line-height: 1.45;
-    }
-    
-    .footer {
-      position: absolute;
-      bottom: 20px;
-      left: 24px;
-      right: 24px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      font-size: 9.5px;
-      color: #94a3b8;
-      font-family: 'Roboto Mono', monospace;
-      border-top: 1px solid #e2e8f0;
-      padding-top: 10px;
-    }
-  </style>
-</head>
-<body>
-  <div class="poster-container">
-    ${communityAlertHtml}
-    
-    <div class="header">
-      <h1>${generatedPosterData.title || (isCommunity ? 'Employment Safety Alert' : 'Intelligence Profile Dossier')}</h1>
-      <div class="header-badge">${isCommunity ? 'COMMUNITY EMPLOYMENT SAFETY INFORMATION' : 'CONFIDENTIAL TACTICAL INTEL REPORT'}</div>
-    </div>
-    
-    <div class="warning-section">
-      <h3 class="warning-title">${generatedPosterData.warningHeader || 'Warning Alert'}</h3>
-      <div class="warning-body">${generatedPosterData.riskAssessment || ''}</div>
-    </div>
-    
-    <div class="score-banner">
-      <span class="score-title">Sentinel Assessment Score</span>
-      <span class="score-value">${currentScore}/100</span>
-    </div>
-    
-    ${metadataHtml}
-    
-    <div class="section-title">${isCommunity ? 'Warning Signs Identified in This Posting' : 'Operational Flag Profile'}</div>
-    <div class="flag-grid">
-      ${flagsHtml}
-    </div>
-    
-    <div class="section-title">${isCommunity ? 'How to Verify a Job Offer is Legitimate' : 'Synthesized Campaign Modus Operandi'}</div>
-    <div class="playbook-container">
-      ${generatedPosterData.playbookWarning || ''}
-    </div>
-    
-    <div class="section-title">${isCommunity ? 'Where to Report or Get Help' : 'Key Enforcement Contacts & Task Forces'}</div>
-    <div class="resources-grid">
-      ${resourcesHtml}
-    </div>
-    
-    <div class="footer">
-      <span>SENTINEL CORE INTEL · SOURCE LANGUAGE: ${detectedLanguage}</span>
-      <span>EXPORTED ON: ${new Date().toLocaleDateString()}</span>
-    </div>
-  </div>
-  
-  <script>
-    window.onload = function() {
-      setTimeout(function() {
-        window.print();
-        setTimeout(function() { window.close(); }, 500);
-      }, 500);
-    }
-  </script>
-</body>
-</html>
-    `;
-    
     printWindow.document.write(htmlContent);
     printWindow.document.close();
   };
@@ -4193,7 +3739,7 @@ export default function ReviewScan() {
                 </div>
                 <div className="flex-1 overflow-auto border border-slate-850 rounded bg-[#0a0c12] p-4 relative group">
                   <pre className="font-mono text-[10px] text-amber-500/90 leading-relaxed select-all whitespace-pre-wrap word-break-all h-full">
-                    {generateStixBundle()}
+                    {getStixBundlePayload()}
                   </pre>
                 </div>
               </div>
@@ -4204,7 +3750,7 @@ export default function ReviewScan() {
               <button
                 type="button"
                 onClick={() => {
-                  const payload = generateStixBundle();
+                  const payload = getStixBundlePayload();
                   navigator.clipboard.writeText(payload);
                   
                   const logMessage = `[${new Date().toLocaleString()}] SYSTEM LOG: Exported STIX 2.1 Intelligence bundle copied to clipboard.\n`;
@@ -4233,7 +3779,7 @@ export default function ReviewScan() {
                 <button
                   type="button"
                   onClick={() => {
-                    const payload = generateStixBundle();
+                    const payload = getStixBundlePayload();
                     const blob = new Blob([payload], { type: 'application/json' });
                     const url = URL.createObjectURL(blob);
                     
