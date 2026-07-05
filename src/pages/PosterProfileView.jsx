@@ -4,6 +4,7 @@ import { supabase, mapDbToRecord } from '../utils/supabaseClient';
 import { getCleanContactValue } from './DashboardView';
 import { generatePosterSummary } from '../services/geminiService';
 import { useAuth } from '../context/AuthContext';
+import { getActiveApiKey } from '../utils/apiKey';
 import { ArrowLeft, Loader2, PhoneCall, AlertTriangle, ShieldAlert, Award, FileText, Globe, ExternalLink, RefreshCw, Save, MapPin, ChevronUp, ChevronDown } from 'lucide-react';
 
 const COUNTRY_COORDINATES = {
@@ -132,7 +133,7 @@ export default function PosterProfileView() {
   };
 
   const handleGenerateSummary = async () => {
-    const apiKey = sessionStorage.getItem('gemini_api_key') || import.meta.env.VITE_GEMINI_API_KEY;
+    const apiKey = getActiveApiKey();
     const modelName = authProfile?.gemini_model || localStorage.getItem('gemini_model');
     
     if (!apiKey) {

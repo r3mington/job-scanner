@@ -7,6 +7,7 @@ import { analyzeJobPosting, generatePosterContent, analyzeCrop, analyzeLanguageD
 import { getMedianSalary } from '../utils/countryMedians';
 import { getCleanContactValue } from './DashboardView';
 import { useAuth } from '../context/AuthContext';
+import { getActiveApiKey } from '../utils/apiKey';
 import { calculateSimilarity, computeWordDiff, computeKeywordMatches, STOP_WORDS, GENERIC_JOB_WORDS } from '../utils/similarity';
 import { generateStixBundle } from '../utils/stixExporter';
 import { buildPosterPrintHtml } from '../utils/posterGenerator';
@@ -514,7 +515,7 @@ export default function ReviewScan() {
       setOsintError('');
       setCropAnalysisResult(null);
 
-      const apiKey = sessionStorage.getItem('gemini_api_key') || import.meta.env.VITE_GEMINI_API_KEY;
+      const apiKey = getActiveApiKey();
       const modelName = profile?.gemini_model || localStorage.getItem('gemini_model');
 
       if (!apiKey) {
@@ -622,7 +623,7 @@ export default function ReviewScan() {
       setHeuristicsError('');
       setHeuristicsResult(null);
 
-      const apiKey = sessionStorage.getItem('gemini_api_key') || import.meta.env.VITE_GEMINI_API_KEY;
+      const apiKey = getActiveApiKey();
       const modelName = profile?.gemini_model || localStorage.getItem('gemini_model');
 
       if (!apiKey) {
@@ -728,7 +729,7 @@ export default function ReviewScan() {
       setPosterError('');
       setGeneratedPosterData(null);
       
-      const apiKey = sessionStorage.getItem('gemini_api_key') || import.meta.env.VITE_GEMINI_API_KEY;
+      const apiKey = getActiveApiKey();
       const modelName = profile?.gemini_model || localStorage.getItem('gemini_model');
       
       if (!apiKey) {
@@ -1286,7 +1287,7 @@ export default function ReviewScan() {
       setLoadingStepIdx(0);
       setApiTelemetryLogs([]);
       const startTime = Date.now();
-      const apiKey = sessionStorage.getItem('gemini_api_key') || import.meta.env.VITE_GEMINI_API_KEY;
+      const apiKey = getActiveApiKey();
       const modelName = profile?.gemini_model || localStorage.getItem('gemini_model');
       
       if (!apiKey) {

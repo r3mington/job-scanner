@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, DoorOpen, Phone, Info, X, Globe2, ShieldCheck, Eye, Sparkles } from 'lucide-react';
 import { translateInterviewLines } from '../services/geminiService';
+import { getActiveApiKey } from '../utils/apiKey';
 
 // ─── Do No Harm note ──────────────────────────────────────────────────────────
 // This piece depicts NO real person. Recruiter lines are composites of documented
@@ -200,7 +201,7 @@ export default function TheInterviewView() {
 
   // ── Live translation on mount (falls back silently to curated set) ──────────
   useEffect(() => {
-    const apiKey = sessionStorage.getItem('gemini_api_key') || import.meta.env.VITE_GEMINI_API_KEY;
+    const apiKey = getActiveApiKey();
     const modelName = localStorage.getItem('gemini_model');
     if (!apiKey) return;
     let cancelled = false;

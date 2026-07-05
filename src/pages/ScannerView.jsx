@@ -5,6 +5,7 @@ import { supabase, mapRecordToDb } from '../utils/supabaseClient';
 import { analyzeJobPosting } from '../services/geminiService';
 import { calculateRiskScore, getRiskLevel } from '../utils/scoring';
 import { useAuth } from '../context/AuthContext';
+import { getActiveApiKey } from '../utils/apiKey';
 
 export default function ScannerView() {
   const navigate = useNavigate();
@@ -215,7 +216,7 @@ export default function ScannerView() {
   const startBatchProcess = async () => {
     if (batchRows.length === 0) return;
 
-    const apiKey = sessionStorage.getItem('gemini_api_key') || import.meta.env.VITE_GEMINI_API_KEY;
+    const apiKey = getActiveApiKey();
     const modelName = profile?.gemini_model || localStorage.getItem('gemini_model');
     if (!apiKey) {
       alert('Please configure your Gemini API Key in Settings first.');
