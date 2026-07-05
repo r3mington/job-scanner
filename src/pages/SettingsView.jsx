@@ -12,21 +12,16 @@ export default function SettingsView() {
   const [fetchingModels, setFetchingModels] = useState(false);
 
   useEffect(() => {
-    if (profile) {
-      setApiKey(profile.gemini_api_key || localStorage.getItem('gemini_api_key') || envApiKey);
-      setModelName(profile.gemini_model || localStorage.getItem('gemini_model') || 'gemini-1.5-flash');
-    } else {
-      const storedKey = localStorage.getItem('gemini_api_key');
-      const storedModel = localStorage.getItem('gemini_model');
+    const storedKey = sessionStorage.getItem('gemini_api_key');
+    const storedModel = profile?.gemini_model || localStorage.getItem('gemini_model') || 'gemini-1.5-flash';
 
-      if (storedKey) {
-        setApiKey(storedKey);
-      } else if (envApiKey) {
-        setApiKey(envApiKey);
-      }
-      
-      if (storedModel) setModelName(storedModel);
+    if (storedKey) {
+      setApiKey(storedKey);
+    } else if (envApiKey) {
+      setApiKey(envApiKey);
     }
+    
+    setModelName(storedModel);
   }, [profile, envApiKey]);
 
   const fetchModels = async () => {
@@ -67,8 +62,8 @@ export default function SettingsView() {
   };
 
   const handleSave = async () => {
-    // Save to localstorage (local configuration model)
-    localStorage.setItem('gemini_api_key', apiKey.trim());
+    // Save to sessionStorage (session-only configuration model for security)
+    sessionStorage.setItem('gemini_api_key', apiKey.trim());
     localStorage.setItem('gemini_model', modelName);
 
     // Save only model config to Supabase profile (API key is stored locally-only for security)

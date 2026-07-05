@@ -25,7 +25,7 @@ export default function FaqView() {
           <ul className="list-disc pl-5 space-y-2">
             <li><strong>Data Retention Policy:</strong> To align with UN Do No Harm guidelines, all API calls are made directly from the analyst's browser to the official Google API endpoint. No text, image metadata, or document bytes are stored on intermediary servers.</li>
             <li><strong>Training Data Exclusion:</strong> According to Google Cloud’s standard developer API terms, data transmitted via commercial API keys is not used to train Google’s public foundation models.</li>
-            <li><strong>Local Credential Security:</strong> Your Gemini API keys are stored solely in the local browser cache (LocalStorage / Settings) and are never transmitted to any third-party databases.</li>
+            <li><strong>Local Credential Security:</strong> Your Gemini API keys are stored solely in the local browser session cache (SessionStorage / Settings), are cleared immediately when you close the tab, and are never transmitted to any third-party databases.</li>
           </ul>
         </div>
       )

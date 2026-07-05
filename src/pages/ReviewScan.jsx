@@ -514,7 +514,7 @@ export default function ReviewScan() {
       setOsintError('');
       setCropAnalysisResult(null);
 
-      const apiKey = profile?.gemini_api_key || localStorage.getItem('gemini_api_key') || import.meta.env.VITE_GEMINI_API_KEY;
+      const apiKey = sessionStorage.getItem('gemini_api_key') || import.meta.env.VITE_GEMINI_API_KEY;
       const modelName = profile?.gemini_model || localStorage.getItem('gemini_model');
 
       if (!apiKey) {
@@ -622,7 +622,7 @@ export default function ReviewScan() {
       setHeuristicsError('');
       setHeuristicsResult(null);
 
-      const apiKey = profile?.gemini_api_key || localStorage.getItem('gemini_api_key') || import.meta.env.VITE_GEMINI_API_KEY;
+      const apiKey = sessionStorage.getItem('gemini_api_key') || import.meta.env.VITE_GEMINI_API_KEY;
       const modelName = profile?.gemini_model || localStorage.getItem('gemini_model');
 
       if (!apiKey) {
@@ -728,7 +728,7 @@ export default function ReviewScan() {
       setPosterError('');
       setGeneratedPosterData(null);
       
-      const apiKey = profile?.gemini_api_key || localStorage.getItem('gemini_api_key') || import.meta.env.VITE_GEMINI_API_KEY;
+      const apiKey = sessionStorage.getItem('gemini_api_key') || import.meta.env.VITE_GEMINI_API_KEY;
       const modelName = profile?.gemini_model || localStorage.getItem('gemini_model');
       
       if (!apiKey) {
@@ -1286,7 +1286,7 @@ export default function ReviewScan() {
       setLoadingStepIdx(0);
       setApiTelemetryLogs([]);
       const startTime = Date.now();
-      const apiKey = profile?.gemini_api_key || localStorage.getItem('gemini_api_key') || import.meta.env.VITE_GEMINI_API_KEY;
+      const apiKey = sessionStorage.getItem('gemini_api_key') || import.meta.env.VITE_GEMINI_API_KEY;
       const modelName = profile?.gemini_model || localStorage.getItem('gemini_model');
       
       if (!apiKey) {

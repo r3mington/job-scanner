@@ -132,7 +132,7 @@ export default function PosterProfileView() {
   };
 
   const handleGenerateSummary = async () => {
-    const apiKey = authProfile?.gemini_api_key || localStorage.getItem('gemini_api_key') || import.meta.env.VITE_GEMINI_API_KEY;
+    const apiKey = sessionStorage.getItem('gemini_api_key') || import.meta.env.VITE_GEMINI_API_KEY;
     const modelName = authProfile?.gemini_model || localStorage.getItem('gemini_model');
     
     if (!apiKey) {
