@@ -48,10 +48,12 @@ You must output ONLY valid JSON matching this schema:
   ]
 }`;
 
-export function getEndpointForModel(model, apiKey, path = 'generateContent') {
+import { supabase } from '../utils/supabaseClient';
+
+export function getEndpointForModel(model, path = 'generateContent') {
   // Use v1beta for all models because systemInstruction and responseMimeType JSON schema settings
   // are beta REST parameters and will throw validation errors on the stable v1 REST API.
-  return `https://generativelanguage.googleapis.com/v1beta/models/${model}:${path}?key=${apiKey}`;
+  return `https://generativelanguage.googleapis.com/v1beta/models/${model}:${path}`;
 }
 
 export async function postToGeminiWithFallback(apiKey, requestedModel, payload, onStatusUpdate = null, path = 'generateContent') {
@@ -66,73 +68,140 @@ export async function postToGeminiWithFallback(apiKey, requestedModel, payload, 
   // Remove duplicate/empty entries
   const modelChain = Array.from(new Set(fallbacks.filter(Boolean)));
   const errorsList = [];
+  let useDirectFallback = false;
 
+  // 1. Try Supabase Edge Function first
   for (const model of modelChain) {
-    const endpoint = getEndpointForModel(model, apiKey, path);
-    const statusMsg = `Attempting model: ${model}...`;
+    const statusMsg = `Attempting model: ${model} via Supabase Edge Function...`;
     console.log(`[Gemini API] ${statusMsg}`);
     if (onStatusUpdate) {
       onStatusUpdate({ type: 'info', message: statusMsg, model });
     }
 
     try {
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload)
-      });
+      if (supabase && supabase.functions) {
+        const { data, error: funcErr } = await supabase.functions.invoke('gemini-proxy', {
+          body: {
+            model,
+            path,
+            payload
+          },
+          headers: apiKey ? { 'x-goog-api-key': apiKey } : {}
+        });
 
-      if (response.ok) {
-        const data = await response.json();
-        const successMsg = `Successfully completed using model: ${model}`;
-        console.log(`[Gemini API] ${successMsg}`);
-        if (onStatusUpdate) {
-          onStatusUpdate({ type: 'success', message: successMsg, model });
+        if (funcErr) {
+          // If the Edge function is not deployed (404), flag fallback to direct API
+          if (funcErr.message?.includes('404') || funcErr.status === 404) {
+            console.warn(`Edge function 'gemini-proxy' not found (404). Falling back to direct API connection.`);
+            useDirectFallback = true;
+            break;
+          }
+          throw funcErr;
         }
-        return data;
-      }
 
-      let errorMsg = `HTTP error ${response.status}`;
-      try {
-        const errorData = await response.json();
-        errorMsg = errorData.error?.message || errorMsg;
-      } catch (e) {
-        // Response body might not be JSON
-      }
-      
-      const warnMsg = `Model ${model} failed: ${errorMsg}`;
-      console.warn(`[Gemini API] ${warnMsg}`);
-      
-      if (onStatusUpdate) {
-        onStatusUpdate({ type: 'warning', message: warnMsg, model });
-      }
-      
-      const errorObj = new Error(errorMsg);
-      errorsList.push(`${model}: ${errorMsg}`);
+        // If edge function returns a successful response from Gemini
+        if (data && !data.error) {
+          const successMsg = `Successfully completed using model: ${model} via Edge Function`;
+          console.log(`[Gemini API] ${successMsg}`);
+          if (onStatusUpdate) {
+            onStatusUpdate({ type: 'success', message: successMsg, model });
+          }
+          return data;
+        }
 
-      // If it's a client authentication/API key issue, fail immediately to prevent infinite loops
-      if (response.status === 400 && (errorMsg.includes('API key') || errorMsg.includes('invalid'))) {
-        throw errorObj;
+        if (data && data.error) {
+          throw new Error(data.error.message || 'Error from Gemini inside Edge Function');
+        }
+      } else {
+        console.warn(`Supabase client not initialized. Falling back to direct API.`);
+        useDirectFallback = true;
+        break;
       }
     } catch (err) {
-      const failMsg = `Exception occurred with model ${model}: ${err.message || err}`;
+      const failMsg = `Edge function call failed for model ${model}: ${err.message || err}`;
       console.warn(`[Gemini API] ${failMsg}`, err);
       if (onStatusUpdate) {
         onStatusUpdate({ type: 'warning', message: failMsg, model });
       }
+      errorsList.push(`EdgeFunction (${model}): ${err.message || err}`);
       
-      errorsList.push(`${model}: ${err.message || err}`);
-      
-      // If we threw early (e.g. API key issue), bubble it up
-      if (err.message && (err.message.includes('API key') || err.message.includes('invalid'))) {
-        throw err;
+      // If the function doesn't exist, we break early to fall back to direct client call
+      if (err.message && (err.message.includes('Function not found') || err.message.includes('404'))) {
+        useDirectFallback = true;
+        break;
       }
     }
   }
 
-  throw new Error(`All models in the fallback chain failed:\n${errorsList.join('\n')}`);
+  // If the Edge Function failed due to not being deployed or config issues, try Direct API
+  if (useDirectFallback || errorsList.length > 0) {
+    for (const model of modelChain) {
+      const endpoint = getEndpointForModel(model, path);
+      const statusMsg = `Attempting model: ${model} via Direct Google API...`;
+      console.log(`[Gemini API] ${statusMsg}`);
+      if (onStatusUpdate) {
+        onStatusUpdate({ type: 'info', message: statusMsg, model });
+      }
+
+      try {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': apiKey || ''
+          },
+          body: JSON.stringify(payload)
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          const successMsg = `Successfully completed using model: ${model} via Direct API`;
+          console.log(`[Gemini API] ${successMsg}`);
+          if (onStatusUpdate) {
+            onStatusUpdate({ type: 'success', message: successMsg, model });
+          }
+          return data;
+        }
+
+        let errorMsg = `HTTP error ${response.status}`;
+        try {
+          const errorData = await response.json();
+          errorMsg = errorData.error?.message || errorMsg;
+        } catch (e) {
+          // Response body might not be JSON
+        }
+        
+        const warnMsg = `Model ${model} failed (Direct API): ${errorMsg}`;
+        console.warn(`[Gemini API] ${warnMsg}`);
+        
+        if (onStatusUpdate) {
+          onStatusUpdate({ type: 'warning', message: warnMsg, model });
+        }
+        
+        const errorObj = new Error(errorMsg);
+        errorsList.push(`DirectAPI (${model}): ${errorMsg}`);
+
+        // If it's a client authentication/API key issue, fail immediately to prevent infinite loops
+        if (response.status === 400 && (errorMsg.includes('API key') || errorMsg.includes('invalid'))) {
+          throw errorObj;
+        }
+      } catch (err) {
+        const failMsg = `Exception occurred with model ${model} (Direct API): ${err.message || err}`;
+        console.warn(`[Gemini API] ${failMsg}`, err);
+        if (onStatusUpdate) {
+          onStatusUpdate({ type: 'warning', message: failMsg, model });
+        }
+        
+        errorsList.push(`DirectAPI (${model}): ${err.message || err}`);
+        
+        if (err.message && (err.message.includes('API key') || err.message.includes('invalid'))) {
+          throw err;
+        }
+      }
+    }
+  }
+
+  throw new Error(`All methods in the fallback chain failed:\n${errorsList.join('\n')}`);
 }
 
 export async function analyzeJobPosting(apiKey, modelName, { text, imageBase64, onStatusUpdate }) {

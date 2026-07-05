@@ -37,7 +37,11 @@ export default function SettingsView() {
     }
     setFetchingModels(true);
     try {
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${activeKey}`);
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models`, {
+        headers: {
+          'x-goog-api-key': activeKey
+        }
+      });
       const data = await res.json();
       if (data.error) {
         alert("API Error: " + data.error.message);
@@ -63,13 +67,12 @@ export default function SettingsView() {
   };
 
   const handleSave = async () => {
-    // Save to localstorage as fallback
+    // Save to localstorage (local configuration model)
     localStorage.setItem('gemini_api_key', apiKey.trim());
     localStorage.setItem('gemini_model', modelName);
 
-    // Save to supabase profile
+    // Save only model config to Supabase profile (API key is stored locally-only for security)
     await updateProfile({
-      gemini_api_key: apiKey.trim(),
       gemini_model: modelName
     });
 
