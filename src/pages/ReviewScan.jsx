@@ -2757,7 +2757,7 @@ export default function ReviewScan() {
             <div className="flex items-center gap-2.5 min-w-0">
               <ShieldAlert className="w-4 h-4 text-red-500 flex-shrink-0" />
               <span className="text-sm text-slate-300 font-medium">
-                <span className="font-bold text-red-500">{getPlaybookData().length} predicted exploitation stages</span>
+                <span className="font-bold text-red-500">{getPlaybookData().length} potential risk escalation stages</span>
                 <span className="text-slate-400 font-normal"> detected based on current indicators</span>
               </span>
             </div>
