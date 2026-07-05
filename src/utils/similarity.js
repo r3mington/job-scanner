@@ -7,14 +7,19 @@
  * Gemini already normalizes, but this adds a safety net for older records.
  */
 function normalizeForCompare(s) {
+  if (!s) return '';
   return s
     .toLowerCase()
-    // leet-speak / obfuscation common in trafficking ads
+    // leet-speak / obfuscation common in trafficking ads: replace ONLY within word tokens containing letters
+    .replace(/\b\w*[a-z]\w*\b/g, (match) => {
+      return match
+        .replace(/3/g, 'e')
+        .replace(/1/g, 'l')
+        .replace(/0/g, 'o');
+    })
+    // Now safe to replace symbols globally without triggering digit de-leeting on pure numbers
     .replace(/\$/g, 's')
     .replace(/@/g, 'a')
-    .replace(/3/g, 'e')
-    .replace(/1/g, 'l')
-    .replace(/0/g, 'o')
     // collapse all whitespace
     .replace(/\s+/g, ' ')
     .trim();
