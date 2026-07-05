@@ -177,7 +177,7 @@ export default function HomeView() {
 
     const interval = setInterval(() => {
       const randomMessages = [
-        `TELEMETRY: Threat database synchronised. Mapped ${stats.totalScans} records total.`,
+        `TELEMETRY: Audit registry synchronised. Mapped ${stats.totalScans} records total.`,
         `OSINT: Evaluated ${stats.totalHubs} active communication handles/channels.`,
         `COMPLIANCE: Human-in-the-loop checkpoint validated for pending investigations.`,
         `DECOY SANDBOX: Stripping camera metadata profiles from active templates.`,
@@ -248,7 +248,7 @@ export default function HomeView() {
               onClick={() => navigate('/history')}
               className="bg-[#171a21] hover:bg-[#202530] text-slate-300 border border-slate-800 font-bold py-2.5 px-5 rounded-lg text-xs transition-all active:scale-[0.97] flex items-center gap-1.5 font-mono uppercase tracking-wider cursor-pointer"
             >
-              Threat Database
+              Audit Registry
             </button>
           </div>
         </div>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
-import { Shield, Database, Settings, BarChart3, LogOut, Loader2, HelpCircle, Home, Flame, Tag, GitCommit, BookOpen } from 'lucide-react';
+import { Shield, Database, Settings, BarChart3, LogOut, Loader2, HelpCircle, Home, Flame, Tag, GitCommit, BookOpen, MessageSquare } from 'lucide-react';
 import ScannerView from './pages/ScannerView';
 import FaqView from './pages/FaqView';
 import logoImg from './assets/logo.png';
@@ -16,6 +16,7 @@ import HomeView from './pages/HomeView';
 import MemorialView from './pages/MemorialView';
 import PriceTagView from './pages/PriceTagView';
 import RopeView from './pages/RopeView';
+import TheInterviewView from './pages/TheInterviewView';
 import { AuthProvider, useAuth } from './context/AuthContext';
 
 
@@ -64,7 +65,7 @@ function Layout({ children }) {
             </Link>
             <Link to="/history" className={`flex items-center gap-3 px-3 py-2.5 rounded transition-all border ${location.pathname === '/history' ? 'bg-[#0a0f18] border-slate-800 text-amber-400 font-bold' : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/30'}`}>
               <Database className="w-4 h-4" />
-              <span>Threat Database</span>
+              <span>Audit Registry</span>
             </Link>
             <Link to="/dashboard" className={`flex items-center gap-3 px-3 py-2.5 rounded transition-all border ${location.pathname === '/dashboard' ? 'bg-[#0a0f18] border-slate-800 text-amber-400 font-bold' : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/30'}`}>
               <BarChart3 className="w-4 h-4" />
@@ -99,6 +100,10 @@ function Layout({ children }) {
                 <Link to="/the-rope" className={`flex items-center gap-3 px-3 py-2.5 rounded transition-all border ${location.pathname === '/the-rope' ? 'bg-[#0a0f18] border-slate-800 text-slate-400 font-bold' : 'border-transparent text-slate-600 hover:text-slate-400 hover:bg-slate-900/20'}`}>
                   <GitCommit className="w-4 h-4" />
                   <span>The Rope</span>
+                </Link>
+                <Link to="/the-interview" className={`flex items-center gap-3 px-3 py-2.5 rounded transition-all border ${location.pathname === '/the-interview' ? 'bg-[#0a0f18] border-slate-800 text-slate-400 font-bold' : 'border-transparent text-slate-600 hover:text-slate-400 hover:bg-slate-900/20'}`}>
+                  <MessageSquare className="w-4 h-4" />
+                  <span>The Interview</span>
                 </Link>
               </div>
             </div>
@@ -171,7 +176,7 @@ function Layout({ children }) {
           </Link>
           <Link to="/history" className={`flex-1 flex flex-col items-center justify-center py-2.5 transition-colors ${location.pathname === '/history' ? 'text-amber-450 font-bold' : 'text-slate-500 hover:text-slate-300'}`}>
             <Database className="w-5 h-5 mb-1" />
-            <span className="text-[10px] font-mono uppercase tracking-wider">Threat DB</span>
+            <span className="text-[10px] font-mono uppercase tracking-wider">Registry</span>
           </Link>
           <Link to="/dashboard" className={`flex-1 flex flex-col items-center justify-center py-2.5 transition-colors ${location.pathname === '/dashboard' ? 'text-amber-450 font-bold' : 'text-slate-500 hover:text-slate-300'}`}>
             <BarChart3 className="w-5 h-5 mb-1" />
@@ -196,6 +201,7 @@ function App() {
           <Route path="/witness" element={<MemorialView />} />
           <Route path="/price-tags" element={<PriceTagView />} />
           <Route path="/the-rope" element={<RopeView />} />
+          <Route path="/the-interview" element={<TheInterviewView />} />
 
           {/* All other routes inside Layout */}
           <Route path="/*" element={
