@@ -252,16 +252,7 @@ export default function LoginView() {
 
             {/* Toggle link */}
             <div className="text-center space-y-4 pt-2">
-              <button
-                onClick={() => {
-                  setIsSignUp(!isSignUp);
-                  setError('');
-                  setSuccessMsg('');
-                }}
-                className="text-xs font-bold text-amber-500 hover:text-amber-400 transition-colors block mx-auto font-mono"
-              >
-                {isSignUp ? '[ Already have an account? Sign In ]' : "[ Don't have an account? Sign Up ]"}
-              </button>
+
 
               <button
                 onClick={() => setShowSetup(true)}
