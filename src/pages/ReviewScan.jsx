@@ -1686,6 +1686,16 @@ export default function ReviewScan() {
             setNotes(dupScan.notes || '');
             setSuspiciousSpans(dupScan.extracted_data?.suspicious_spans || []);
             setPredictedPlaybook(dupScan.extracted_data?.predicted_playbook || []);
+            
+            // Replace browser history state so re-mounts / reloads load this record as an existing scan
+            navigate('/review', {
+              replace: true,
+              state: {
+                ...dupScan,
+                isExistingScan: true
+              }
+            });
+
             setLoading(false);
             return;
           }
@@ -1797,8 +1807,18 @@ export default function ReviewScan() {
         if (dbErr) throw dbErr;
         
         if (insertedData && insertedData.length > 0) {
-          setRecordDbId(insertedData[0].id);
+          const newRecord = insertedData[0];
+          setRecordDbId(newRecord.id);
           setIsExistingScan(true);
+
+          // Replace browser history state so re-mounts / reloads load this record as an existing scan
+          navigate('/review', {
+            replace: true,
+            state: {
+              ...newRecord,
+              isExistingScan: true
+            }
+          });
         }
       } catch (autoSaveErr) {
         console.error("Auto-save failed:", autoSaveErr);
