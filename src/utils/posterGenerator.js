@@ -1,5 +1,8 @@
 import { calculateRiskScore } from './scoring';
 
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
 export function buildPosterPrintHtml({
   generatedPosterData,
   posterMode,
@@ -40,19 +43,19 @@ export function buildPosterPrintHtml({
     <div class="metadata-grid">
       <div class="metadata-item">
         <div class="metadata-label">Case Reference</div>
-        <div class="metadata-val">SENTINEL-SCAN-${(scanInput?.id || 'NEW').substring(0, 8).toUpperCase()}</div>
+        <div class="metadata-val">SENTINEL-SCAN-${esc((scanInput?.id || 'NEW').substring(0, 8).toUpperCase())}</div>
       </div>
       <div class="metadata-item">
         <div class="metadata-label">Advertiser Handle</div>
-        <div class="metadata-val">${formData.contact_method || 'Unknown'}</div>
+        <div class="metadata-val">${esc(formData.contact_method || 'Unknown')}</div>
       </div>
       <div class="metadata-item">
         <div class="metadata-label">Source Platform</div>
-        <div class="metadata-val">${sourcePlatform || 'Unspecified'}</div>
+        <div class="metadata-val">${esc(sourcePlatform || 'Unspecified')}</div>
       </div>
       <div class="metadata-item">
         <div class="metadata-label">Ingested By</div>
-        <div class="metadata-val">${ingestionMethod || 'Analyst Upload'}</div>
+        <div class="metadata-val">${esc(ingestionMethod || 'Analyst Upload')}</div>
       </div>
     </div>
   ` : '';
@@ -61,18 +64,18 @@ export function buildPosterPrintHtml({
     '<div class="flag-card">' +
       '<div class="flag-card-header">' +
         '<span class="flag-badge"></span>' +
-        '<span>' + flag.flagName + '</span>' +
+        '<span>' + esc(flag.flagName) + '</span>' +
       '</div>' +
-      (flag.indicatorText ? '<div class="flag-snippet">"' + flag.indicatorText + '"</div>' : '') +
-      '<div class="flag-desc">' + flag.dangerExplanation + '</div>' +
+      (flag.indicatorText ? '<div class="flag-snippet">"' + esc(flag.indicatorText) + '"</div>' : '') +
+      '<div class="flag-desc">' + esc(flag.dangerExplanation) + '</div>' +
     '</div>'
   ).join('');
 
   const resourcesHtml = (generatedPosterData.helpResources || []).map(res => 
     '<div class="resource-card">' +
-      '<div class="resource-name">' + res.organization + '</div>' +
-      '<div class="resource-contact">' + res.contact + '</div>' +
-      '<div class="resource-desc">' + res.description + '</div>' +
+      '<div class="resource-name">' + esc(res.organization) + '</div>' +
+      '<div class="resource-contact">' + esc(res.contact) + '</div>' +
+      '<div class="resource-desc">' + esc(res.description) + '</div>' +
     '</div>'
   ).join('');
 
@@ -80,7 +83,7 @@ export function buildPosterPrintHtml({
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Sentinel_${isCommunity ? 'COMMUNITY_SAFETY' : 'ANALYST_INTEL'}_${finalLanguage}</title>
+  <title>Sentinel_${isCommunity ? 'COMMUNITY_SAFETY' : 'ANALYST_INTEL'}_${esc(finalLanguage)}</title>
   <meta charset="utf-8">
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=Roboto+Mono:wght@400;700&display=swap');
@@ -349,13 +352,13 @@ export function buildPosterPrintHtml({
     ${communityAlertHtml}
     
     <div class="header">
-      <h1>${generatedPosterData.title || (isCommunity ? 'Employment Safety Alert' : 'Intelligence Profile Dossier')}</h1>
+      <h1>${esc(generatedPosterData.title || (isCommunity ? 'Employment Safety Alert' : 'Intelligence Profile Dossier'))}</h1>
       <div class="header-badge">${isCommunity ? 'COMMUNITY EMPLOYMENT SAFETY INFORMATION' : 'CONFIDENTIAL TACTICAL INTEL REPORT'}</div>
     </div>
     
     <div class="warning-section">
-      <h3 class="warning-title">${generatedPosterData.warningHeader || 'Warning Alert'}</h3>
-      <div class="warning-body">${generatedPosterData.riskAssessment || ''}</div>
+      <h3 class="warning-title">${esc(generatedPosterData.warningHeader || 'Warning Alert')}</h3>
+      <div class="warning-body">${esc(generatedPosterData.riskAssessment || '')}</div>
     </div>
     
     <div class="score-banner">
@@ -372,7 +375,7 @@ export function buildPosterPrintHtml({
     
     <div class="section-title">${isCommunity ? 'How to Verify a Job Offer is Legitimate' : 'Synthesized Campaign Modus Operandi'}</div>
     <div class="playbook-container">
-      ${generatedPosterData.playbookWarning || ''}
+      ${esc(generatedPosterData.playbookWarning || '')}
     </div>
     
     <div class="section-title">${isCommunity ? 'Where to Report or Get Help' : 'Key Enforcement Contacts & Task Forces'}</div>
@@ -381,7 +384,7 @@ export function buildPosterPrintHtml({
     </div>
     
     <div class="footer">
-      <span>SENTINEL CORE INTEL · SOURCE LANGUAGE: ${detectedLanguage}</span>
+      <span>SENTINEL CORE INTEL · SOURCE LANGUAGE: ${esc(detectedLanguage)}</span>
       <span>EXPORTED ON: ${new Date().toLocaleDateString()}</span>
     </div>
   </div>
