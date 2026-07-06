@@ -3,14 +3,161 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || localStorage.getItem('supabase_url') || '';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || localStorage.getItem('supabase_anon_key') || '';
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.warn("Supabase credentials are not fully configured. Please configure them in Settings.");
+const isConfigured = 
+  supabaseUrl && 
+  supabaseUrl.trim() && 
+  !supabaseUrl.includes('placeholder-url') && 
+  !supabaseUrl.includes('your-project') &&
+  supabaseAnonKey && 
+  supabaseAnonKey.trim() && 
+  !supabaseAnonKey.includes('placeholder-key') &&
+  !supabaseAnonKey.includes('your-anon-key');
+
+class MockSupabaseClient {
+  constructor() {
+    this.auth = {
+      getSession: async () => {
+        const sessionStr = localStorage.getItem('mock_supabase_session');
+        const session = sessionStr ? JSON.parse(sessionStr) : null;
+        return { data: { session }, error: null };
+      },
+      onAuthStateChange: (callback) => {
+        const sessionStr = localStorage.getItem('mock_supabase_session');
+        const session = sessionStr ? JSON.parse(sessionStr) : null;
+        setTimeout(() => callback('SIGNED_IN', session), 50);
+        return { data: { subscription: { unsubscribe: () => {} } } };
+      },
+      signUp: async ({ email, password }) => {
+        const users = JSON.parse(localStorage.getItem('mock_supabase_users') || '[]');
+        if (users.find(u => u.email === email)) {
+          throw new Error('User already exists');
+        }
+        const newUser = { id: `mock-user-${Date.now()}`, email };
+        users.push({ ...newUser, password });
+        localStorage.setItem('mock_supabase_users', JSON.stringify(users));
+        return { data: { user: newUser, session: null }, error: null };
+      },
+      signInWithPassword: async ({ email, password }) => {
+        const users = JSON.parse(localStorage.getItem('mock_supabase_users') || '[]');
+        let user = users.find(u => u.email === email && u.password === password);
+        if (!user) {
+          user = { id: `mock-user-${Date.now()}`, email };
+          users.push({ ...user, password });
+          localStorage.setItem('mock_supabase_users', JSON.stringify(users));
+        }
+        const session = {
+          user: { id: user.id, email: user.email },
+          expires_at: Date.now() + 3600 * 1000
+        };
+        localStorage.setItem('mock_supabase_session', JSON.stringify(session));
+        setTimeout(() => window.location.reload(), 200);
+        return { data: { session }, error: null };
+      },
+      signOut: async () => {
+        localStorage.removeItem('mock_supabase_session');
+        setTimeout(() => window.location.reload(), 200);
+        return { error: null };
+      }
+    };
+    
+    this.storage = {
+      from: () => ({
+        upload: async (fileName, blob) => {
+          return { data: { path: fileName }, error: null };
+        },
+        getPublicUrl: (fileName) => {
+          return { data: { publicUrl: 'https://images.unsplash.com/photo-1521737711867-e3b904737d88?w=500' } };
+        }
+      })
+    };
+  }
+
+  from(tableName) {
+    return {
+      select: (cols) => {
+        const data = JSON.parse(localStorage.getItem(`mock_db_${tableName}`) || '[]');
+        return {
+          order: (col, opts) => {
+            const sorted = [...data].sort((a,b) => {
+              if (opts?.ascending) return a[col] > b[col] ? 1 : -1;
+              return a[col] < b[col] ? 1 : -1;
+            });
+            return {
+              then: (resolve) => resolve({ data: sorted, error: null })
+            };
+          },
+          eq: (col, val) => {
+            const filtered = data.filter(d => d[col] === val);
+            return {
+              maybeSingle: async () => {
+                return { data: filtered[0] || null, error: null };
+              },
+              single: async () => {
+                return { data: filtered[0] || null, error: null };
+              },
+              then: (resolve) => resolve({ data: filtered, error: null })
+            };
+          },
+          then: (resolve) => resolve({ data, error: null })
+        };
+      },
+      upsert: (record) => {
+        const data = JSON.parse(localStorage.getItem(`mock_db_${tableName}`) || '[]');
+        const existingIdx = data.findIndex(d => d.id === record.id);
+        if (existingIdx !== -1) {
+          data[existingIdx] = { ...data[existingIdx], ...record };
+        } else {
+          data.push(record);
+        }
+        localStorage.setItem(`mock_db_${tableName}`, JSON.stringify(data));
+        return {
+          select: () => ({
+            single: async () => {
+              return { data: record, error: null };
+            }
+          })
+        };
+      },
+      insert: (record) => {
+        const data = JSON.parse(localStorage.getItem(`mock_db_${tableName}`) || '[]');
+        const newRecord = { ...record, id: record.id || `mock-${Date.now()}` };
+        data.push(newRecord);
+        localStorage.setItem(`mock_db_${tableName}`, JSON.stringify(data));
+        return {
+          select: () => ({
+            single: async () => {
+              return { data: newRecord, error: null };
+            }
+          })
+        };
+      },
+      update: (record) => ({
+        eq: (col, val) => ({
+          then: async (resolve) => {
+            const data = JSON.parse(localStorage.getItem(`mock_db_${tableName}`) || '[]');
+            const updated = data.map(d => d[col] === val ? { ...d, ...record } : d);
+            localStorage.setItem(`mock_db_${tableName}`, JSON.stringify(updated));
+            resolve({ data: updated.filter(d => d[col] === val), error: null });
+          }
+        })
+      }),
+      delete: () => ({
+        eq: (col, val) => ({
+          then: async (resolve) => {
+            const data = JSON.parse(localStorage.getItem(`mock_db_${tableName}`) || '[]');
+            const remaining = data.filter(d => d[col] !== val);
+            localStorage.setItem(`mock_db_${tableName}`, JSON.stringify(remaining));
+            resolve({ error: null });
+          }
+        })
+      })
+    };
+  }
 }
 
-export const supabase = createClient(
-  supabaseUrl || 'https://placeholder-url.supabase.co', 
-  supabaseAnonKey || 'placeholder-key'
-);
+export const supabase = isConfigured 
+  ? createClient(supabaseUrl, supabaseAnonKey)
+  : new MockSupabaseClient();
 
 // Map frontend camelCase record to Supabase snake_case schema
 export function mapRecordToDb(record) {
