@@ -78,16 +78,6 @@ export default function LoginView() {
 
         <form onSubmit={handleAuth} className="space-y-4">
           
-          {/* Mock / Local Sandbox Info */}
-          {!isSupabaseConfigured && (
-            <div className="p-3 bg-amber-550/10 border border-amber-500/20 rounded flex items-start gap-2.5">
-              <Database className="w-4 h-4 text-amber-550 mt-0.5 flex-shrink-0" />
-              <div className="text-[10px] text-amber-500 font-mono leading-relaxed uppercase tracking-wider font-bold">
-                ⚡ Local Offline Sandbox Active. Data is cached in your browser. Any email/password will work to Sign In.
-              </div>
-            </div>
-          )}
-
           {/* Error Notification */}
           {error && (
             <div className="flex items-start gap-2.5 bg-rose-500/10 border border-rose-550/20 p-3.5 rounded text-[11px] text-rose-400 font-mono">
