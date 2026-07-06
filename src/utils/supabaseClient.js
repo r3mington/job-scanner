@@ -1,17 +1,37 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || localStorage.getItem('supabase_url') || '';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || localStorage.getItem('supabase_anon_key') || '';
+const getSupabaseCreds = () => {
+  const envUrl = import.meta.env.VITE_SUPABASE_URL || '';
+  const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+  
+  const isEnvValid = 
+    envUrl && envUrl.trim() && 
+    !envUrl.includes('placeholder') && 
+    !envUrl.includes('your-project');
+    
+  if (isEnvValid) {
+    return { url: envUrl.trim(), key: envKey.trim(), isConfigured: true };
+  }
+  
+  const localUrl = localStorage.getItem('supabase_url') || '';
+  const localKey = localStorage.getItem('supabase_anon_key') || '';
+  
+  const isLocalValid = 
+    localUrl && localUrl.trim() && 
+    !localUrl.includes('placeholder') && 
+    !localUrl.includes('your-project');
+    
+  if (isLocalValid) {
+    return { url: localUrl.trim(), key: localKey.trim(), isConfigured: true };
+  }
+  
+  return { url: '', key: '', isConfigured: false };
+};
 
-const isConfigured = 
-  supabaseUrl && 
-  supabaseUrl.trim() && 
-  !supabaseUrl.includes('placeholder-url') && 
-  !supabaseUrl.includes('your-project') &&
-  supabaseAnonKey && 
-  supabaseAnonKey.trim() && 
-  !supabaseAnonKey.includes('placeholder-key') &&
-  !supabaseAnonKey.includes('your-anon-key');
+const creds = getSupabaseCreds();
+const supabaseUrl = creds.url;
+const supabaseAnonKey = creds.key;
+const isConfigured = creds.isConfigured;
 
 class MockSupabaseClient {
   constructor() {
@@ -155,9 +175,12 @@ class MockSupabaseClient {
   }
 }
 
-export const supabase = isConfigured 
+export const supabase = isConfigured
   ? createClient(supabaseUrl, supabaseAnonKey)
   : new MockSupabaseClient();
+
+// True when a real Supabase backend is configured; false in local sandbox mode
+export const isSupabaseConfigured = !!isConfigured;
 
 // Map frontend camelCase record to Supabase snake_case schema
 export function mapRecordToDb(record) {
