@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
-import { Shield, Database, Settings, BarChart3, LogOut, Loader2, HelpCircle, Home, Flame, Tag, GitCommit, BookOpen, MessageSquare } from 'lucide-react';
+import { Shield, Database, Settings, BarChart3, LogOut, Loader2, HelpCircle, Home, Flame, BookOpen, MessageSquare } from 'lucide-react';
 import ScannerView from './pages/ScannerView';
 import FaqView from './pages/FaqView';
 import logoImg from './assets/logo.png';
@@ -14,8 +14,6 @@ import DecoyContactView from './pages/DecoyContactView';
 import LearnView from './pages/LearnView';
 import HomeView from './pages/HomeView';
 import MemorialView from './pages/MemorialView';
-import PriceTagView from './pages/PriceTagView';
-import RopeView from './pages/RopeView';
 import TheInterviewView from './pages/TheInterviewView';
 import { AuthProvider, useAuth } from './context/AuthContext';
 
@@ -92,14 +90,6 @@ function Layout({ children }) {
                 <Link to="/witness" className={`flex items-center gap-3 px-3 py-2.5 rounded transition-all border ${location.pathname === '/witness' ? 'bg-[#0a0f18] border-slate-800 text-slate-400 font-bold' : 'border-transparent text-slate-600 hover:text-slate-400 hover:bg-slate-900/20'}`}>
                   <Flame className="w-4 h-4" />
                   <span>Witness</span>
-                </Link>
-                <Link to="/price-tags" className={`flex items-center gap-3 px-3 py-2.5 rounded transition-all border ${location.pathname === '/price-tags' ? 'bg-[#0a0f18] border-slate-800 text-slate-400 font-bold' : 'border-transparent text-slate-600 hover:text-slate-400 hover:bg-slate-900/20'}`}>
-                  <Tag className="w-4 h-4" />
-                  <span>Price Tags</span>
-                </Link>
-                <Link to="/the-rope" className={`flex items-center gap-3 px-3 py-2.5 rounded transition-all border ${location.pathname === '/the-rope' ? 'bg-[#0a0f18] border-slate-800 text-slate-400 font-bold' : 'border-transparent text-slate-600 hover:text-slate-400 hover:bg-slate-900/20'}`}>
-                  <GitCommit className="w-4 h-4" />
-                  <span>The Rope</span>
                 </Link>
                 <Link to="/the-interview" className={`flex items-center gap-3 px-3 py-2.5 rounded transition-all border ${location.pathname === '/the-interview' ? 'bg-[#0a0f18] border-slate-800 text-slate-400 font-bold' : 'border-transparent text-slate-600 hover:text-slate-400 hover:bg-slate-900/20'}`}>
                   <MessageSquare className="w-4 h-4" />
@@ -199,8 +189,6 @@ function App() {
         <Routes>
           {/* Full-screen standalone routes — no Layout wrapper */}
           <Route path="/witness" element={<MemorialView />} />
-          <Route path="/price-tags" element={<PriceTagView />} />
-          <Route path="/the-rope" element={<RopeView />} />
           <Route path="/the-interview" element={<TheInterviewView />} />
 
           {/* All other routes inside Layout */}
