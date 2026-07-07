@@ -1,77 +1,27 @@
 import React, { useState, useEffect } from 'react';
-import { Key, Save, AlertCircle, Cpu } from 'lucide-react';
+import { Key, Save } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { DEFAULT_MODEL, MODEL_CATALOG } from '../services/geminiService';
 import { isEnvKeyConfigured } from '../utils/apiKey';
 
 export default function SettingsView() {
-  const { profile, updateProfile } = useAuth();
+  const { profile } = useAuth();
   const envApiKey = isEnvKeyConfigured() ? (import.meta.env.VITE_GEMINI_API_KEY || '') : '';
   const [apiKey, setApiKey] = useState('');
-  const [modelName, setModelName] = useState(DEFAULT_MODEL);
   const [saved, setSaved] = useState(false);
-  const [availableModels, setAvailableModels] = useState([]);
-  const [fetchingModels, setFetchingModels] = useState(false);
 
   useEffect(() => {
     const storedKey = sessionStorage.getItem('gemini_api_key');
-    const storedModel = profile?.gemini_model || localStorage.getItem('gemini_model') || DEFAULT_MODEL;
 
     if (storedKey) {
       setApiKey(storedKey);
     } else if (envApiKey) {
       setApiKey(envApiKey);
     }
-    
-    setModelName(storedModel);
   }, [profile, envApiKey]);
-
-  const fetchModels = async () => {
-    const activeKey = apiKey.trim() || envApiKey;
-    if (!activeKey) {
-      alert("Please enter your API key first.");
-      return;
-    }
-    setFetchingModels(true);
-    try {
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models`, {
-        headers: {
-          'x-goog-api-key': activeKey
-        }
-      });
-      const data = await res.json();
-      if (data.error) {
-        alert("API Error: " + data.error.message);
-        return;
-      }
-      if (data.models) {
-        const validModels = data.models
-          .filter(m => m.supportedGenerationMethods?.includes('generateContent'))
-          .map(m => m.name.replace('models/', ''));
-        
-        setAvailableModels(validModels);
-        
-        if (validModels.length > 0 && !validModels.includes(modelName)) {
-           setModelName(validModels[0]);
-        }
-      }
-    } catch (err) {
-      console.error(err);
-      alert("Failed to fetch models from Google API.");
-    } finally {
-      setFetchingModels(false);
-    }
-  };
 
   const handleSave = async () => {
     // Save to sessionStorage (session-only configuration model for security)
     sessionStorage.setItem('gemini_api_key', apiKey.trim());
-    localStorage.setItem('gemini_model', modelName);
-
-    // Save only model config to Supabase profile (API key is stored locally-only for security)
-    await updateProfile({
-      gemini_model: modelName
-    });
 
     setSaved(true);
     setTimeout(() => {
@@ -114,32 +64,6 @@ export default function SettingsView() {
               placeholder={isEnvConfigured ? "Using system environment key..." : "AIzaSy..."}
               className="w-full px-4 py-3 rounded border border-slate-800 bg-[#0a0c12] text-slate-200 focus:outline-none focus:ring-1 focus:ring-amber-500 transition-shadow font-mono text-sm shadow-inner"
             />
-          </div>
-
-          <div className="border-t border-slate-800 pt-4">
-            <div className="flex items-center justify-between mb-2">
-              <label htmlFor="modelName" className="block text-xs font-bold text-slate-300 flex items-center gap-1.5 font-mono uppercase tracking-wider">
-                <Cpu className="w-4 h-4 text-amber-500" /> AI Model
-              </label>
-              <button 
-                onClick={fetchModels}
-                disabled={fetchingModels || (!apiKey.trim() && !envApiKey)}
-                className="text-xs font-bold text-amber-500 hover:text-amber-400 disabled:opacity-50 font-mono"
-              >
-                {fetchingModels ? '[ Fetching... ]' : '[ Fetch Available Models ]'}
-              </button>
-            </div>
-            
-            <select
-              id="modelName"
-              value={modelName}
-              onChange={(e) => setModelName(e.target.value)}
-              className="w-full px-4 py-3 rounded border border-slate-800 bg-[#0a0c12] text-slate-200 focus:outline-none focus:ring-1 focus:ring-amber-500 transition-shadow text-sm font-mono"
-            >
-              {(availableModels.length > 0 ? availableModels : Array.from(new Set([modelName, ...MODEL_CATALOG]))).map(m => (
-                <option key={m} value={m}>{m}</option>
-              ))}
-            </select>
           </div>
         </div>
       </div>
