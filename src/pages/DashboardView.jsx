@@ -38,7 +38,9 @@ export default function DashboardView() {
     const fetchScans = async () => {
       try {
         setLoading(true);
-        const { data, error } = await supabase.from('scans').select('*');
+        const { data, error } = await supabase
+          .from('scans')
+          .select('id, timestamp, job_title, employer, risk_score, risk_level, location_country, extracted_data, active_flags');
         if (error) throw error;
         setScans((data || []).map(mapDbToRecord));
       } catch (err) {
