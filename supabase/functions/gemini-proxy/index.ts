@@ -39,12 +39,14 @@ serve(async (req) => {
     }
 
     const apiPath = path || "generateContent";
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:${apiPath}?key=${apiKey}`;
+    // Key travels in a header, never the URL — query strings end up in request logs.
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:${apiPath}`;
 
     const response = await fetch(endpoint, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "x-goog-api-key": apiKey,
       },
       body: JSON.stringify(payload)
     });
