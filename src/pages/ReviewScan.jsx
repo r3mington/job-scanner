@@ -8,6 +8,7 @@ import { getMedianSalary } from '../utils/countryMedians';
 import { getCleanContactValue } from './DashboardView';
 import { useAuth } from '../context/AuthContext';
 import { getActiveApiKey } from '../utils/apiKey';
+import RiskGauge from '../components/RiskGauge';
 import { calculateSimilarity, computeWordDiff, computeKeywordMatches, STOP_WORDS, GENERIC_JOB_WORDS } from '../utils/similarity';
 import { generateStixBundle } from '../utils/stixExporter';
 import { buildPosterPrintHtml } from '../utils/posterGenerator';
@@ -1917,184 +1918,10 @@ export default function ReviewScan() {
             {/* Gauge hero */}
             <div className="px-5 pt-5 pb-3 flex items-center gap-6">
               {/* SVG Radial Arc */}
-              <div className="relative flex-shrink-0" style={{width: gaugeSize, height: gaugeSize * 0.72}}>
-                {!scoreBarsVisible && (
-                  <span className="sr-only" ref={el => { if (el) requestAnimationFrame(() => setScoreBarsVisible(true)); }} />
-                )}
-                <svg
-                  width={gaugeSize}
-                  height={gaugeSize}
-                  viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}
-                  style={{ position: 'absolute', top: 0, left: 0, overflow: 'visible' }}
-                >
-                  <defs>
-                    {/* Layered bloom filter: wide soft halo + tight bright core */}
-                    <filter id="score-glow" x="-40%" y="-40%" width="180%" height="180%">
-                      <feGaussianBlur in="SourceGraphic" stdDeviation="5" result="blur-wide"/>
-                      <feGaussianBlur in="SourceGraphic" stdDeviation="2" result="blur-tight"/>
-                      <feMerge>
-                        <feMergeNode in="blur-wide"/>
-                        <feMergeNode in="blur-tight"/>
-                        <feMergeNode in="SourceGraphic"/>
-                      </feMerge>
-                    </filter>
-                    {/* Flare bloom: very soft spread for the tip corona */}
-                    <filter id="flare-bloom" x="-200%" y="-200%" width="500%" height="500%">
-                      <feGaussianBlur in="SourceGraphic" stdDeviation="8" result="outer"/>
-                      <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="inner"/>
-                      <feMerge>
-                        <feMergeNode in="outer"/>
-                        <feMergeNode in="inner"/>
-                        <feMergeNode in="SourceGraphic"/>
-                      </feMerge>
-                    </filter>
-                    <linearGradient id="high-risk-grad" x1="0%" y1="100%" x2="100%" y2="0%">
-                      <stop offset="0%" stopColor="#991b1b" />
-                      <stop offset="50%" stopColor="#ef4444" />
-                      <stop offset="100%" stopColor="#f87171" />
-                    </linearGradient>
-                    <linearGradient id="med-risk-grad" x1="0%" y1="100%" x2="100%" y2="0%">
-                      <stop offset="0%" stopColor="#b45309" />
-                      <stop offset="50%" stopColor="#f59e0b" />
-                      <stop offset="100%" stopColor="#fbbf24" />
-                    </linearGradient>
-                    <linearGradient id="low-risk-grad" x1="0%" y1="100%" x2="100%" y2="0%">
-                      <stop offset="0%" stopColor="#047857" />
-                      <stop offset="50%" stopColor="#10b981" />
-                      <stop offset="100%" stopColor="#34d399" />
-                    </linearGradient>
-                  </defs>
-                  <style>{`
-                    @keyframes shimmer-sweep {
-                      0%   { stroke-dashoffset: ${arcLen}; }
-                      100% { stroke-dashoffset: -${arcLen}; }
-                    }
-                    @keyframes shimmer-sweep-slow {
-                      0%   { stroke-dashoffset: ${arcLen * 0.6}; opacity: 0; }
-                      15%  { opacity: 1; }
-                      85%  { opacity: 0.6; }
-                      100% { stroke-dashoffset: -${arcLen * 1.4}; opacity: 0; }
-                    }
-                    @keyframes corona-pulse {
-                      0%, 100% { r: 5px;   opacity: 0.55; }
-                      40%       { r: 8px;   opacity: 0.90; }
-                      70%       { r: 6.5px; opacity: 0.75; }
-                    }
-                    @keyframes corona-outer-pulse {
-                      0%, 100% { r: 10px; opacity: 0.10; }
-                      50%       { r: 16px; opacity: 0.25; }
-                    }
-                    @keyframes halo-breathe {
-                      0%, 100% { opacity: 0.06; stroke-width: ${strokeW + 4}px; }
-                      50%       { opacity: 0.14; stroke-width: ${strokeW + 10}px; }
-                    }
-                  `}</style>
-                  {/* Track arc */}
-                  <circle
-                    cx={gaugeSize/2} cy={gaugeSize/2} r={r}
-                    fill="none"
-                    stroke="rgba(255,255,255,0.06)"
-                    strokeWidth={strokeW}
-                    strokeDasharray={`${arcLen} ${gapLen}`}
-                    strokeDashoffset={0}
-                    strokeLinecap="round"
-                    transform={`rotate(${rotation} ${gaugeSize/2} ${gaugeSize/2})`}
-                  />
-                  {/* Fill arc */}
-                  <circle
-                    cx={gaugeSize/2} cy={gaugeSize/2} r={r}
-                    fill="none"
-                    stroke={`url(#${score >= 60 ? 'high-risk-grad' : score >= 30 ? 'med-risk-grad' : 'low-risk-grad'})`}
-                    strokeWidth={strokeW}
-                    strokeDasharray={`${arcLen} ${gapLen}`}
-                    strokeDashoffset={scoreBarsVisible ? dashOffset : arcLen}
-                    strokeLinecap="round"
-                    filter="url(#score-glow)"
-                    transform={`rotate(${rotation} ${gaugeSize/2} ${gaugeSize/2})`}
-                    style={{ transition: 'stroke-dashoffset 1.2s cubic-bezier(0.34, 1.56, 0.64, 1)', transitionDelay: '150ms' }}
-                  />
-                  {/* Ambient halo — wide breathable glow ring clipped to filled arc */}
-                  {scoreBarsVisible && (
-                    <circle
-                      cx={gaugeSize/2} cy={gaugeSize/2} r={r}
-                      fill="none"
-                      stroke={scoreColor}
-                      strokeDasharray={`${fillLen} ${gapLen + (arcLen - fillLen)}`}
-                      strokeLinecap="round"
-                      transform={`rotate(${rotation} ${gaugeSize/2} ${gaugeSize/2})`}
-                      style={{
-                        animation: 'halo-breathe 4s ease-in-out infinite',
-                        filter: `blur(6px)`,
-                        opacity: 0.12,
-                        strokeWidth: strokeW + 8,
-                      }}
-                    />
-                  )}
-                  {/* Fast shimmer spark streak */}
-                  {scoreBarsVisible && (
-                    <circle
-                      cx={gaugeSize/2} cy={gaugeSize/2} r={r}
-                      fill="none"
-                      stroke="rgba(255,255,255,0.30)"
-                      strokeWidth={strokeW - 4}
-                      strokeDasharray={`8 ${arcLen}`}
-                      strokeLinecap="round"
-                      transform={`rotate(${rotation} ${gaugeSize/2} ${gaugeSize/2})`}
-                      style={{ animation: 'shimmer-sweep 2.6s linear infinite' }}
-                    />
-                  )}
-                  {/* Slow wide shimmer bloom */}
-                  {scoreBarsVisible && (
-                    <circle
-                      cx={gaugeSize/2} cy={gaugeSize/2} r={r}
-                      fill="none"
-                      stroke={scoreColor}
-                      strokeWidth={strokeW + 2}
-                      strokeDasharray={`30 ${arcLen}`}
-                      strokeLinecap="round"
-                      transform={`rotate(${rotation} ${gaugeSize/2} ${gaugeSize/2})`}
-                      filter="url(#score-glow)"
-                      style={{ animation: 'shimmer-sweep-slow 5s ease-in-out infinite' }}
-                    />
-                  )}
-                  {/* Tip flare — outer corona (wide soft bloom) */}
-                  {scoreBarsVisible && (
-                    <circle
-                      cx={flareX}
-                      cy={flareY}
-                      fill={scoreColor}
-                      filter="url(#flare-bloom)"
-                      style={{ animation: 'corona-outer-pulse 3.5s ease-in-out infinite' }}
-                    />
-                  )}
-                  {/* Tip flare — inner bright core */}
-                  {scoreBarsVisible && (
-                    <circle
-                      cx={flareX}
-                      cy={flareY}
-                      fill="white"
-                      filter="url(#score-glow)"
-                      style={{ animation: 'corona-pulse 3s ease-in-out infinite' }}
-                    />
-                  )}
-                  {/* Center score label */}
-                  <text
-                    x={gaugeSize/2} y={gaugeSize/2}
-                    textAnchor="middle" dominantBaseline="middle"
-                    fontSize="26" fontWeight="900" fontFamily="monospace"
-                    fill="white"
-                  >
-                    {scoreBarsVisible ? <CountUp end={score} /> : '0'}
-                  </text>
-                  <text
-                    x={gaugeSize/2} y={gaugeSize/2 + 20}
-                    textAnchor="middle" dominantBaseline="middle"
-                    fontSize="8" fontWeight="700" fontFamily="monospace"
-                    fill={scoreColor}
-                    letterSpacing="2"
-                  >{riskInfo.label.toUpperCase()}</text>
-                </svg>
-              </div>
+              <RiskGauge score={score} size={120} strokeWidth={10} />
+              {!scoreBarsVisible && (
+                <span className="sr-only" ref={el => { if (el) requestAnimationFrame(() => setScoreBarsVisible(true)); }} />
+              )}
 
               {/* Breakdown bars */}
               <div className="flex-1 min-w-0">
@@ -4374,19 +4201,7 @@ export default function ReviewScan() {
                       
                       {/* Gauge 1 */}
                       <div className="flex flex-col items-center justify-center py-4 bg-slate-950/60 border border-slate-850 rounded">
-                        <div className="relative w-28 h-28 flex items-center justify-center">
-                          <svg className="w-full h-full transform -rotate-90">
-                            <circle cx="56" cy="56" r="48" stroke="#1e293b" strokeWidth="6" fill="transparent" />
-                            <circle cx="56" cy="56" r="48" stroke="#f59e0b" strokeWidth="6" fill="transparent" 
-                              strokeDasharray={301.6} 
-                              strokeDashoffset={301.6 - (301.6 * (heuristicsResult.nativeDialectConfidence || 50)) / 100} 
-                            />
-                          </svg>
-                          <div className="absolute text-center">
-                            <span className="text-xl font-bold text-slate-200">{heuristicsResult.nativeDialectConfidence}%</span>
-                            <span className="text-[8px] text-slate-505 block uppercase mt-0.5">Dialect Conf</span>
-                          </div>
-                        </div>
+                        <RiskGauge score={heuristicsResult.nativeDialectConfidence || 50} size={112} strokeWidth={6} />
                         <span className="text-slate-300 font-bold mt-3 text-xs uppercase">{heuristicsResult.estimatedNativeLanguage}</span>
                         <span className="text-[9px] text-slate-505 block uppercase mt-0.5">Estimated Native Tongue</span>
                       </div>
