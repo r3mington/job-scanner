@@ -38,9 +38,11 @@ export const AuthProvider = ({ children }) => {
 
     const fetchProfile = async () => {
       try {
+        // Select only the columns we use — never pull credential-bearing
+        // columns (e.g. the legacy gemini_api_key column) into browser memory.
         const { data, error } = await supabase
           .from('profiles')
-          .select('*')
+          .select('id, gemini_model, updated_at')
           .eq('id', user.id)
           .maybeSingle();
 
@@ -52,7 +54,6 @@ export const AuthProvider = ({ children }) => {
           // Profile doesn't exist yet
           setProfile({
             id: user.id,
-            gemini_api_key: '',
             gemini_model: ''
           });
         }
@@ -75,7 +76,7 @@ export const AuthProvider = ({ children }) => {
           updated_at: new Date().toISOString(),
           ...updates
         })
-        .select()
+        .select('id, gemini_model, updated_at')
         .single();
 
       if (error) {

@@ -52,7 +52,7 @@ function extractPhrases(texts) {
   texts.forEach((text) => {
     if (!text || typeof text !== 'string') return;
 
-    const segments = text.split(/[\n\r.!?|•\-–—\/\\:;]+/);
+    const segments = text.split(/[\n\r.!?|•\-–—/\\:;]+/);
     segments.forEach((seg) => {
       const cleaned = seg
         .trim()

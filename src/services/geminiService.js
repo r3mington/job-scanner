@@ -56,150 +56,183 @@ export function getEndpointForModel(model, path = 'generateContent') {
   return `https://generativelanguage.googleapis.com/v1beta/models/${model}:${path}`;
 }
 
+// ─── Single source of truth for models ────────────────────────────────────────
+// DEFAULT_MODEL: the model used when a caller has no stored preference.
+// MODEL_CATALOG: options offered in Settings when the live model list is empty.
+// FALLBACK_CHAIN: ordered reliability chain — quality-preserving first, a
+//   cross-family backstop, then the expensive last resort. Every entry is
+//   multimodal (vision-capable), which the image scans require.
+export const DEFAULT_MODEL = 'gemini-2.5-flash';
+export const MODEL_CATALOG = [
+  'gemini-2.5-flash',
+  'gemini-2.5-flash-lite',
+  'gemini-2.0-flash',
+  'gemini-2.5-pro',
+];
+export const FALLBACK_CHAIN = [
+  'gemini-2.5-flash',       // primary: strong JSON + vision, good quota
+  'gemini-2.5-flash-lite',  // cheap, high-throughput availability backstop
+  'gemini-2.0-flash',       // different family — survives a 2.5-family incident
+  'gemini-2.5-pro',         // last resort: best quality, slow/expensive/low quota
+];
+
+// Retry tuning for transient (429/503) failures before advancing the chain.
+const MAX_RETRIES_PER_MODEL = 2;
+const RETRY_BASE_MS = 500;
+
+// Models that returned a hard "does not exist / bad request" this session.
+// Skipped on subsequent calls so a dead id never costs another round trip.
+const deadModels = new Set();
+
+const sleep = (ms) => new Promise(res => setTimeout(res, ms));
+
+// Best-effort extraction of an HTTP-ish status code from varied error shapes.
+function extractStatus(errLike, data) {
+  if (data && data.error && typeof data.error.code === 'number') return data.error.code;
+  if (errLike) {
+    if (typeof errLike.status === 'number') return errLike.status;
+    if (typeof errLike.code === 'number') return errLike.code;
+    const m = String(errLike.message || errLike).match(/\b(4\d\d|5\d\d)\b/);
+    if (m) return Number(m[1]);
+  }
+  return null;
+}
+
+// Decide what to do with a failed attempt based on status + message.
+//   'retry' → transient; back off and try the SAME model again
+//   'abort' → auth/permission problem; stop the whole chain
+//   'skip'  → this model won't work; move to the next one
+//   'dead'  → like skip, but the model id is invalid — cache it as dead
+function classifyError(status, message = '') {
+  const msg = String(message).toLowerCase();
+  if (status === 429 || status === 503 || status === 500) return 'retry';
+  if (status === 401 || status === 403) return 'abort';
+  if (msg.includes('api key') || msg.includes('api_key') || msg.includes('permission denied')) return 'abort';
+  if (status === 404) return 'dead';
+  if (status === 400) {
+    // A 400 about the model/URL means the id is wrong (dead); other 400s are
+    // payload-specific and won't be fixed by switching models — skip.
+    if (msg.includes('not found') || msg.includes('not supported') || msg.includes('unknown name') || msg.includes('model')) return 'dead';
+    return 'skip';
+  }
+  return 'skip';
+}
+
 export async function postToGeminiWithFallback(apiKey, requestedModel, payload, onStatusUpdate = null, path = 'generateContent') {
-  const fallbacks = [
-    requestedModel,
-    'gemini-2.5-flash',
-    'gemini-3.1-flash-lite',
-    'gemini-2.0-flash',
-    'gemini-2.5-pro'
-  ];
+  const modelChain = Array.from(new Set([requestedModel, ...FALLBACK_CHAIN].filter(Boolean)))
+    .filter(m => !deadModels.has(m));
 
-  // Remove duplicate/empty entries
-  const modelChain = Array.from(new Set(fallbacks.filter(Boolean)));
   const errorsList = [];
-  let useDirectFallback = false;
+  const notify = (type, message, model) => {
+    console[type === 'success' ? 'log' : type === 'warning' ? 'warn' : 'log'](`[Gemini API] ${message}`);
+    if (onStatusUpdate) onStatusUpdate({ type, message, model });
+  };
 
-  // 1. Try Supabase Edge Function first
-  for (const model of modelChain) {
-    const statusMsg = `Attempting model: ${model} via Supabase Edge Function...`;
-    console.log(`[Gemini API] ${statusMsg}`);
-    if (onStatusUpdate) {
-      onStatusUpdate({ type: 'info', message: statusMsg, model });
+  // ── One attempt against one transport for one model ──────────────────────────
+  // Returns the Gemini response on success. Throws an Error with `.status` set,
+  // or `.isEdgeUnavailable` when the Edge Function itself is not deployed.
+  async function callModel(transport, model) {
+    if (transport === 'edge') {
+      if (!supabase || !supabase.functions) {
+        const e = new Error('Supabase client not initialized');
+        e.isEdgeUnavailable = true;
+        throw e;
+      }
+      const { data, error: funcErr } = await supabase.functions.invoke('gemini-proxy', {
+        body: { model, path, payload },
+        headers: apiKey ? { 'x-goog-api-key': apiKey } : {}
+      });
+      if (funcErr) {
+        // Transport-level failure. A missing function means "no edge here" —
+        // switch to direct entirely rather than treating models as broken.
+        const status = extractStatus(funcErr);
+        const notFound = status === 404 || /not found|function not found/i.test(funcErr.message || '');
+        if (notFound) {
+          const e = new Error(`Edge function 'gemini-proxy' unavailable`);
+          e.isEdgeUnavailable = true;
+          throw e;
+        }
+        const e = new Error(funcErr.message || 'Edge function error');
+        e.status = status;
+        throw e;
+      }
+      if (data && data.error) {
+        const e = new Error(data.error.message || 'Error from Gemini inside Edge Function');
+        e.status = extractStatus(null, data);
+        throw e;
+      }
+      return data;
     }
 
-    try {
-      if (supabase && supabase.functions) {
-        const { data, error: funcErr } = await supabase.functions.invoke('gemini-proxy', {
-          body: {
-            model,
-            path,
-            payload
-          },
-          headers: apiKey ? { 'x-goog-api-key': apiKey } : {}
-        });
-
-        if (funcErr) {
-          // If the Edge function is not deployed (404), flag fallback to direct API
-          if (funcErr.message?.includes('404') || funcErr.status === 404) {
-            console.warn(`Edge function 'gemini-proxy' not found (404). Falling back to direct API connection.`);
-            useDirectFallback = true;
-            break;
-          }
-          throw funcErr;
-        }
-
-        // If edge function returns a successful response from Gemini
-        if (data && !data.error) {
-          const successMsg = `Successfully completed using model: ${model} via Edge Function`;
-          console.log(`[Gemini API] ${successMsg}`);
-          if (onStatusUpdate) {
-            onStatusUpdate({ type: 'success', message: successMsg, model });
-          }
-          return data;
-        }
-
-        if (data && data.error) {
-          throw new Error(data.error.message || 'Error from Gemini inside Edge Function');
-        }
-      } else {
-        console.warn(`Supabase client not initialized. Falling back to direct API.`);
-        useDirectFallback = true;
-        break;
-      }
-    } catch (err) {
-      const failMsg = `Edge function call failed for model ${model}: ${err.message || err}`;
-      console.warn(`[Gemini API] ${failMsg}`, err);
-      if (onStatusUpdate) {
-        onStatusUpdate({ type: 'warning', message: failMsg, model });
-      }
-      errorsList.push(`EdgeFunction (${model}): ${err.message || err}`);
-      
-      // If the function doesn't exist, we break early to fall back to direct client call
-      if (err.message && (err.message.includes('Function not found') || err.message.includes('404'))) {
-        useDirectFallback = true;
-        break;
-      }
-    }
+    // Direct Google API
+    const response = await fetch(getEndpointForModel(model, path), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey || '' },
+      body: JSON.stringify(payload)
+    });
+    if (response.ok) return response.json();
+    let errorMsg = `HTTP error ${response.status}`;
+    try { const ed = await response.json(); errorMsg = ed.error?.message || errorMsg; } catch { /* non-JSON body */ }
+    const e = new Error(errorMsg);
+    e.status = response.status;
+    throw e;
   }
 
-  // If the Edge Function failed due to not being deployed or config issues, try Direct API
-  if (useDirectFallback || errorsList.length > 0) {
+  // ── Walk the model chain over one transport, with per-model retry ────────────
+  // Returns the response on success, null if the whole chain was exhausted.
+  // Throws on 'abort' (auth) or Edge-unavailable (to trigger the direct phase).
+  async function runChain(transport) {
     for (const model of modelChain) {
-      const endpoint = getEndpointForModel(model, path);
-      const statusMsg = `Attempting model: ${model} via Direct Google API...`;
-      console.log(`[Gemini API] ${statusMsg}`);
-      if (onStatusUpdate) {
-        onStatusUpdate({ type: 'info', message: statusMsg, model });
-      }
-
-      try {
-        const response = await fetch(endpoint, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-goog-api-key': apiKey || ''
-          },
-          body: JSON.stringify(payload)
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          const successMsg = `Successfully completed using model: ${model} via Direct API`;
-          console.log(`[Gemini API] ${successMsg}`);
-          if (onStatusUpdate) {
-            onStatusUpdate({ type: 'success', message: successMsg, model });
-          }
-          return data;
-        }
-
-        let errorMsg = `HTTP error ${response.status}`;
+      if (deadModels.has(model)) continue;
+      let attempt = 0;
+      while (true) {
+        notify('info', `Attempting model: ${model} via ${transport === 'edge' ? 'Supabase Edge Function' : 'Direct Google API'}...`, model);
         try {
-          const errorData = await response.json();
-          errorMsg = errorData.error?.message || errorMsg;
-        } catch (e) {
-          // Response body might not be JSON
-        }
-        
-        const warnMsg = `Model ${model} failed (Direct API): ${errorMsg}`;
-        console.warn(`[Gemini API] ${warnMsg}`);
-        
-        if (onStatusUpdate) {
-          onStatusUpdate({ type: 'warning', message: warnMsg, model });
-        }
-        
-        const errorObj = new Error(errorMsg);
-        errorsList.push(`DirectAPI (${model}): ${errorMsg}`);
+          const data = await callModel(transport, model);
+          notify('success', `Successfully completed using model: ${model} (${transport})`, model);
+          return data;
+        } catch (err) {
+          if (err.isEdgeUnavailable) throw err; // bubble up to switch transports
+          const status = extractStatus(err);
+          const action = classifyError(status, err.message);
+          errorsList.push(`${transport} (${model})${status ? ' [' + status + ']' : ''}: ${err.message || err}`);
 
-        // If it's a client authentication/API key issue, fail immediately to prevent infinite loops
-        if (response.status === 400 && (errorMsg.includes('API key') || errorMsg.includes('invalid'))) {
-          throw errorObj;
-        }
-      } catch (err) {
-        const failMsg = `Exception occurred with model ${model} (Direct API): ${err.message || err}`;
-        console.warn(`[Gemini API] ${failMsg}`, err);
-        if (onStatusUpdate) {
-          onStatusUpdate({ type: 'warning', message: failMsg, model });
-        }
-        
-        errorsList.push(`DirectAPI (${model}): ${err.message || err}`);
-        
-        if (err.message && (err.message.includes('API key') || err.message.includes('invalid'))) {
-          throw err;
+          if (action === 'abort') {
+            notify('warning', `Auth/permission error on ${model}: ${err.message}`, model);
+            throw err;
+          }
+          if (action === 'retry' && attempt < MAX_RETRIES_PER_MODEL) {
+            attempt++;
+            const delay = RETRY_BASE_MS * 2 ** (attempt - 1) + Math.floor(Math.random() * 200);
+            notify('warning', `${model} transient error (${status || '?'}); retry ${attempt}/${MAX_RETRIES_PER_MODEL} in ${delay}ms`, model);
+            await sleep(delay);
+            continue; // retry SAME model — do not downgrade quality on a rate limit
+          }
+          if (action === 'dead') {
+            deadModels.add(model);
+            notify('warning', `${model} unavailable (${status || '?'}); marking dead for this session`, model);
+          } else {
+            notify('warning', `${model} failed (${status || '?'}): ${err.message}`, model);
+          }
+          break; // advance to next model
         }
       }
     }
+    return null;
   }
+
+  // 1. Edge Function transport (unless it's not deployed), then 2. Direct API.
+  let result = null;
+  try {
+    result = await runChain('edge');
+  } catch (err) {
+    if (!err.isEdgeUnavailable) throw err; // auth abort bubbles to caller
+    console.warn(`[Gemini API] ${err.message}. Falling back to direct API connection.`);
+  }
+  if (result) return result;
+
+  result = await runChain('direct'); // may throw on auth abort
+  if (result) return result;
 
   throw new Error(`All methods in the fallback chain failed:\n${errorsList.join('\n')}`);
 }
@@ -209,7 +242,7 @@ export async function analyzeJobPosting(apiKey, modelName, { text, imageBase64, 
     throw new Error('Gemini API key is required');
   }
 
-  const selectedModel = modelName || 'gemini-2.5-flash';
+  const selectedModel = modelName || DEFAULT_MODEL;
 
   const contents = [{
     parts: []
@@ -315,7 +348,7 @@ export async function generatePosterSummary(apiKey, modelName, { contactMethod, 
     throw new Error('Gemini API key is required');
   }
 
-  const selectedModel = modelName || 'gemini-2.5-flash';
+  const selectedModel = modelName || DEFAULT_MODEL;
 
   const textPayload = `You are a professional analyst supporting anti-trafficking investigations.
 Analyze this recruitment posting history and identify patterns that indicate deceptive or exploitative recruitment practices.
@@ -390,7 +423,7 @@ export async function generatePosterContent(apiKey, modelName, { mode, language,
     throw new Error('Gemini API key is required');
   }
 
-  const selectedModel = modelName || 'gemini-2.5-flash';
+  const selectedModel = modelName || DEFAULT_MODEL;
 
   const flagsStr = (scanData.activeFlags || []).join(', ') || 'N/A';
   
@@ -488,7 +521,7 @@ export async function analyzeCrop(apiKey, modelName, { imageBase64, onStatusUpda
     throw new Error('Gemini API key is required');
   }
 
-  const selectedModel = modelName || 'gemini-2.5-flash';
+  const selectedModel = modelName || DEFAULT_MODEL;
 
   // imageBase64 usually looks like: data:image/jpeg;base64,/9j/4AAQSkZJRg...
   const base64Data = imageBase64.split(',')[1];
@@ -547,7 +580,7 @@ export async function analyzeLanguageDialect(apiKey, modelName, { text, onStatus
     throw new Error('Gemini API key is required');
   }
 
-  const selectedModel = modelName || 'gemini-2.5-flash';
+  const selectedModel = modelName || DEFAULT_MODEL;
 
   const payload = {
     systemInstruction: {
@@ -606,6 +639,51 @@ export async function analyzeLanguageDialect(apiKey, modelName, { text, onStatus
     console.error('Gemini Dialect Analysis Error:', error);
     throw error;
   }
+}
+
+/**
+ * Translate the recruitment lines of "The Interview" art installation into the
+ * languages of the Southeast Asia trafficking corridor. Used to render an ambient
+ * multilingual layer — the same lure surfacing in many tongues at once.
+ *
+ * Input:  lines = ["English line", ...]
+ *         langs = [{ code, name }, ...]
+ * Output: { "<code>": ["translated line", ...], ... }  (index-aligned to `lines`)
+ *
+ * Caller should fall back to a curated translation set if this throws.
+ */
+export async function translateInterviewLines(apiKey, modelName, { lines, langs, onStatusUpdate }) {
+  if (!apiKey) throw new Error('Gemini API key is required');
+  const selectedModel = modelName || DEFAULT_MODEL;
+
+  const langList = langs.map(l => `"${l.code}" (${l.name})`).join(', ');
+
+  const payload = {
+    systemInstruction: {
+      parts: [{ text: "You are a professional translator supporting a survivor-informed anti-trafficking art installation. You translate short, ordinary job-recruitment phrases faithfully and naturally into everyday spoken register. The text is illustrative and contains no real personal data. Preserve tone exactly; do not add warnings, commentary, or extra text." }]
+    },
+    contents: [{
+      parts: [{
+        text: `Translate each of these recruitment phrases into the following languages: ${langList}.\n\nPhrases (keep this order):\n${lines.map((l, i) => `${i + 1}. ${l}`).join('\n')}\n\nReturn ONLY valid JSON: an object keyed by language code, each value an array of the translated phrases in the SAME order as above. Example shape: { "th": ["...", "..."], "km": ["...", "..."] }. Do not include the English or any keys other than the requested codes.`
+      }]
+    }],
+    generationConfig: {
+      responseMimeType: "application/json",
+      temperature: 0.2
+    }
+  };
+
+  const data = await postToGeminiWithFallback(apiKey, selectedModel, payload, onStatusUpdate);
+  if (!data.candidates || data.candidates.length === 0) {
+    throw new Error('No response returned from Gemini API.');
+  }
+  let cleanText = data.candidates[0].content.parts[0].text;
+  const firstBrace = cleanText.indexOf('{');
+  const lastBrace = cleanText.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace !== -1) {
+    cleanText = cleanText.substring(firstBrace, lastBrace + 1);
+  }
+  return JSON.parse(cleanText);
 }
 
 
