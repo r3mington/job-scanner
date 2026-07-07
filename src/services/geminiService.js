@@ -80,9 +80,37 @@ export const FALLBACK_CHAIN = [
 const MAX_RETRIES_PER_MODEL = 2;
 const RETRY_BASE_MS = 500;
 
-// Models that returned a hard "does not exist / bad request" this session.
-// Skipped on subsequent calls so a dead id never costs another round trip.
-const deadModels = new Set();
+// Models that returned a hard "does not exist / bad request", e.g. a retired
+// id lingering in a stored preference. Persisted for 7 days so a dead id costs
+// one 404 per browser — not one per session.
+const DEAD_MODELS_STORE = 'gemini_dead_models_v1';
+const DEAD_MODELS_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+function loadDeadModels() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(DEAD_MODELS_STORE) || '{}');
+    const now = Date.now();
+    return new Set(Object.keys(raw).filter(m => now - raw[m] < DEAD_MODELS_TTL_MS));
+  } catch {
+    return new Set();
+  }
+}
+
+const deadModels = loadDeadModels();
+
+function markModelDead(model) {
+  deadModels.add(model);
+  try {
+    const raw = JSON.parse(localStorage.getItem(DEAD_MODELS_STORE) || '{}');
+    raw[model] = Date.now();
+    localStorage.setItem(DEAD_MODELS_STORE, JSON.stringify(raw));
+  } catch { /* storage unavailable — in-memory set still covers the session */ }
+}
+
+// Set once the Supabase Edge transport hard-fails (not deployed / unreachable).
+// The rest of the session goes direct instead of re-paying the failure cascade
+// on every scan — critical for CSV batches.
+let edgeUnavailable = false;
 
 const sleep = (ms) => new Promise(res => setTimeout(res, ms));
 
@@ -147,7 +175,11 @@ export async function postToGeminiWithFallback(apiKey, requestedModel, payload, 
         // switch to direct entirely rather than treating models as broken.
         const status = extractStatus(funcErr);
         const notFound = status === 404 || /not found|function not found/i.test(funcErr.message || '');
-        if (notFound) {
+        // supabase-js throws FunctionsFetchError ("Failed to send a request…",
+        // no status) when the fetch itself dies — undeployed function, wrong
+        // project URL, or CORS. The transport is unusable, not the model.
+        const unreachable = funcErr.name === 'FunctionsFetchError' || /failed to send a request/i.test(funcErr.message || '');
+        if (notFound || unreachable) {
           const e = new Error(`Edge function 'gemini-proxy' unavailable`);
           e.isEdgeUnavailable = true;
           throw e;
@@ -209,10 +241,10 @@ export async function postToGeminiWithFallback(apiKey, requestedModel, payload, 
             continue; // retry SAME model — do not downgrade quality on a rate limit
           }
           if (action === 'dead') {
-            deadModels.add(model);
+            markModelDead(model);
             notify('warning', `${model} unavailable (${status || '?'}); marking dead for this session`, model);
           } else {
-            notify('warning', `${model} failed (${status || '?'}): ${err.message}`, model);
+            notify('warning', `${model} failed (${status || err.name || 'network'}): ${err.message}`, model);
           }
           break; // advance to next model
         }
@@ -221,20 +253,28 @@ export async function postToGeminiWithFallback(apiKey, requestedModel, payload, 
     return null;
   }
 
-  // 1. Edge Function transport (unless it's not deployed), then 2. Direct API.
-  let result = null;
-  try {
-    result = await runChain('edge');
-  } catch (err) {
-    if (!err.isEdgeUnavailable) throw err; // auth abort bubbles to caller
-    console.warn(`[Gemini API] ${err.message}. Falling back to direct API connection.`);
+  // Transport order: when the caller holds a Gemini key, the direct API is the
+  // fastest, dependency-free path and the edge proxy is only a fallback.
+  // Without a client key, the edge function (server-held key) is the only
+  // viable route, so don't waste a doomed direct attempt.
+  const transports = apiKey ? ['direct', 'edge'] : ['edge'];
+
+  for (const transport of transports) {
+    if (transport === 'edge' && edgeUnavailable) continue;
+    try {
+      const result = await runChain(transport);
+      if (result) return result;
+    } catch (err) {
+      if (!err.isEdgeUnavailable) throw err; // auth abort bubbles to caller
+      edgeUnavailable = true;
+      notify('warning', 'Edge proxy unreachable — using the direct Google API for the rest of this session.');
+    }
   }
-  if (result) return result;
 
-  result = await runChain('direct'); // may throw on auth abort
-  if (result) return result;
-
-  throw new Error(`All methods in the fallback chain failed:\n${errorsList.join('\n')}`);
+  const failureDetail = errorsList.length
+    ? errorsList.join('\n')
+    : 'No usable transport: edge proxy unreachable and no client API key provided.';
+  throw new Error(`All methods in the fallback chain failed:\n${failureDetail}`);
 }
 
 export async function analyzeJobPosting(apiKey, modelName, { text, imageBase64, onStatusUpdate }) {
