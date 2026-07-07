@@ -1,7 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Network } from 'vis-network';
+import { DataSet } from 'vis-data';
 import { useNavigate } from 'react-router-dom';
-import { ZoomIn, RotateCcw, AlertTriangle, ArrowRight, ShieldAlert, CheckCircle2, AlertCircle, Play, Pause, Eye, EyeOff, Briefcase } from 'lucide-react';
+import { ZoomIn, RotateCcw, AlertTriangle, ArrowRight, ShieldAlert, CheckCircle2, AlertCircle, Play, Pause, Eye, EyeOff, Briefcase, FileSearch } from 'lucide-react';
+import { getCleanContactValue } from '../pages/DashboardView';
+
+const truncateLabel = (s, max) => {
+  if (!s) return s;
+  return s.length > max ? s.substring(0, max - 1) + '…' : s;
+};
 
 export default function NetworkGraphView({ scans }) {
   const containerRef = useRef(null);
@@ -12,6 +19,7 @@ export default function NetworkGraphView({ scans }) {
   const [showContacts, setShowContacts] = useState(true);
   const [showCompanies, setShowCompanies] = useState(true);
   const [minConnections, setMinConnections] = useState(3);
+  const [graphStats, setGraphStats] = useState({ nodes: 0, edges: 0, hubs: 0 });
 
   // Reset selected node if it gets filtered out
   useEffect(() => {
@@ -92,18 +100,21 @@ export default function NetworkGraphView({ scans }) {
         color = '#f59e0b'; // medium risk
       }
 
+      // Size and color encode risk so hot clusters read at a glance
+      const size = scan.riskScore >= 60 ? 17 : scan.riskScore >= 30 ? 13 : 10;
+
       nodesMap.set(scanId, {
         id: scanId,
-        label: scan.jobTitle || 'Unknown Role',
+        label: truncateLabel(scan.jobTitle || 'Unknown Role', 26),
         title: `Job: ${scan.jobTitle || 'Unknown'}\nRisk Score: ${scan.riskScore}%\nEmployer: ${scan.employer || 'Unknown'}`,
         shape: 'dot',
-        size: 15,
+        size,
         color: {
           background: color,
-          border: '#ffffff',
+          border: '#0a0c12',
           highlight: {
             background: color,
-            border: '#1e293b'
+            border: '#f8fafc'
           }
         },
         font: { color: fontColor, size: 12 },
@@ -119,7 +130,8 @@ export default function NetworkGraphView({ scans }) {
         if (!nodesMap.has(empId)) {
           nodesMap.set(empId, {
             id: empId,
-            label: `🏢 ${empClean}`,
+            label: `🏢 ${truncateLabel(empClean, 24)}`,
+            title: empClean,
             shape: 'box',
             color: {
               background: '#e2e8f0',
@@ -143,7 +155,7 @@ export default function NetworkGraphView({ scans }) {
         edgesList.push({
           from: scanId,
           to: empId,
-          color: { color: '#94a3b8', opacity: 0.6 },
+          color: { color: '#64748b', opacity: 0.35 },
           width: 1
         });
       }
@@ -177,7 +189,7 @@ export default function NetworkGraphView({ scans }) {
           edgesList.push({
             from: scanId,
             to: contact.id,
-            color: { color: '#c084fc', opacity: 0.6 },
+            color: { color: '#a855f7', opacity: 0.45 },
             width: 1
           });
         });
@@ -238,6 +250,7 @@ export default function NetworkGraphView({ scans }) {
         if (isHub) {
           node.borderWidth = 2.5;
           node.label = `HUB: ${node.label.replace(/^[^\s]+\s/, '')}`;
+          node.shadow = { enabled: true, color: 'rgba(168,85,247,0.45)', size: 18, x: 0, y: 0 };
         } else {
           node.borderWidth = 1;
         }
@@ -259,31 +272,49 @@ export default function NetworkGraphView({ scans }) {
         };
         if (isHub) {
           node.borderWidth = 2;
+          node.shadow = { enabled: true, color: 'rgba(245,158,11,0.35)', size: 16, x: 0, y: 0 };
         }
       } else if (node.type === 'scan') {
         node.font = {
-          color: '#e2e8f0',
-          size: 11,
+          color: '#7d8aa0',
+          size: 10,
           face: 'monospace'
         };
       }
     });
 
     const nodes = Array.from(filteredNodesMap.values());
-    const data = { nodes, edges: filteredEdgesList };
+    const edgesWithIds = filteredEdgesList.map((edge, i) => ({ id: `e_${i}`, ...edge }));
+    const nodesDS = new DataSet(nodes);
+    const edgesDS = new DataSet(edgesWithIds);
+
+    setGraphStats({
+      nodes: nodes.length,
+      edges: edgesWithIds.length,
+      hubs: nodes.filter(n => n.type !== 'scan' && n.connectedScansCount > 1).length
+    });
 
     const options = {
+      nodes: {
+        borderWidth: 1.5
+      },
+      edges: {
+        smooth: { enabled: true, type: 'continuous', roundness: 0.4 },
+        hoverWidth: 0.5,
+        selectionWidth: 1.5
+      },
       physics: {
         enabled: physicsEnabled,
         solver: 'forceAtlas2Based',
         forceAtlas2Based: {
-          gravitationalConstant: -50,
-          centralGravity: 0.01,
-          springLength: 100,
-          springConstant: 0.08
+          gravitationalConstant: -65,
+          centralGravity: 0.012,
+          springLength: 130,
+          springConstant: 0.06,
+          avoidOverlap: 0.7
         },
         stabilization: {
-          iterations: 150,
+          iterations: 200,
           updateInterval: 25
         }
       },
@@ -291,19 +322,42 @@ export default function NetworkGraphView({ scans }) {
         hover: true,
         tooltipDelay: 200,
         selectable: true,
-        selectConnectedEdges: true
+        selectConnectedEdges: true,
+        hideEdgesOnDrag: true
       }
     };
 
-    const network = new Network(containerRef.current, data, options);
+    const network = new Network(containerRef.current, { nodes: nodesDS, edges: edgesDS }, options);
     networkRef.current = network;
+
+    // Spotlight a node's neighborhood: everything else fades so a recruiter's
+    // web reads instantly, even in a dense graph.
+    const spotlight = (centerId) => {
+      const neighbors = new Set(network.getConnectedNodes(centerId));
+      neighbors.add(centerId);
+      nodesDS.update(nodes.map(n => ({ id: n.id, opacity: neighbors.has(n.id) ? 1 : 0.12 })));
+      edgesDS.update(edgesWithIds.map(e => {
+        const inFocus = e.from === centerId || e.to === centerId;
+        return {
+          id: e.id,
+          color: { ...e.color, opacity: inFocus ? 0.9 : 0.05 },
+          width: inFocus ? 2 : 1
+        };
+      }));
+    };
+
+    const clearSpotlight = () => {
+      nodesDS.update(nodes.map(n => ({ id: n.id, opacity: 1 })));
+      edgesDS.update(edgesWithIds.map(e => ({ id: e.id, color: e.color, width: 1 })));
+    };
 
     // Click handler
     network.on('click', (params) => {
       if (params.nodes.length > 0) {
         const nodeId = params.nodes[0];
         const node = filteredNodesMap.get(nodeId);
-        
+        spotlight(nodeId);
+
         // Find connected scans for aggregate nodes
         let connectedScans = [];
         if (node && (node.type === 'employer' || node.type === 'contact')) {
@@ -317,6 +371,7 @@ export default function NetworkGraphView({ scans }) {
 
         setSelectedNode(node ? { ...node, connectedScans } : null);
       } else {
+        clearSpotlight();
         setSelectedNode(null);
       }
     });
@@ -508,6 +563,18 @@ export default function NetworkGraphView({ scans }) {
                     <p className="text-[11px] text-slate-500 font-mono mt-0.5">
                       Shared across {selectedNode.connectedScansCount} listing{selectedNode.connectedScansCount !== 1 ? 's' : ''}
                     </p>
+                    {(() => {
+                      const src = selectedNode.connectedScans?.[0];
+                      const dossierKey = src && getCleanContactValue(src.extractedData?.contact_method);
+                      return dossierKey ? (
+                        <button
+                          onClick={() => navigate(`/poster/${encodeURIComponent(dossierKey)}`)}
+                          className="mt-2.5 flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-wider px-2.5 py-1.5 rounded bg-purple-950/40 border border-purple-500/30 text-purple-300 hover:bg-purple-950/70 hover:border-purple-400/50 transition-colors"
+                        >
+                          <FileSearch className="w-3.5 h-3.5" /> Open Recruiter Dossier
+                        </button>
+                      ) : null;
+                    })()}
                   </div>
                 </div>
 
@@ -554,72 +621,89 @@ export default function NetworkGraphView({ scans }) {
         )}
       </div>
 
+      {/* Toolbar — outside the canvas so controls never collide with nodes */}
+      <div className="border-b border-slate-800 bg-[#0e121a] px-4 py-2.5 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex gap-2 items-center flex-wrap">
+          <button
+            onClick={fitGraph}
+            className="p-2 bg-[#111318] hover:bg-slate-800 text-slate-300 rounded-lg border border-slate-800 transition-colors flex items-center gap-1.5 text-xs font-semibold"
+          >
+            <RotateCcw className="w-4 h-4" /> Recenter
+          </button>
+          <button
+            onClick={() => setPhysicsEnabled(prev => !prev)}
+            className={`p-2 rounded-lg border transition-colors flex items-center gap-1.5 text-xs font-semibold ${
+              physicsEnabled
+                ? 'bg-[#111318] hover:bg-slate-800 border-slate-800 text-slate-300'
+                : 'bg-amber-500/10 border-amber-500/30 text-amber-500 hover:bg-amber-500/20'
+            }`}
+          >
+            {physicsEnabled ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+            {physicsEnabled ? 'Freeze Physics' : 'Unfreeze Physics'}
+          </button>
+          <span className="text-[10px] font-mono text-slate-500 uppercase tracking-wider pl-1 hidden sm:inline">
+            {graphStats.nodes} nodes · {graphStats.edges} links · <span className="text-purple-400 font-bold">{graphStats.hubs} hubs</span>
+          </span>
+        </div>
+
+        <div className="flex gap-2 items-center flex-wrap">
+          {/* Min Connections Dropdown Filter */}
+          <div className="flex items-center gap-1.5 bg-[#111318] border border-slate-800 rounded-lg p-1">
+            <span className="text-[9px] font-mono text-slate-400 uppercase pl-1.5 pr-0.5 font-bold">Min Connections:</span>
+            <select
+              value={minConnections}
+              onChange={(e) => setMinConnections(Number(e.target.value))}
+              className="bg-[#0a0c12] border border-slate-800 rounded px-2 py-1 text-[10px] text-slate-300 focus:outline-none focus:ring-1 focus:ring-amber-500 cursor-pointer font-mono"
+            >
+              <option value={1}>1+ connection</option>
+              <option value={2}>2+ connections (Hubs)</option>
+              <option value={3}>3+ connections</option>
+              <option value={4}>4+ connections</option>
+              <option value={5}>5+ connections</option>
+            </select>
+          </div>
+          <button
+            onClick={() => setShowContacts(prev => !prev)}
+            className={`p-2 rounded-lg border transition-colors flex items-center gap-1.5 text-xs font-semibold ${
+              showContacts
+                ? 'bg-purple-950/20 border-purple-500/30 text-purple-400 hover:bg-purple-950/45'
+                : 'bg-[#111318] hover:bg-slate-850 border-slate-800 text-slate-500'
+            }`}
+          >
+            {showContacts ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+            Contacts
+          </button>
+          <button
+            onClick={() => setShowCompanies(prev => !prev)}
+            className={`p-2 rounded-lg border transition-colors flex items-center gap-1.5 text-xs font-semibold ${
+              showCompanies
+                ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700/80'
+                : 'bg-[#111318] hover:bg-slate-850 border-slate-800 text-slate-500'
+            }`}
+          >
+            {showCompanies ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+            Companies
+          </button>
+        </div>
+      </div>
+
       {/* Network Canvas */}
       <div className="flex-1 relative bg-[#0a0c12] min-h-[550px] h-[550px]">
         <div ref={containerRef} className="w-full h-full absolute inset-0" />
-        
-        {/* Float Controls */}
-        <div className="absolute bottom-4 left-4 right-4 flex flex-wrap justify-between items-center z-10 gap-2 pointer-events-none">
-          <div className="flex gap-2 pointer-events-auto">
-            <button 
-              onClick={fitGraph}
-              className="p-2 bg-[#111318] hover:bg-slate-800 text-slate-300 rounded-lg shadow border border-slate-800 transition-colors flex items-center gap-1.5 text-xs font-semibold"
-            >
-              <RotateCcw className="w-4 h-4" /> Recenter
-            </button>
-            <button 
-              onClick={() => setPhysicsEnabled(prev => !prev)}
-              className={`p-2 rounded-lg shadow border transition-colors flex items-center gap-1.5 text-xs font-semibold ${
-                physicsEnabled 
-                  ? 'bg-[#111318] hover:bg-slate-800 border-slate-800 text-slate-300' 
-                  : 'bg-amber-500/10 border-amber-500/30 text-amber-500 hover:bg-amber-500/20'
-              }`}
-            >
-              {physicsEnabled ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-              {physicsEnabled ? 'Freeze Physics' : 'Unfreeze Physics'}
-            </button>
-          </div>
 
-          <div className="flex gap-2 pointer-events-auto items-center">
-            {/* Min Connections Dropdown Filter */}
-            <div className="flex items-center gap-1.5 bg-[#111318] border border-slate-800 rounded-lg p-1">
-              <span className="text-[9px] font-mono text-slate-400 uppercase pl-1.5 pr-0.5 font-bold">Min Connections:</span>
-              <select
-                value={minConnections}
-                onChange={(e) => setMinConnections(Number(e.target.value))}
-                className="bg-[#0a0c12] border border-slate-800 rounded px-2 py-1 text-[10px] text-slate-300 focus:outline-none focus:ring-1 focus:ring-amber-500 cursor-pointer font-mono"
-              >
-                <option value={1}>1+ connection</option>
-                <option value={2}>2+ connections (Hubs)</option>
-                <option value={3}>3+ connections</option>
-                <option value={4}>4+ connections</option>
-                <option value={5}>5+ connections</option>
-              </select>
+        {graphStats.nodes === 0 && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div className="text-center max-w-sm px-6">
+              <AlertTriangle className="w-8 h-8 text-slate-700 mx-auto mb-3" />
+              <p className="text-sm text-slate-500 font-mono">
+                No linked entities at this filter level.
+              </p>
+              <p className="text-xs text-slate-600 font-mono mt-1.5">
+                Lower “Min Connections” to reveal smaller clusters, or enable Contacts/Companies above.
+              </p>
             </div>
-            <button 
-              onClick={() => setShowContacts(prev => !prev)}
-              className={`p-2 rounded-lg shadow border transition-colors flex items-center gap-1.5 text-xs font-semibold ${
-                showContacts 
-                  ? 'bg-purple-950/20 border-purple-500/30 text-purple-400 hover:bg-purple-950/45' 
-                  : 'bg-[#111318] hover:bg-slate-850 border-slate-800 text-slate-500'
-              }`}
-            >
-              {showContacts ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-              Contacts
-            </button>
-            <button 
-              onClick={() => setShowCompanies(prev => !prev)}
-              className={`p-2 rounded-lg shadow border transition-colors flex items-center gap-1.5 text-xs font-semibold ${
-                showCompanies 
-                  ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700/80' 
-                  : 'bg-[#111318] hover:bg-slate-850 border-slate-800 text-slate-500'
-              }`}
-            >
-              {showCompanies ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-              Companies
-            </button>
           </div>
-        </div>
+        )}
       </div>
 
     </div>

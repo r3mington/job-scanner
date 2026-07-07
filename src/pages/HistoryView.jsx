@@ -1,11 +1,15 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase, mapDbToRecord } from '../utils/supabaseClient';
 import { Search, ChevronRight, ChevronDown, ChevronUp, AlertTriangle, Briefcase, MapPin, Folder, Trash2, Globe, DollarSign, Languages, FileText, ShieldAlert, List, Network } from 'lucide-react';
 import { format } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import { getCleanContactValue } from './DashboardView';
 import NetworkGraphView from '../components/NetworkGraphView';
-import { calculateSimilarity } from '../utils/similarity';
+import { prepareSimilarity, similarityFromPrepared } from '../utils/similarity';
+
+// Session cache: registry paints instantly on revisit, then refreshes in the
+// background. Module-scoped so it survives route changes but not reloads.
+let scansCache = null;
 
 const formatSalary = (val) => {
   if (!val) return null;
@@ -57,14 +61,27 @@ export default function HistoryView() {
 
   const fetchScans = async () => {
     try {
-      setLoading(true);
+      if (!scansCache) setLoading(true);
+      // Select only list-level fields. extracted_data is a multi-KB JSONB blob
+      // per row; the list only needs two of its subfields, so pull just those.
       const { data, error } = await supabase
         .from('scans')
-        .select('id, timestamp, job_title, employer, risk_score, risk_level, location_country, parsed_salary_usd, detected_language, is_translated, source_platform, notes, batch_id, batch_name, user_id, extracted_data')
+        .select('id, timestamp, job_title, employer, risk_score, risk_level, location_country, parsed_salary_usd, detected_language, is_translated, source_platform, notes, batch_id, batch_name, user_id, audit_status:extracted_data->>audit_status, contact_method:extracted_data->>contact_method')
         .order('timestamp', { ascending: false });
 
       if (error) throw error;
-      setScans((data || []).map(mapDbToRecord));
+      const mapped = (data || []).map(d => {
+        const rec = mapDbToRecord(d);
+        // Real client returns the two aliased subfields; the mock client
+        // ignores the select string and returns full rows with extracted_data.
+        rec.extractedData = d.extracted_data || {
+          audit_status: d.audit_status,
+          contact_method: d.contact_method
+        };
+        return rec;
+      });
+      scansCache = mapped;
+      setScans(mapped);
     } catch (err) {
       console.error("Error fetching scans:", err);
     } finally {
@@ -73,6 +90,10 @@ export default function HistoryView() {
   };
 
   useEffect(() => {
+    if (scansCache) {
+      setScans(scansCache);
+      setLoading(false);
+    }
     fetchScans();
   }, []);
 
@@ -124,29 +145,63 @@ export default function HistoryView() {
     }
   };
 
-  const similarityCounts = useMemo(() => {
-    if (!scans) return {};
-    const counts = {};
-    scans.forEach(s => {
-      counts[s.id] = 0;
-    });
+  // Similar-ads counts run off the critical path: the heavy normalized_text
+  // column is fetched in a second query after the list has painted, each text
+  // is prepared once, and the O(n²) pair loop yields to the event loop between
+  // chunks so it never blocks interaction.
+  const [similarityCounts, setSimilarityCounts] = useState({});
+  const simSignatureRef = useRef('');
 
-    const n = scans.length;
-    for (let i = 0; i < n; i++) {
-      const s1 = scans[i];
-      if (!s1.normalizedText) continue;
+  useEffect(() => {
+    if (!scans || scans.length < 2) return;
+    // Skip recompute when the id set is unchanged (e.g. cache-then-refetch on mount)
+    const signature = scans.map(s => s.id).join(',');
+    if (signature === simSignatureRef.current) return;
+    simSignatureRef.current = signature;
+    let cancelled = false;
 
-      for (let j = i + 1; j < n; j++) {
-        const s2 = scans[j];
-        if (!s2.normalizedText) continue;
+    (async () => {
+      const { data, error } = await supabase
+        .from('scans')
+        .select('id, normalized_text');
+      if (error || !data || cancelled) return;
 
-        if (calculateSimilarity(s1.normalizedText, s2.normalizedText) > 0.40) {
-          counts[s1.id]++;
-          counts[s2.id]++;
+      const prepared = data
+        .filter(r => r.normalized_text)
+        .map(r => ({ id: r.id, prep: prepareSimilarity(r.normalized_text) }));
+
+      const counts = {};
+      const n = prepared.length;
+      const PAIRS_PER_CHUNK = 2500;
+      let i = 0;
+      let j = 1;
+
+      const step = () => {
+        if (cancelled) return;
+        let done = 0;
+        while (i < n - 1 && done < PAIRS_PER_CHUNK) {
+          const a = prepared[i];
+          for (; j < n && done < PAIRS_PER_CHUNK; j++, done++) {
+            if (similarityFromPrepared(a.prep, prepared[j].prep) > 0.40) {
+              counts[a.id] = (counts[a.id] || 0) + 1;
+              counts[prepared[j].id] = (counts[prepared[j].id] || 0) + 1;
+            }
+          }
+          if (j >= n) {
+            i++;
+            j = i + 1;
+          }
         }
-      }
-    }
-    return counts;
+        if (i < n - 1) {
+          setTimeout(step, 0);
+        } else {
+          setSimilarityCounts(counts);
+        }
+      };
+      step();
+    })();
+
+    return () => { cancelled = true; };
   }, [scans]);
 
   const getSimilarCount = (targetScan) => {

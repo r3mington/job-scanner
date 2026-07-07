@@ -25,32 +25,6 @@ function normalizeForCompare(s) {
     .trim();
 }
 
-/**
- * Sørensen–Dice coefficient on character bigrams.
- * Measures character-level structural overlap.
- */
-function diceSimilarity(a, b) {
-  const s1 = a.replace(/\s/g, '');
-  const s2 = b.replace(/\s/g, '');
-  if (s1 === s2) return 1.0;
-  if (s1.length < 2 || s2.length < 2) return 0;
-
-  const bigrams = new Map();
-  for (let i = 0; i < s1.length - 1; i++) {
-    const bg = s1.substr(i, 2);
-    bigrams.set(bg, (bigrams.get(bg) || 0) + 1);
-  }
-
-  let hits = 0;
-  for (let i = 0; i < s2.length - 1; i++) {
-    const bg = s2.substr(i, 2);
-    const c = bigrams.get(bg) || 0;
-    if (c > 0) { hits++; bigrams.set(bg, c - 1); }
-  }
-
-  return (2.0 * hits) / (s1.length - 1 + s2.length - 1);
-}
-
 // ---------------------------------------------------------------------------
 // Stop Words & Generic Job Terms (to avoid matching generic vocabulary)
 // ---------------------------------------------------------------------------
@@ -79,19 +53,18 @@ const cleanAlphanumeric = (w) => w.toLowerCase().replace(/[^a-z0-9]/g, '');
  * Word-level Jaccard similarity.
  * Ignores common stopwords and generic job advertisement vocabulary to prevent baseline score inflation.
  */
-function wordJaccard(a, b) {
-  const tokenize = (s) => {
-    const tokens = new Set();
-    s.split(/\s+/).forEach(w => {
-      const cleaned = cleanAlphanumeric(w);
-      if (cleaned.length > 2 && !STOP_WORDS.has(cleaned) && !GENERIC_JOB_WORDS.has(cleaned)) {
-        tokens.add(cleaned);
-      }
-    });
-    return tokens;
-  };
-  const setA = tokenize(a);
-  const setB = tokenize(b);
+function tokenizeForJaccard(s) {
+  const tokens = new Set();
+  s.split(/\s+/).forEach(w => {
+    const cleaned = cleanAlphanumeric(w);
+    if (cleaned.length > 2 && !STOP_WORDS.has(cleaned) && !GENERIC_JOB_WORDS.has(cleaned)) {
+      tokens.add(cleaned);
+    }
+  });
+  return tokens;
+}
+
+function jaccardFromSets(setA, setB) {
   if (setA.size === 0 && setB.size === 0) return 1.0;
   if (setA.size === 0 || setB.size === 0) return 0;
 
@@ -106,25 +79,22 @@ function wordJaccard(a, b) {
  * Extracts high-value identifiers (Telegram handles, phone numbers, domain names).
  * Reduces weight of generic 4-digit numbers to avoid inflating standard ad similarity.
  */
-function keyEntityBonus(a, b) {
-  const extract = (s) => {
-    const handles = new Set();
-    const phones = new Set();
-    const numbers = new Set();
-    
-    // @handles (Telegram, WhatsApp usernames)
-    (s.match(/@[\w]{3,}/g) || []).forEach(m => handles.add(m.toLowerCase()));
-    // phone numbers (7+ consecutive digits)
-    (s.match(/\b\d{7,}\b/g) || []).forEach(m => phones.add(m));
-    // numeric figures (4-digit numbers)
-    (s.match(/\b\d{4}\b/g) || []).forEach(m => numbers.add(m));
-    
-    return { handles, phones, numbers };
-  };
+function extractEntities(s) {
+  const handles = new Set();
+  const phones = new Set();
+  const numbers = new Set();
 
-  const entA = extract(a);
-  const entB = extract(b);
+  // @handles (Telegram, WhatsApp usernames)
+  (s.match(/@[\w]{3,}/g) || []).forEach(m => handles.add(m.toLowerCase()));
+  // phone numbers (7+ consecutive digits)
+  (s.match(/\b\d{7,}\b/g) || []).forEach(m => phones.add(m));
+  // numeric figures (4-digit numbers)
+  (s.match(/\b\d{4}\b/g) || []).forEach(m => numbers.add(m));
 
+  return { handles, phones, numbers };
+}
+
+function entityBonus(entA, entB) {
   let bonus = 0;
 
   // Social handles matching is a major match (+0.35)
@@ -152,28 +122,70 @@ function keyEntityBonus(a, b) {
 // ---------------------------------------------------------------------------
 
 /**
- * Blended 3-signal similarity score.
+ * Precompute everything pairwise comparison needs (normalization, bigram
+ * counts, token set, key entities) for one text. For all-pairs workloads this
+ * turns O(n²·len) re-tokenization into O(n·len) preparation + cheap pair ops.
+ */
+export function prepareSimilarity(str) {
+  if (!str) return null;
+  const normalized = normalizeForCompare(str);
+  const compact = normalized.replace(/\s/g, '');
+  const bigrams = new Map();
+  for (let i = 0; i < compact.length - 1; i++) {
+    const bg = compact.substr(i, 2);
+    bigrams.set(bg, (bigrams.get(bg) || 0) + 1);
+  }
+  return {
+    normalized,
+    compact,
+    bigrams,
+    tokens: tokenizeForJaccard(normalized),
+    entities: extractEntities(str)
+  };
+}
+
+function diceFromPrepared(a, b) {
+  const s1 = a.compact;
+  const s2 = b.compact;
+  if (s1 === s2) return 1.0;
+  if (s1.length < 2 || s2.length < 2) return 0;
+
+  const used = new Map();
+  let hits = 0;
+  for (let i = 0; i < s2.length - 1; i++) {
+    const bg = s2.substr(i, 2);
+    const u = used.get(bg) || 0;
+    if (u < (a.bigrams.get(bg) || 0)) {
+      hits++;
+      used.set(bg, u + 1);
+    }
+  }
+  return (2.0 * hits) / (s1.length - 1 + s2.length - 1);
+}
+
+/**
+ * Blended 3-signal similarity score between two prepared texts.
  *
  * Signals:
  *  20% — Dice bigrams  (character-level structure, weighted lower to avoid baseline language inflation)
  *  40% — Word Jaccard  (specific keyword/concept overlap, excluding generic job terms)
  *  40% — Key entity bonus / exact matches
  */
-export function calculateSimilarity(str1, str2) {
-  if (!str1 || !str2) return 0;
+export function similarityFromPrepared(a, b) {
+  if (!a || !b) return 0;
+  if (a.normalized === b.normalized) return 1.0;
 
-  const bonus = keyEntityBonus(str1, str2);
-
-  const n1 = normalizeForCompare(str1);
-  const n2 = normalizeForCompare(str2);
-
-  if (n1 === n2) return 1.0;
-
-  const dice    = diceSimilarity(n1, n2);
-  const jaccard = wordJaccard(n1, n2);
+  const bonus   = entityBonus(a.entities, b.entities);
+  const dice    = diceFromPrepared(a, b);
+  const jaccard = jaccardFromSets(a.tokens, b.tokens);
 
   const blended = 0.20 * dice + 0.40 * jaccard + bonus;
   return Math.min(1.0, blended);
+}
+
+/** One-shot convenience wrapper around the prepared pipeline. */
+export function calculateSimilarity(str1, str2) {
+  return similarityFromPrepared(prepareSimilarity(str1), prepareSimilarity(str2));
 }
 
 /**

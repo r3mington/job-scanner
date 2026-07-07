@@ -681,6 +681,69 @@ export async function analyzeLanguageDialect(apiKey, modelName, { text, onStatus
   }
 }
 
+const HONEST_AD_SYSTEM_INSTRUCTION = `You are contributing to "The Honest Ad", a survivor-informed art installation about trafficking recruitment ads.
+Given a real scam recruitment advertisement and its forensic analysis, rewrite the ad as if the recruiter were legally required to tell the truth.
+
+Rules:
+- Select the 5 to 7 most emblematic lines/phrases of the original ad (salary, housing, contact, urgency, requirements...).
+- For each, write the honest counterpart: same format, same register, same emoji if present — but truthful content grounded ONLY in the provided red flags, playbook, and analysis. Example: "🏠 Free accommodation provided" → "🏠 A compound you will not be permitted to leave".
+- NEVER invent victim testimony or speak in a victim's voice. The honest lines describe what the OPERATION does, addressed to the reader ("you").
+- Quiet, factual menace. No gore, no melodrama, no exclamation marks in the honest lines.
+- The honest lines must be plausible for THIS specific ad — use its own numbers, place names, and handles.
+- Also write "epitaph": one short line (max 14 words) that closes the piece, plain and unsentimental.
+
+Output ONLY valid JSON:
+{
+  "lines": [
+    { "original": "string (exact or lightly condensed line from the ad, keep emoji)", "honest": "string (the truthful counterpart, similar length)" }
+  ],
+  "epitaph": "string"
+}`;
+
+/**
+ * "The Honest Ad" installation: rewrite a real scanned recruitment ad as if the
+ * recruiter were forced to tell the truth. Returns { lines: [{original, honest}], epitaph }.
+ * Caller should fall back to a curated set if this throws.
+ */
+export async function generateHonestAd(apiKey, modelName, { adText, flags, playbook, aiReview, onStatusUpdate }) {
+  if (!apiKey) throw new Error('Gemini API key is required');
+  const selectedModel = modelName || DEFAULT_MODEL;
+
+  const playbookStr = (playbook || []).map(p => `- ${p.phase}: ${p.tactic}`).join('\n');
+
+  const payload = {
+    systemInstruction: { parts: [{ text: HONEST_AD_SYSTEM_INSTRUCTION }] },
+    contents: [{
+      parts: [{
+        text: `THE ADVERTISEMENT:\n"""\n${adText}\n"""\n\nDETECTED RED FLAGS: ${(flags || []).join(', ') || 'None recorded'}\n\nPREDICTED PLAYBOOK:\n${playbookStr || 'None recorded'}\n\nANALYST REVIEW: ${aiReview || 'None recorded'}\n\nGenerate the honest rewrite JSON.`
+      }]
+    }],
+    generationConfig: {
+      responseMimeType: "application/json",
+      temperature: 0.4
+    }
+  };
+
+  const data = await postToGeminiWithFallback(apiKey, selectedModel, payload, onStatusUpdate);
+  if (!data.candidates || data.candidates.length === 0) {
+    throw new Error('No response returned from Gemini API.');
+  }
+  let cleanText = data.candidates[0].content.parts[0].text;
+  const firstBrace = cleanText.indexOf('{');
+  const lastBrace = cleanText.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace !== -1) {
+    cleanText = cleanText.substring(firstBrace, lastBrace + 1);
+  }
+  const parsed = JSON.parse(cleanText);
+  // Validate shape so a malformed generation can never break the installation.
+  if (!Array.isArray(parsed.lines) || parsed.lines.length < 3) throw new Error('Malformed honest-ad response');
+  parsed.lines = parsed.lines
+    .filter(l => l && typeof l.original === 'string' && typeof l.honest === 'string' && l.original.trim() && l.honest.trim())
+    .slice(0, 7);
+  if (parsed.lines.length < 3) throw new Error('Malformed honest-ad response');
+  return parsed;
+}
+
 /**
  * Translate the recruitment lines of "The Interview" art installation into the
  * languages of the Southeast Asia trafficking corridor. Used to render an ambient

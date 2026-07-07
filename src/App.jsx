@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
-import { Shield, Database, Settings, BarChart3, LogOut, Loader2, HelpCircle, Home, Flame, BookOpen, MessageSquare, Scale } from 'lucide-react';
+import { Shield, Database, Settings, BarChart3, LogOut, Loader2, HelpCircle, Home, BookOpen, MessageSquare, Scale, Frame } from 'lucide-react';
 import ScannerView from './pages/ScannerView';
 import FaqView from './pages/FaqView';
 import logoImg from './assets/logo.png';
@@ -12,10 +12,20 @@ import PosterProfileView from './pages/PosterProfileView';
 import DecoyContactView from './pages/DecoyContactView';
 import LearnView from './pages/LearnView';
 import HomeView from './pages/HomeView';
-import MemorialView from './pages/MemorialView';
 import TheInterviewView from './pages/TheInterviewView';
-import TheHonestAdView from './pages/TheHonestAdView';
 import { AuthProvider, useAuth } from './context/AuthContext';
+
+// The 3D gallery pulls in three.js — lazy-loaded so no other page pays for it.
+const TheGalleryView = lazy(() => import('./pages/TheGalleryView'));
+
+function GalleryLoading() {
+  return (
+    <div className="fixed inset-0 flex flex-col items-center justify-center gap-4" style={{ background: '#ece8df' }}>
+      <Loader2 className="w-6 h-6 animate-spin" style={{ color: '#b0873a' }} />
+      <p className="font-mono text-[10px] uppercase tracking-[0.3em]" style={{ color: '#8a7f66' }}>Preparing the hall…</p>
+    </div>
+  );
+}
 
 
 
@@ -83,10 +93,6 @@ function Layout({ children }) {
                 Arts Exhibition
               </div>
               <div className="flex flex-col gap-1.5">
-                <Link to="/witness" className={`flex items-center gap-3 px-3 py-2.5 rounded transition-all border ${location.pathname === '/witness' ? 'bg-[#0a0f18] border-slate-800 text-slate-400 font-bold' : 'border-transparent text-slate-600 hover:text-slate-400 hover:bg-slate-900/20'}`}>
-                  <Flame className="w-4 h-4" />
-                  <span>Witness</span>
-                </Link>
                 <Link to="/the-interview" className={`flex items-center gap-3 px-3 py-2.5 rounded transition-all border ${location.pathname === '/the-interview' ? 'bg-[#0a0f18] border-slate-800 text-slate-400 font-bold' : 'border-transparent text-slate-600 hover:text-slate-400 hover:bg-slate-900/20'}`}>
                   <MessageSquare className="w-4 h-4" />
                   <span>The Interview</span>
@@ -94,6 +100,10 @@ function Layout({ children }) {
                 <Link to="/the-honest-ad" className={`flex items-center gap-3 px-3 py-2.5 rounded transition-all border ${location.pathname === '/the-honest-ad' ? 'bg-[#0a0f18] border-slate-800 text-slate-400 font-bold' : 'border-transparent text-slate-600 hover:text-slate-400 hover:bg-slate-900/20'}`}>
                   <Scale className="w-4 h-4" />
                   <span>The Honest Ad</span>
+                </Link>
+                <Link to="/the-gallery" className={`flex items-center gap-3 px-3 py-2.5 rounded transition-all border ${location.pathname === '/the-gallery' ? 'bg-[#0a0f18] border-slate-800 text-slate-400 font-bold' : 'border-transparent text-slate-600 hover:text-slate-400 hover:bg-slate-900/20'}`}>
+                  <Frame className="w-4 h-4" />
+                  <span>The Gallery</span>
                 </Link>
               </div>
             </div>
@@ -184,9 +194,12 @@ function App() {
       <AuthProvider>
         <Routes>
           {/* Full-screen standalone routes — no Layout wrapper */}
-          <Route path="/witness" element={<MemorialView />} />
           <Route path="/the-interview" element={<TheInterviewView />} />
-          <Route path="/the-honest-ad" element={<TheHonestAdView />} />
+          <Route path="/the-gallery" element={
+            <Suspense fallback={<GalleryLoading />}>
+              <TheGalleryView />
+            </Suspense>
+          } />
 
           {/* All other routes inside Layout */}
           <Route path="/*" element={
