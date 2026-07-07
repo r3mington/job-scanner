@@ -521,7 +521,7 @@ export default function ReviewScan() {
       const modelName = profile?.gemini_model || localStorage.getItem('gemini_model');
 
       if (!apiKey) {
-        throw new Error('Please configure your Gemini API Key in Settings first.');
+        throw new Error('Gemini API Key is not configured. Please set the VITE_GEMINI_API_KEY environment variable.');
       }
 
       const response = await analyzeCrop(apiKey, modelName, { imageBase64: croppedDataUrl });
@@ -629,7 +629,7 @@ export default function ReviewScan() {
       const modelName = profile?.gemini_model || localStorage.getItem('gemini_model');
 
       if (!apiKey) {
-        throw new Error('Please configure your Gemini API Key in Settings first.');
+        throw new Error('Gemini API Key is not configured. Please set the VITE_GEMINI_API_KEY environment variable.');
       }
 
       const response = await analyzeLanguageDialect(apiKey, modelName, { text: rawText });
@@ -735,7 +735,7 @@ export default function ReviewScan() {
       const modelName = profile?.gemini_model || localStorage.getItem('gemini_model');
       
       if (!apiKey) {
-        throw new Error('Please configure your Gemini API Key in Settings first.');
+        throw new Error('Gemini API Key is not configured. Please set the VITE_GEMINI_API_KEY environment variable.');
       }
       
       const finalLanguage = posterLanguage === 'Other' ? customLanguage : posterLanguage;
@@ -1325,7 +1325,7 @@ export default function ReviewScan() {
       const modelName = profile?.gemini_model || localStorage.getItem('gemini_model');
       
       if (!apiKey) {
-        throw new Error('Please configure your Gemini API Key in Settings first.');
+        throw new Error('Gemini API Key is not configured. Please set the VITE_GEMINI_API_KEY environment variable.');
       }
 
       // Check for duplicate in database before calling Gemini API

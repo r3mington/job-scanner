@@ -219,7 +219,7 @@ export default function ScannerView() {
     const apiKey = getActiveApiKey();
     const modelName = profile?.gemini_model || localStorage.getItem('gemini_model');
     if (!apiKey) {
-      alert('Please configure your Gemini API Key in Settings first.');
+      alert('Gemini API Key is not configured. Please set the VITE_GEMINI_API_KEY environment variable.');
       return;
     }
 

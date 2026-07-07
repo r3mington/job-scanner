@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
-import { Shield, Database, Settings, BarChart3, LogOut, Loader2, HelpCircle, Home, Flame, BookOpen, MessageSquare } from 'lucide-react';
+import { Shield, Database, Settings, BarChart3, LogOut, Loader2, HelpCircle, Home, Flame, BookOpen, MessageSquare, Scale } from 'lucide-react';
 import ScannerView from './pages/ScannerView';
 import FaqView from './pages/FaqView';
 import logoImg from './assets/logo.png';
 import HistoryView from './pages/HistoryView';
-import SettingsView from './pages/SettingsView';
 import ReviewScan from './pages/ReviewScan';
 import DashboardView from './pages/DashboardView';
 import LoginView from './pages/LoginView';
@@ -15,6 +14,7 @@ import LearnView from './pages/LearnView';
 import HomeView from './pages/HomeView';
 import MemorialView from './pages/MemorialView';
 import TheInterviewView from './pages/TheInterviewView';
+import TheHonestAdView from './pages/TheHonestAdView';
 import { AuthProvider, useAuth } from './context/AuthContext';
 
 
@@ -69,10 +69,6 @@ function Layout({ children }) {
               <BarChart3 className="w-4 h-4" />
               <span>Dashboard</span>
             </Link>
-            <Link to="/settings" className={`flex items-center gap-3 px-3 py-2.5 rounded transition-all border ${location.pathname === '/settings' ? 'bg-[#0a0f18] border-slate-800 text-amber-400 font-bold' : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/30'}`}>
-              <Settings className="w-4 h-4" />
-              <span>Settings</span>
-            </Link>
             <Link to="/faq" className={`flex items-center gap-3 px-3 py-2.5 rounded transition-all border ${location.pathname === '/faq' ? 'bg-[#0a0f18] border-slate-800 text-amber-400 font-bold' : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/30'}`}>
               <HelpCircle className="w-4 h-4" />
               <span>FAQ</span>
@@ -94,6 +90,10 @@ function Layout({ children }) {
                 <Link to="/the-interview" className={`flex items-center gap-3 px-3 py-2.5 rounded transition-all border ${location.pathname === '/the-interview' ? 'bg-[#0a0f18] border-slate-800 text-slate-400 font-bold' : 'border-transparent text-slate-600 hover:text-slate-400 hover:bg-slate-900/20'}`}>
                   <MessageSquare className="w-4 h-4" />
                   <span>The Interview</span>
+                </Link>
+                <Link to="/the-honest-ad" className={`flex items-center gap-3 px-3 py-2.5 rounded transition-all border ${location.pathname === '/the-honest-ad' ? 'bg-[#0a0f18] border-slate-800 text-slate-400 font-bold' : 'border-transparent text-slate-600 hover:text-slate-400 hover:bg-slate-900/20'}`}>
+                  <Scale className="w-4 h-4" />
+                  <span>The Honest Ad</span>
                 </Link>
               </div>
             </div>
@@ -172,10 +172,6 @@ function Layout({ children }) {
             <BarChart3 className="w-5 h-5 mb-1" />
             <span className="text-[10px] font-mono uppercase tracking-wider">Dashboard</span>
           </Link>
-          <Link to="/settings" className={`flex-1 flex flex-col items-center justify-center py-2.5 transition-colors ${location.pathname === '/settings' ? 'text-amber-450 font-bold' : 'text-slate-500 hover:text-slate-300'}`}>
-            <Settings className="w-5 h-5 mb-1" />
-            <span className="text-[10px] font-mono uppercase tracking-wider">Settings</span>
-          </Link>
         </nav>
       </div>
     </div>
@@ -190,6 +186,7 @@ function App() {
           {/* Full-screen standalone routes — no Layout wrapper */}
           <Route path="/witness" element={<MemorialView />} />
           <Route path="/the-interview" element={<TheInterviewView />} />
+          <Route path="/the-honest-ad" element={<TheHonestAdView />} />
 
           {/* All other routes inside Layout */}
           <Route path="/*" element={
@@ -200,7 +197,6 @@ function App() {
                 <Route path="/review" element={<ReviewScan />} />
                 <Route path="/history" element={<HistoryView />} />
                 <Route path="/dashboard" element={<DashboardView />} />
-                <Route path="/settings" element={<SettingsView />} />
                 <Route path="/poster/:contactId" element={<PosterProfileView />} />
                 <Route path="/decoy-contact" element={<DecoyContactView />} />
                 <Route path="/faq" element={<FaqView />} />

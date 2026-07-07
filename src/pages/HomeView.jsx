@@ -5,8 +5,7 @@ import {
   ArrowRight, Layers, FileText, ScanSearch, Database, Activity,
   Upload, Cpu, ClipboardCheck, BookOpen, HardDrive, Cloud
 } from 'lucide-react';
-import { supabase, isSupabaseConfigured } from '../utils/supabaseClient';
-import { getActiveApiKey } from '../utils/apiKey';
+import { supabase, isSupabaseConfigured, mapDbToRecord } from '../utils/supabaseClient';
 import { useAuth } from '../context/AuthContext';
 import logoImg from '../assets/logo.png';
 
@@ -84,31 +83,37 @@ export default function HomeView() {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ totalScans: 0, highRiskScans: 0, totalHubs: 0 });
   const [recentScans, setRecentScans] = useState([]);
-  const [hasApiKey, setHasApiKey] = useState(false);
 
   useEffect(() => {
-    setHasApiKey(!!getActiveApiKey());
-
     async function loadStats() {
       try {
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from('scans')
           .select('id, timestamp, job_title, employer, risk_score, risk_level, location_country, source_platform, extracted_data, original_image_url');
 
+        if (error) throw error;
+
         if (data) {
+          const mapped = data.map(mapDbToRecord);
           const contactSet = new Set();
-          data.forEach(s => {
-            const method = s.extracted_data?.contact_method;
-            if (method && method.trim()) contactSet.add(method.trim().toLowerCase());
+          mapped.forEach(s => {
+            let ext = s.extractedData;
+            if (typeof ext === 'string') {
+              try { ext = JSON.parse(ext); } catch { ext = null; }
+            }
+            const method = ext?.contact_method || ext?.contactMethod;
+            if (method && typeof method === 'string' && method.trim()) {
+              contactSet.add(method.trim().toLowerCase());
+            }
           });
 
           setStats({
-            totalScans: data.length,
-            highRiskScans: data.filter(s => s.risk_score >= HIGH_RISK_THRESHOLD).length,
+            totalScans: mapped.length,
+            highRiskScans: mapped.filter(s => (s.riskScore || 0) >= HIGH_RISK_THRESHOLD).length,
             totalHubs: contactSet.size
           });
 
-          const sorted = [...data].sort(
+          const sorted = [...mapped].sort(
             (a, b) => (new Date(b.timestamp).getTime() || 0) - (new Date(a.timestamp).getTime() || 0)
           );
           setRecentScans(sorted.slice(0, 3));
@@ -124,7 +129,7 @@ export default function HomeView() {
 
   const hasScans = stats.totalScans > 0;
   const displayName = user?.email ? user.email.split('@')[0] : 'Analyst';
-  const setupComplete = hasApiKey && hasScans;
+  const setupComplete = hasScans;
 
   return (
     <div className="space-y-8 select-text pb-10">
@@ -178,14 +183,6 @@ export default function HomeView() {
           <div className="grid grid-cols-1 gap-3">
             <ChecklistStep
               stepNumber="1"
-              done={hasApiKey}
-              title="Add your Gemini API key"
-              description="The AI analysis engine needs a Google Gemini key. It is kept in this browser session only and never leaves your device."
-              actionLabel="Open Settings"
-              to="/settings"
-            />
-            <ChecklistStep
-              stepNumber="2"
               done={hasScans}
               title="Run your first scan"
               description="Upload a screenshot, paste the text of a job ad, or import a CSV batch. Sentinel extracts the details and scores the risk."
@@ -193,7 +190,7 @@ export default function HomeView() {
               to="/scanner"
             />
             <ChecklistStep
-              stepNumber="3"
+              stepNumber="2"
               done={hasScans}
               title="Review your findings"
               description="Every scan lands in the Audit Registry, where you can inspect risk flags, compare postings, and export reports."
@@ -280,8 +277,8 @@ export default function HomeView() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {recentScans.map(scan => {
-              const isHigh = scan.risk_score >= HIGH_RISK_THRESHOLD;
-              const isMed = scan.risk_score >= 30;
+              const isHigh = scan.riskScore >= HIGH_RISK_THRESHOLD;
+              const isMed = scan.riskScore >= 30;
               const badgeColor = isHigh
                 ? 'text-red-500 bg-red-500/10 border-red-500/20'
                 : isMed
@@ -295,10 +292,10 @@ export default function HomeView() {
                   className="group rounded-xl border border-slate-800 bg-[#111318] overflow-hidden hover:border-slate-700 transition-all duration-300 cursor-pointer shadow-sm flex flex-col hover:shadow-lg hover:shadow-slate-950/50"
                 >
                   <div className="relative aspect-video w-full bg-slate-950 overflow-hidden border-b border-slate-800">
-                    {scan.original_image_url ? (
+                    {scan.originalImageUrl ? (
                       <img
-                        src={scan.original_image_url}
-                        alt={scan.job_title}
+                        src={scan.originalImageUrl}
+                        alt={scan.jobTitle}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                       />
                     ) : (
@@ -317,14 +314,14 @@ export default function HomeView() {
                     <div className="space-y-1">
                       <div className="flex items-center justify-between gap-2">
                         <span className={`text-[9px] font-mono font-bold px-2 py-0.5 rounded border ${badgeColor}`}>
-                          RISK {scan.risk_score}%
+                          RISK {scan.riskScore}%
                         </span>
                         <span className="text-[9px] font-mono text-slate-500 truncate max-w-[120px]">
-                          {scan.location_country || 'Global'}
+                          {scan.locationCountry || 'Global'}
                         </span>
                       </div>
                       <h4 className="text-xs font-bold text-slate-200 group-hover:text-amber-400 transition-colors line-clamp-1 mt-1">
-                        {scan.job_title || 'Unknown Title'}
+                        {scan.jobTitle || 'Unknown Title'}
                       </h4>
                     </div>
                     <p className="text-[10px] text-slate-500 truncate">
