@@ -13,18 +13,6 @@ const getSupabaseCreds = () => {
     return { url: envUrl.trim(), key: envKey.trim(), isConfigured: true };
   }
   
-  const localUrl = localStorage.getItem('supabase_url') || '';
-  const localKey = localStorage.getItem('supabase_anon_key') || '';
-  
-  const isLocalValid = 
-    localUrl && localUrl.trim() && 
-    !localUrl.includes('placeholder') && 
-    !localUrl.includes('your-project');
-    
-  if (isLocalValid) {
-    return { url: localUrl.trim(), key: localKey.trim(), isConfigured: true };
-  }
-  
   return { url: '', key: '', isConfigured: false };
 };
 
@@ -253,7 +241,7 @@ export async function uploadBase64Image(base64Data) {
     return base64Data; // Already a URL or empty
   }
 
-  const bucketName = localStorage.getItem('supabase_bucket') || 'scans-images';
+  const bucketName = import.meta.env.VITE_SUPABASE_BUCKET || 'scans-images';
   
   // Extract content type and raw base64 data
   const parts = base64Data.split(';base64,');
