@@ -60,7 +60,7 @@ export default function HistoryView() {
       setLoading(true);
       const { data, error } = await supabase
         .from('scans')
-        .select('*')
+        .select('id, timestamp, job_title, employer, risk_score, risk_level, location_country, parsed_salary_usd, detected_language, is_translated, source_platform, notes, batch_id, batch_name, user_id, extracted_data')
         .order('timestamp', { ascending: false });
 
       if (error) throw error;

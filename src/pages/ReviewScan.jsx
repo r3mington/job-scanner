@@ -1238,26 +1238,58 @@ export default function ReviewScan() {
     }
 
     if (scanInput.isExistingScan) {
-      // Viewing/Editing an existing history record
-      setFormData(scanInput.extractedData);
-      setActiveFlags(scanInput.activeFlags || []);
-      setOcrText(scanInput.ocrText || null);
-      setAiReview(scanInput.aiReview || '');
-      setParsedSalaryUsd(scanInput.parsedSalaryUsd || null);
-      setLocationCountry(scanInput.locationCountry || null);
-      setDetectedLanguage(scanInput.detectedLanguage || 'English');
-      setIsTranslated(scanInput.isTranslated || false);
-      setTranslatedText(scanInput.translatedText || null);
-      setNormalizedText(scanInput.normalizedText || '');
-      setNotes(scanInput.notes || '');
-      setSourcePlatform(scanInput.sourcePlatform || 'unspecified');
-      setSourceUrl(scanInput.sourceUrl || 'unspecified');
-      setIngestionMethod(scanInput.ingestionMethod || 'Analyst Upload');
-      setPostDate(scanInput.postDate || 'unspecified');
-      setSuspiciousSpans(scanInput.extractedData?.suspicious_spans || []);
-      setPredictedPlaybook(scanInput.extractedData?.predicted_playbook || []);
-      setAuditStatus(scanInput.extractedData?.audit_status || 'pending');
-      setLoading(false);
+      if (scanInput.ocrText === undefined && scanInput.id) {
+        setLoading(true);
+        supabase.from('scans').select('*').eq('id', scanInput.id).single()
+          .then(({ data, error }) => {
+            if (error) {
+              setError("Failed to fetch full scan details: " + error.message);
+              setLoading(false);
+            } else if (data) {
+              const fullScan = mapDbToRecord(data);
+              setFormData(fullScan.extractedData);
+              setActiveFlags(fullScan.activeFlags || []);
+              setOcrText(fullScan.ocrText || null);
+              setAiReview(fullScan.aiReview || '');
+              setParsedSalaryUsd(fullScan.parsedSalaryUsd || null);
+              setLocationCountry(fullScan.locationCountry || null);
+              setDetectedLanguage(fullScan.detectedLanguage || 'English');
+              setIsTranslated(fullScan.isTranslated || false);
+              setTranslatedText(fullScan.translatedText || null);
+              setNormalizedText(fullScan.normalizedText || '');
+              setNotes(fullScan.notes || '');
+              setSourcePlatform(fullScan.sourcePlatform || 'unspecified');
+              setSourceUrl(fullScan.sourceUrl || 'unspecified');
+              setIngestionMethod(fullScan.ingestionMethod || 'Analyst Upload');
+              setPostDate(fullScan.postDate || 'unspecified');
+              setSuspiciousSpans(fullScan.extractedData?.suspicious_spans || []);
+              setPredictedPlaybook(fullScan.extractedData?.predicted_playbook || []);
+              setAuditStatus(fullScan.extractedData?.audit_status || 'pending');
+              setLoading(false);
+            }
+          });
+      } else {
+        // Viewing/Editing an existing history record
+        setFormData(scanInput.extractedData);
+        setActiveFlags(scanInput.activeFlags || []);
+        setOcrText(scanInput.ocrText || null);
+        setAiReview(scanInput.aiReview || '');
+        setParsedSalaryUsd(scanInput.parsedSalaryUsd || null);
+        setLocationCountry(scanInput.locationCountry || null);
+        setDetectedLanguage(scanInput.detectedLanguage || 'English');
+        setIsTranslated(scanInput.isTranslated || false);
+        setTranslatedText(scanInput.translatedText || null);
+        setNormalizedText(scanInput.normalizedText || '');
+        setNotes(scanInput.notes || '');
+        setSourcePlatform(scanInput.sourcePlatform || 'unspecified');
+        setSourceUrl(scanInput.sourceUrl || 'unspecified');
+        setIngestionMethod(scanInput.ingestionMethod || 'Analyst Upload');
+        setPostDate(scanInput.postDate || 'unspecified');
+        setSuspiciousSpans(scanInput.extractedData?.suspicious_spans || []);
+        setPredictedPlaybook(scanInput.extractedData?.predicted_playbook || []);
+        setAuditStatus(scanInput.extractedData?.audit_status || 'pending');
+        setLoading(false);
+      }
     } else {
       // New scan - call Gemini API
       setSourcePlatform(scanInput.sourcePlatform || 'unspecified');

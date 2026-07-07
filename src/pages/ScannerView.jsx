@@ -950,6 +950,39 @@ export default function ScannerView() {
               >
                 <Play className="w-4 h-4 fill-current animate-pulse" /> Start Batch Scan ({batchRows.length} Items)
               </button>
+              {batchLogs.length > 0 && (
+                <div className="flex gap-2 w-full mt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const logText = batchLogs.map(log => `[${log.time}] [${log.type.toUpperCase()}] ${log.message}`).join('\n');
+                      const blob = new Blob([logText], { type: 'text/plain' });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `batch_scan_log_${Date.now()}.txt`;
+                      document.body.appendChild(a);
+                      a.click();
+                      document.body.removeChild(a);
+                      URL.revokeObjectURL(url);
+                    }}
+                    className="flex-1 py-2 bg-slate-900 border border-slate-800 hover:bg-slate-850 text-amber-500 font-mono font-bold text-[10px] uppercase tracking-wider rounded flex items-center justify-center gap-1.5 transition-colors"
+                  >
+                    <Download className="w-3.5 h-3.5" /> Export Import Logs
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const logText = batchLogs.map(log => `[${log.time}] [${log.type.toUpperCase()}] ${log.message}`).join('\n');
+                      navigator.clipboard.writeText(logText);
+                      alert('Logs copied to clipboard!');
+                    }}
+                    className="flex-1 py-2 bg-slate-900 border border-slate-800 hover:bg-slate-850 text-slate-400 font-mono font-bold text-[10px] uppercase tracking-wider rounded flex items-center justify-center gap-1.5 transition-colors"
+                  >
+                    <Copy className="w-3.5 h-3.5" /> Copy Log Dump
+                  </button>
+                </div>
+              )}
               {batchRows.length === 0 && (
                 <p className="text-[10px] font-mono text-slate-500 text-center uppercase tracking-wider">
                   Please upload or drop a CSV file to initialize batch scan
