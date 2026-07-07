@@ -257,7 +257,7 @@ export async function postToGeminiWithFallback(apiKey, requestedModel, payload, 
   // fastest, dependency-free path and the edge proxy is only a fallback.
   // Without a client key, the edge function (server-held key) is the only
   // viable route, so don't waste a doomed direct attempt.
-  const transports = apiKey ? ['direct', 'edge'] : ['edge'];
+  const transports = apiKey ? ['edge', 'direct'] : ['edge'];
 
   for (const transport of transports) {
     if (transport === 'edge' && edgeUnavailable) continue;
