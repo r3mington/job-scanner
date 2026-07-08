@@ -364,6 +364,7 @@ export default function ReviewScan() {
   
   const [activeFlags, setActiveFlags] = useState([]);
   const [ocrText, setOcrText] = useState(null);
+  const [originalText, setOriginalText] = useState(scanInput?.text || scanInput?.originalText || '');
   const [aiReview, setAiReview] = useState('');
   const [parsedSalaryUsd, setParsedSalaryUsd] = useState(null);
   const [locationCountry, setLocationCountry] = useState(null);
@@ -1150,11 +1151,12 @@ export default function ReviewScan() {
               setError("Failed to fetch full scan details: " + error.message);
               setLoading(false);
             } else if (data) {
-              const fullScan = mapDbToRecord(data);
-              setFormData(fullScan.extractedData);
-              setActiveFlags(fullScan.activeFlags || []);
-              setOcrText(fullScan.ocrText || null);
-              setAiReview(fullScan.aiReview || '');
+               const fullScan = mapDbToRecord(data);
+               setFormData(fullScan.extractedData);
+               setActiveFlags(fullScan.activeFlags || []);
+               setOcrText(fullScan.ocrText || null);
+               setOriginalText(fullScan.originalText || '');
+               setAiReview(fullScan.aiReview || '');
               setParsedSalaryUsd(fullScan.parsedSalaryUsd || null);
               setLocationCountry(fullScan.locationCountry || null);
               setDetectedLanguage(fullScan.detectedLanguage || 'English');
@@ -1177,6 +1179,7 @@ export default function ReviewScan() {
         setFormData(scanInput.extractedData);
         setActiveFlags(scanInput.activeFlags || []);
         setOcrText(scanInput.ocrText || null);
+        setOriginalText(scanInput.originalText || scanInput.text || '');
         setAiReview(scanInput.aiReview || '');
         setParsedSalaryUsd(scanInput.parsedSalaryUsd || null);
         setLocationCountry(scanInput.locationCountry || null);
@@ -2037,7 +2040,7 @@ export default function ReviewScan() {
           <div className="relative w-[65%] pl-12 pr-6 py-5" style={{ zIndex: 2 }}>
             {activeTabInput === 'original' && (
               <div className="text-sm leading-7 whitespace-pre-wrap select-text font-mono text-slate-300">
-                {highlightWords(ocrText || scanInput?.text || scanInput?.originalText || 'No input text provided.', suspiciousSpans, showHighlights, false, hoveredKey, setHoveredKey)}
+                {highlightWords(originalText || ocrText || 'No input text provided.', suspiciousSpans, showHighlights, false, hoveredKey, setHoveredKey)}
               </div>
             )}
             {isTranslated && activeTabInput === 'translation' && (
@@ -2780,14 +2783,14 @@ export default function ReviewScan() {
         const oldText = comparisonTarget.normalizedText || '';
         const newText = normalizedTextVal;
         
-        const extractHandles = (s) => new Set((s.match(/@[\w]{3,}/g) || []).map(m => m.toLowerCase()));
-        const sharedHandles = Array.from(extractHandles(comparisonTarget.originalText || '')).filter(h => extractHandles(scanInput?.text || scanInput?.originalText || ocrText || '').has(h));
-
-        const extractPhones = (s) => new Set(s.match(/\b\d{7,}\b/g) || []);
-        const sharedPhones = Array.from(extractPhones(comparisonTarget.originalText || '')).filter(p => extractPhones(scanInput?.text || scanInput?.originalText || ocrText || '').has(p));
-
-        const extractNumbers = (s) => new Set(s.match(/\b\d{4}\b/g) || []);
-        const sharedNumbers = Array.from(extractNumbers(comparisonTarget.originalText || '')).filter(n => extractNumbers(scanInput?.text || scanInput?.originalText || ocrText || '').has(n));
+         const extractHandles = (s) => new Set((s.match(/@[\w]{3,}/g) || []).map(m => m.toLowerCase()));
+         const sharedHandles = Array.from(extractHandles(comparisonTarget.originalText || '')).filter(h => extractHandles(originalText || ocrText || '').has(h));
+ 
+         const extractPhones = (s) => new Set(s.match(/\b\d{7,}\b/g) || []);
+         const sharedPhones = Array.from(extractPhones(comparisonTarget.originalText || '')).filter(p => extractPhones(originalText || ocrText || '').has(p));
+ 
+         const extractNumbers = (s) => new Set(s.match(/\b\d{4}\b/g) || []);
+         const sharedNumbers = Array.from(extractNumbers(comparisonTarget.originalText || '')).filter(n => extractNumbers(originalText || ocrText || '').has(n));
 
         const clean = (w) => w.toLowerCase().replace(/[^a-z0-9]/g, '');
         const tokenize = (s) => new Set(s.split(/\s+/).map(clean).filter(c => c.length > 2 && !STOP_WORDS.has(c) && !GENERIC_JOB_WORDS.has(c)));
@@ -2981,7 +2984,7 @@ export default function ReviewScan() {
                         : (comparisonTarget.originalText || comparisonTarget.ocrText || '');
                       const textNew = comparisonMode === 'normalized'
                         ? (normalizedTextVal)
-                        : (scanInput?.text || scanInput?.originalText || ocrText || '');
+                        : (originalText || ocrText || '');
                       
                       if (comparisonMode === 'normalized') {
                         const { oldResult } = computeKeywordMatches(textOld, textNew);
@@ -3025,7 +3028,7 @@ export default function ReviewScan() {
                         : (comparisonTarget.originalText || comparisonTarget.ocrText || '');
                       const textNew = comparisonMode === 'normalized'
                         ? (normalizedTextVal)
-                        : (scanInput?.text || scanInput?.originalText || ocrText || '');
+                        : (originalText || ocrText || '');
 
                       if (comparisonMode === 'normalized') {
                         const { newResult } = computeKeywordMatches(textOld, textNew);
