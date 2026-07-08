@@ -93,17 +93,13 @@ function Layout({ children }) {
                 Arts Exhibition
               </div>
               <div className="flex flex-col gap-1.5">
-                <Link to="/the-interview" className={`flex items-center gap-3 px-3 py-2.5 rounded transition-all border ${location.pathname === '/the-interview' ? 'bg-[#0a0f18] border-slate-800 text-slate-400 font-bold' : 'border-transparent text-slate-600 hover:text-slate-400 hover:bg-slate-900/20'}`}>
-                  <MessageSquare className="w-4 h-4" />
-                  <span>The Interview</span>
-                </Link>
-                <Link to="/the-honest-ad" className={`flex items-center gap-3 px-3 py-2.5 rounded transition-all border ${location.pathname === '/the-honest-ad' ? 'bg-[#0a0f18] border-slate-800 text-slate-400 font-bold' : 'border-transparent text-slate-600 hover:text-slate-400 hover:bg-slate-900/20'}`}>
-                  <Scale className="w-4 h-4" />
-                  <span>The Honest Ad</span>
-                </Link>
                 <Link to="/the-gallery" className={`flex items-center gap-3 px-3 py-2.5 rounded transition-all border ${location.pathname === '/the-gallery' ? 'bg-[#0a0f18] border-slate-800 text-slate-400 font-bold' : 'border-transparent text-slate-600 hover:text-slate-400 hover:bg-slate-900/20'}`}>
                   <Frame className="w-4 h-4" />
                   <span>The Gallery</span>
+                </Link>
+                <Link to="/the-interview" className={`flex items-center gap-3 px-3 py-2.5 rounded transition-all border ${location.pathname === '/the-interview' ? 'bg-[#0a0f18] border-slate-800 text-slate-400 font-bold' : 'border-transparent text-slate-600 hover:text-slate-400 hover:bg-slate-900/20'}`}>
+                  <MessageSquare className="w-4 h-4" />
+                  <span>The Interview</span>
                 </Link>
               </div>
             </div>
