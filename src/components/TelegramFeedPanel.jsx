@@ -209,29 +209,35 @@ export default function TelegramFeedPanel() {
 
       {/* Latest Ingested Post */}
       {latestPost && (
-        <div className="bg-[#111318] border border-slate-800 rounded p-3.5 space-y-2 font-sans transition-all duration-300">
-          <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+        <div className="bg-[#111318] border border-slate-800 rounded p-5 space-y-3 font-sans transition-all duration-300 shadow-md">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
             <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
-              <span className="text-[10px] font-mono uppercase tracking-widest text-slate-450 font-bold">Latest Ingested Post</span>
+              <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse" />
+              <span className="text-xs font-mono uppercase tracking-widest text-slate-300 font-bold">Latest Ingested Post</span>
             </div>
-            <span className={`text-[10px] font-mono font-black px-2 py-0.5 rounded border ${
+            <span className={`text-xs font-mono font-black px-2.5 py-1 rounded border ${
               latestPost.score >= 60 
                 ? 'bg-red-500/15 border-red-500/25 text-red-400' 
                 : latestPost.score >= 30 
                   ? 'bg-amber-500/15 border-amber-500/25 text-amber-400' 
-                  : 'bg-emerald-500/15 border-emerald-500/25 text-emerald-405'
+                  : 'bg-emerald-500/15 border-emerald-500/25 text-emerald-400'
             }`}>
               {latestPost.score}% RISK
             </span>
           </div>
 
-          <div className="flex items-center justify-between text-[10px] font-mono text-slate-500">
+          <div className="flex items-center justify-between text-xs font-mono text-slate-400">
             <span>📡 @{latestPost.channel}</span>
             <span>{new Date(latestPost.timestamp).toLocaleTimeString()}</span>
           </div>
 
-          <div className="bg-[#0a0c12]/40 border border-slate-900 rounded p-2.5 max-h-32 overflow-y-auto text-xs font-mono text-slate-350 whitespace-pre-wrap leading-relaxed select-text">
+          {latestPost.title && (
+            <div className="bg-[#0a0c12]/30 border border-slate-900 rounded px-3 py-2 text-sm font-mono font-bold text-slate-200 uppercase tracking-wide">
+              💼 {latestPost.title}
+            </div>
+          )}
+
+          <div className="bg-[#0a0c12]/40 border border-slate-900 rounded p-3.5 max-h-56 overflow-y-auto text-sm font-mono text-slate-300 whitespace-pre-wrap leading-relaxed select-text">
             {latestPost.text}
           </div>
         </div>

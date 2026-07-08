@@ -211,13 +211,17 @@ export default function useTelegramFeed({ user, profile }) {
         }
 
         addLog('info', `@${ch.username}: ${fetched.posts.length} new post${fetched.posts.length > 1 ? 's' : ''} — screening…`);
-        const batch = fetched.posts.slice(0, MAX_POSTS_PER_TICK);
+        const sortedPosts = [...fetched.posts].sort((a, b) => b.id - a.id);
+        const batch = sortedPosts.slice(0, MAX_POSTS_PER_TICK);
 
         for (const post of batch) {
           if (!runningRef.current) break;
           try {
             const res = await scanPost(ch.username, post);
-            setCursor(ch.username, post.id);
+            const currentCursor = getCursor(ch.username);
+            if (post.id > currentCursor) {
+              setCursor(ch.username, post.id);
+            }
             if (res.skipped) {
               addLog('info', `➜ @${ch.username}/#${post.id} already in registry — skipped.`);
             } else {
@@ -242,7 +246,10 @@ export default function useTelegramFeed({ user, profile }) {
               return;
             }
             addLog('error', `✘ @${ch.username}/#${post.id}: ${err.message}`);
-            setCursor(ch.username, post.id); // don't wedge the queue on a bad post
+            const currentCursor = getCursor(ch.username);
+            if (post.id > currentCursor) {
+              setCursor(ch.username, post.id); // don't wedge the queue on a bad post
+            }
           }
           await new Promise(r => setTimeout(r, SCAN_GAP_MS));
         }
