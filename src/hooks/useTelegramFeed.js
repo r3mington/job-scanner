@@ -50,6 +50,7 @@ export default function useTelegramFeed({ user, profile }) {
   const [stats, setStats] = useState({ screened: 0, flagged: 0 });
   const [lastPollAt, setLastPollAt] = useState(null);
   const [usingSnapshot, setUsingSnapshot] = useState(false);
+  const [latestPost, setLatestPost] = useState(null);
 
   const timerRef = useRef(null);
   const busyRef = useRef(false);
@@ -221,6 +222,14 @@ export default function useTelegramFeed({ user, profile }) {
               setStats(s => ({ screened: s.screened + 1, flagged: s.flagged + (flagged ? 1 : 0) }));
               addLog(flagged ? 'flag' : 'success',
                 `${flagged ? '⚠ FLAGGED' : '✔ CLEARED'} — "${(res.title || '').slice(0, 55)}" · ${res.score}%${flagged && res.flags.length ? ' · ' + res.flags.slice(0, 3).join(', ') : ''}`);
+              setLatestPost({
+                channel: ch.username,
+                title: res.title,
+                text: post.text,
+                score: res.score,
+                flagged,
+                timestamp: post.date ? new Date(post.date).getTime() : Date.now()
+              });
             }
           } catch (err) {
             if (err.fatal) {
@@ -261,13 +270,14 @@ export default function useTelegramFeed({ user, profile }) {
   const resetCursors = useCallback(() => {
     channelsRef.current.forEach(c => localStorage.removeItem(CURSOR_KEY(c.username)));
     setStats({ screened: 0, flagged: 0 });
+    setLatestPost(null);
     addLog('info', 'Cursors reset — next poll re-screens from the oldest visible post.');
   }, [addLog]);
 
   useEffect(() => () => clearInterval(timerRef.current), []);
 
   return {
-    channels, running, logs, stats, lastPollAt, usingSnapshot,
+    channels, running, logs, stats, lastPollAt, usingSnapshot, latestPost,
     start, stop, addChannel, toggleChannel, removeChannel, resetCursors,
   };
 }
