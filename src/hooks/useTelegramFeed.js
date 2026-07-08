@@ -205,7 +205,10 @@ export default function useTelegramFeed({ user, profile }) {
           continue;
         }
         if (!fetched.live) addLog('info', `@${ch.username}: live feed unreachable — replaying bundled snapshot.`);
-        if (fetched.posts.length === 0) continue;
+        if (fetched.posts.length === 0) {
+          addLog('info', `✔ @${ch.username}: up to date.`);
+          continue;
+        }
 
         addLog('info', `@${ch.username}: ${fetched.posts.length} new post${fetched.posts.length > 1 ? 's' : ''} — screening…`);
         const batch = fetched.posts.slice(0, MAX_POSTS_PER_TICK);
@@ -254,7 +257,7 @@ export default function useTelegramFeed({ user, profile }) {
     if (runningRef.current) return;
     runningRef.current = true;
     setRunning(true);
-    addLog('info', 'Monitoring started — polling public channel previews every 60s.');
+    addLog('info', 'Monitoring started — polling public channel previews every 45s.');
     tick();
     timerRef.current = setInterval(tick, POLL_MS);
   }, [tick, addLog]);
