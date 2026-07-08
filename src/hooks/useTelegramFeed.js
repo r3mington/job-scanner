@@ -23,9 +23,9 @@ import { TELEGRAM_SNAPSHOT } from '../data/telegramSnapshot';
 
 const CHANNELS_KEY = 'tg_feed_channels_v1';
 const CURSOR_KEY = (ch) => `tg_feed_cursor_${ch}`;
-const POLL_MS = 30_000;
-const MAX_POSTS_PER_TICK = 10;   // bound Gemini spend per poll
-const SCAN_GAP_MS = 2000;       // same pacing as the CSV batch pipeline
+const POLL_MS = 45_000;
+const MAX_POSTS_PER_TICK = 8;   // bound Gemini spend per poll
+const SCAN_GAP_MS = 6000;       // same pacing as the CSV batch pipeline
 
 const DEFAULT_CHANNELS = [
   { username: 'workinuae', title: 'Work in UAE 🇦🇪', active: true },
