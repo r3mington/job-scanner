@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase, mapDbToRecord } from '../utils/supabaseClient';
-import { Search, ChevronRight, ChevronDown, ChevronUp, AlertTriangle, Briefcase, MapPin, Folder, Trash2, Globe, DollarSign, Languages, FileText, ShieldAlert, List, Network } from 'lucide-react';
+import { Search, ChevronRight, ChevronDown, ChevronUp, AlertTriangle, Briefcase, MapPin, Folder, Trash2, Globe, DollarSign, Languages, FileText, ShieldAlert, List, Network, Radio } from 'lucide-react';
 import { format } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import { getCleanContactValue } from './DashboardView';
@@ -52,6 +52,7 @@ export default function HistoryView() {
   const [expandedBatches, setExpandedBatches] = useState([]);
   const [viewType, setViewType] = useState('list'); // 'list', 'graph'
   const [sortBy, setSortBy] = useState('date'); // 'date', 'status', 'risk'
+  const [sourceFilter, setSourceFilter] = useState('all'); // 'all', 'manual', 'feed'
   const [scans, setScans] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showBriefing, setShowBriefing] = useState(() => {
@@ -66,7 +67,7 @@ export default function HistoryView() {
       // per row; the list only needs two of its subfields, so pull just those.
       const { data, error } = await supabase
         .from('scans')
-        .select('id, timestamp, job_title, employer, risk_score, risk_level, location_country, parsed_salary_usd, detected_language, is_translated, source_platform, notes, batch_id, batch_name, user_id, audit_status:extracted_data->>audit_status, contact_method:extracted_data->>contact_method')
+        .select('id, timestamp, job_title, employer, risk_score, risk_level, location_country, parsed_salary_usd, detected_language, is_translated, source_platform, notes, batch_id, batch_name, user_id, ingestion_method, audit_status:extracted_data->>audit_status, contact_method:extracted_data->>contact_method')
         .order('timestamp', { ascending: false });
 
       if (error) throw error;
@@ -97,11 +98,17 @@ export default function HistoryView() {
     fetchScans();
   }, []);
 
-  const filteredScans = scans?.filter(scan => 
-    (scan.jobTitle?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
-    (scan.employer?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
-    (scan.batchName?.toLowerCase() || '').includes(searchQuery.toLowerCase())
-  );
+  const isLiveFeed = (scan) => scan.ingestionMethod === 'Telegram Live Feed';
+
+  const filteredScans = scans?.filter(scan => {
+    if (sourceFilter === 'feed' && !isLiveFeed(scan)) return false;
+    if (sourceFilter === 'manual' && isLiveFeed(scan)) return false;
+    return (
+      (scan.jobTitle?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
+      (scan.employer?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
+      (scan.batchName?.toLowerCase() || '').includes(searchQuery.toLowerCase())
+    );
+  });
 
   const toggleBatchExpand = (batchId) => {
     setExpandedBatches(prev => 
@@ -252,6 +259,7 @@ export default function HistoryView() {
           const newGroup = {
             id: scan.batchId,
             isBatch: true,
+            isLiveFeed: isLiveFeed(scan) || scan.batchId?.startsWith('tgfeed_'),
             batchId: scan.batchId,
             batchName: scan.batchName || 'Imported Batch',
             timestamp: scan.timestamp,
@@ -393,6 +401,19 @@ export default function HistoryView() {
           </div>
 
           <div className="flex items-center gap-1.5 bg-[#0a0c12] border border-slate-800 rounded px-2.5 py-1">
+            <span className="text-slate-500 font-bold">SOURCE:</span>
+            <select
+              value={sourceFilter}
+              onChange={(e) => setSourceFilter(e.target.value)}
+              className="bg-transparent border-0 rounded p-0 text-[10px] font-mono font-bold text-slate-300 focus:outline-none cursor-pointer outline-none"
+            >
+              <option value="all" className="text-slate-300 bg-[#0d1117]">ALL SOURCES</option>
+              <option value="manual" className="text-slate-300 bg-[#0d1117]">MANUAL SCANS</option>
+              <option value="feed" className="text-slate-300 bg-[#0d1117]">LIVE FEED</option>
+            </select>
+          </div>
+
+          <div className="flex items-center gap-1.5 bg-[#0a0c12] border border-slate-800 rounded px-2.5 py-1">
             <span className="text-slate-500 font-bold">SORT:</span>
             <select
               value={sortBy}
@@ -430,13 +451,18 @@ export default function HistoryView() {
                       className="p-4 flex items-center justify-between cursor-pointer hover:bg-[#1b2230]/40 transition-colors"
                     >
                       <div className="flex items-center gap-3 flex-1 min-w-0">
-                        <div className="p-2.5 bg-slate-800/40 text-slate-400 rounded">
-                          <Folder className="w-5 h-5" />
+                        <div className={`p-2.5 rounded ${group.isLiveFeed ? 'bg-cyan-500/10 text-cyan-400' : 'bg-slate-800/40 text-slate-400'}`}>
+                          {group.isLiveFeed ? <Radio className="w-5 h-5" /> : <Folder className="w-5 h-5" />}
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center justify-between gap-2 mb-1">
-                            <h3 className="font-bold text-slate-200 truncate text-base">
+                            <h3 className="font-bold text-slate-200 truncate text-base flex items-center gap-2">
                               {group.batchName}
+                              {group.isLiveFeed && (
+                                <span className="flex-shrink-0 px-1.5 py-0.5 rounded text-[8px] font-mono font-bold uppercase tracking-wider bg-cyan-500/15 text-cyan-400 border border-cyan-500/30">
+                                  Live Feed
+                                </span>
+                              )}
                             </h3>
                             <span className="text-xs text-slate-500 font-mono whitespace-nowrap pt-1">
                               {format(new Date(group.timestamp), 'yyyy-MM-dd HH:mm')}
