@@ -1543,6 +1543,15 @@ export default function ReviewScan() {
   };
 
   if (loading) {
+    if (scanInput?.isExistingScan || isExistingScan) {
+      return (
+        <div className="flex-1 flex flex-col items-center justify-center py-20 bg-[#0d1117] text-slate-300">
+          <Loader2 className="w-10 h-10 text-amber-500 animate-spin mb-3" />
+          <p className="text-slate-500 text-sm font-mono uppercase tracking-wider">Retrieving case files...</p>
+        </div>
+      );
+    }
+
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-6 bg-[#0a0f18] text-slate-300">
         <div className="max-w-xl w-full border border-slate-800 rounded bg-[#0f1420] overflow-hidden shadow-2xl relative">
