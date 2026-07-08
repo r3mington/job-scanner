@@ -156,7 +156,8 @@ function Artwork({ piece, position, rotationY, onApproach }) {
       {/* Cool picture light above the frame, warms the wall */}
       <pointLight position={[0, 1.4, 0.7]} intensity={revealed ? 22 : 12} distance={5} decay={2} color={revealed ? '#f3f6ff' : '#ffe6bd'} />
 
-      <Html transform distanceFactor={1.5} position={[0, 0, 0.03]} style={{ pointerEvents: 'auto' }}>
+      {/* zIndexRange keeps in-scene posters below the veil (z-40) and About modal (z-50) */}
+      <Html transform distanceFactor={1.5} position={[0, 0, 0.03]} zIndexRange={[30, 0]} style={{ pointerEvents: 'auto' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 18, width: 560 }}>
           {/* Frame + poster */}
           <div
@@ -191,7 +192,7 @@ function Artwork({ piece, position, rotationY, onApproach }) {
             </div>
           </div>
 
-          {/* Wall label — materializes on approach, museum-caption style */}
+          {/* Curator's note — materializes on approach, quiet menace */}
           <div
             style={{
               width: 200,
@@ -199,18 +200,20 @@ function Artwork({ piece, position, rotationY, onApproach }) {
               transform: `translateX(${revealed ? 0 : -10}px)`,
               transition: 'opacity 1100ms ease 250ms, transform 1100ms ease 250ms',
               pointerEvents: revealed ? 'auto' : 'none',
-              background: 'rgba(251,250,246,0.96)',
-              border: '1px solid rgba(160,146,110,0.4)',
+              background: 'rgba(243,239,229,0.97)',
+              border: '1px solid rgba(143,47,42,0.25)',
+              borderLeft: '3px solid #8f2f2a',
               borderRadius: 6,
               padding: '12px 12px',
-              boxShadow: '0 18px 40px -20px rgba(70,58,36,0.4)',
+              boxShadow: '0 18px 40px -20px rgba(70,40,30,0.45)',
             }}
           >
-            <div className="text-[7px] font-mono uppercase tracking-[0.28em] mb-1.5" style={{ color: '#b0873a' }}>
-              Wall label
+            <div className="text-[7px] font-mono uppercase tracking-[0.28em] mb-1.5" style={{ color: '#8f2f2a' }}>
+              Curator's note
             </div>
-            <p className="text-[9px] leading-snug mb-2" style={{ color: '#6b6252' }}>
-              The phrases kept in colour are what the analysis found beneath this advertisement.
+            <p className="text-[9px] leading-snug mb-2 italic" style={{ color: '#5d5142', fontFamily: 'Georgia, serif' }}>
+              Read it the way it was meant to be read — by someone with nothing left to lose.
+              Every phrase kept in colour is a hook.
             </p>
             <div className="flex flex-col gap-1">
               {piece.spans.map((s, i) => {
@@ -222,8 +225,8 @@ function Artwork({ piece, position, rotationY, onApproach }) {
                     onMouseLeave={() => setActiveFlag(null)}
                     className="rounded p-1.5"
                     style={{
-                      background: activeFlag === s.flag ? 'rgba(160,146,110,0.16)' : 'transparent',
-                      border: '1px solid rgba(160,146,110,0.2)',
+                      background: activeFlag === s.flag ? 'rgba(143,47,42,0.08)' : 'transparent',
+                      border: '1px solid rgba(143,47,42,0.14)',
                       cursor: 'default',
                     }}
                   >
@@ -238,6 +241,9 @@ function Artwork({ piece, position, rotationY, onApproach }) {
                 );
               })}
             </div>
+            <p className="text-[8px] italic mt-2 pt-1.5" style={{ color: '#8f2f2a', fontFamily: 'Georgia, serif', borderTop: '1px solid rgba(143,47,42,0.15)' }}>
+              Variants of it are still being posted.
+            </p>
           </div>
         </div>
       </Html>
@@ -351,18 +357,28 @@ function Room() {
         ))}
       </group>
 
-      {/* Engraved epitaph on the far wall */}
+      {/* Engraved provenance text on the far wall */}
       <Text
-        position={[0, 1.9, -ROOM.length + 0.05]}
-        fontSize={0.17}
-        maxWidth={6.5}
+        position={[0, 2.6, -ROOM.length + 0.05]}
+        fontSize={0.22}
+        letterSpacing={0.25}
+        color="#6b6252"
+        anchorX="center"
+        anchorY="middle"
+      >
+        ABOUT THIS COLLECTION
+      </Text>
+      <Text
+        position={[0, 1.85, -ROOM.length + 0.05]}
+        fontSize={0.13}
+        maxWidth={7.5}
         textAlign="center"
         color="#8a7f66"
         anchorX="center"
         anchorY="middle"
-        lineHeight={1.7}
+        lineHeight={1.8}
       >
-        {'Every advertisement in this room is real.\nSomeone answered each one.'}
+        {'The advertisements in this hall are real recruitment posts, collected and scanned by this platform.\nAn AI model read each one and marked the phrases you see kept in colour —\nthe mechanics of coercion, dressed as opportunity.\nThe composites near the entrance illustrate documented patterns; the rest were taken from the wild.'}
       </Text>
       <Text
         position={[0, 3.4, 1.44]}
@@ -380,15 +396,16 @@ function Room() {
 }
 
 // ── First-person player: WASD + mouse-look, with optional guided glides ─────
-function Player({ glideRef, controlsRef }) {
+function Player({ glideRef, controlsRef, orientRef }) {
   const { camera } = useThree();
   const keys = useRef({});
   const bobPhase = useRef(0);
 
   useEffect(() => {
     camera.position.set(0, EYE, 0.2);
-    camera.rotation.set(0, Math.PI, 0); // face down the hall (-z)
     camera.rotation.order = 'YXZ';
+    // yaw 0 faces -z (down the hall); a slight turn presents the first artwork
+    camera.rotation.set(0, 0.28, 0);
     const down = (e) => { keys.current[e.code] = true; };
     const up = (e) => { keys.current[e.code] = false; };
     window.addEventListener('keydown', down);
@@ -401,6 +418,14 @@ function Player({ glideRef, controlsRef }) {
 
   useFrame((_, rawDt) => {
     const dt = Math.min(rawDt, 0.05);
+
+    // One-shot re-orient requested from the HUD (e.g. entering walk mode):
+    // face straight down the hall so the visitor never starts on a blank wall.
+    if (orientRef.current) {
+      orientRef.current = false;
+      camera.rotation.order = 'YXZ';
+      camera.rotation.set(0, 0.28, 0); // down the hall, angled toward the first work
+    }
     const k = keys.current;
     const fwd = (k.KeyW || k.ArrowUp ? 1 : 0) - (k.KeyS || k.ArrowDown ? 1 : 0);
     const strafe = (k.KeyD || k.ArrowRight ? 1 : 0) - (k.KeyA || k.ArrowLeft ? 1 : 0);
@@ -433,7 +458,9 @@ function Player({ glideRef, controlsRef }) {
     camera.position.y += (EYE + bob - camera.position.y) * Math.min(1, dt * 8);
   });
 
-  return <PointerLockControls ref={controlsRef} selector="#gallery-enter-walk" />;
+  // No `selector`: lock() is invoked explicitly from HUD buttons so walking
+  // stays recoverable after ESC or the About modal releases the pointer.
+  return <PointerLockControls ref={controlsRef} />;
 }
 
 // ── Page ─────────────────────────────────────────────────────────────────────
@@ -446,6 +473,15 @@ export default function TheGalleryView() {
   const [tourIdx, setTourIdx] = useState(-1);
   const glideRef = useRef(null);
   const controlsRef = useRef(null);
+  const orientRef = useRef(false);
+
+  const enterWalk = useCallback(() => {
+    setVeil(false);
+    glideRef.current = null;
+    orientRef.current = true; // face down the hall on the next frame
+    // lock() must ride the click gesture; controls may not exist headless.
+    try { controlsRef.current?.lock?.(); } catch { /* pointer lock unavailable */ }
+  }, []);
 
   const hung = useMemo(() => hangArtworks(pieces), [pieces]);
 
@@ -529,7 +565,7 @@ export default function TheGalleryView() {
         style={{ position: 'absolute', inset: 0 }}
       >
         <color attach="background" args={['#e9e4d8']} />
-        <fog attach="fog" args={['#e9e4d8', 26, 55]} />
+        <fog attach="fog" args={['#e9e4d8', 32, 60]} />
 
         {/* Daylight — three r155+ physical light units need generous values */}
         <ambientLight intensity={1.15} color="#fff6e6" />
@@ -550,8 +586,17 @@ export default function TheGalleryView() {
           />
         ))}
 
-        <Player glideRef={glideRef} controlsRef={controlsRef} />
+        <Player glideRef={glideRef} controlsRef={controlsRef} orientRef={orientRef} />
       </Canvas>
+
+      {/* Back — always reachable, above veil and HUD */}
+      <button
+        onClick={() => navigate(-1)}
+        className="absolute top-5 left-5 z-[45] flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-widest transition-colors"
+        style={{ color: '#8a7f66' }}
+      >
+        <ArrowLeft className="w-3 h-3" /> Back
+      </button>
 
       {/* ── Entry veil ─────────────────────────────────────────────────────── */}
       {veil && (
@@ -568,8 +613,7 @@ export default function TheGalleryView() {
           </div>
           <div className="flex flex-col sm:flex-row items-center gap-3">
             <button
-              id="gallery-enter-walk"
-              onClick={() => setVeil(false)}
+              onClick={enterWalk}
               className="flex items-center gap-2.5 px-6 py-3 rounded-full font-mono text-[11px] uppercase tracking-[0.2em] transition-all"
               style={{ background: '#b0873a', color: '#fbfaf6', boxShadow: '0 18px 40px -16px rgba(176,135,58,0.6)' }}
             >
@@ -593,14 +637,6 @@ export default function TheGalleryView() {
       {!veil && (
         <>
           <button
-            onClick={() => navigate(-1)}
-            className="absolute top-5 left-5 z-30 flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-widest transition-colors"
-            style={{ color: '#8a7f66' }}
-          >
-            <ArrowLeft className="w-3 h-3" /> Back
-          </button>
-
-          <button
             onClick={() => setShowAbout(true)}
             className="group absolute top-5 right-5 z-30 flex items-center gap-2 pl-3 pr-3.5 py-2 rounded-full transition-all"
             style={{ border: '1px solid rgba(176,135,58,0.4)', background: 'rgba(251,250,246,0.75)' }}
@@ -623,11 +659,21 @@ export default function TheGalleryView() {
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
-              <span className="font-mono text-[9px] uppercase tracking-[0.2em] px-3 py-2 rounded-full"
-                style={{ background: 'rgba(251,250,246,0.85)', border: '1px solid rgba(160,146,110,0.35)', color: '#8a7f66' }}
-              >
-                {walking ? 'WASD to walk · ESC frees cursor' : 'W A S D + mouse to walk · click an artwork to approach'}
-              </span>
+              {walking ? (
+                <span className="font-mono text-[9px] uppercase tracking-[0.2em] px-3 py-2 rounded-full"
+                  style={{ background: 'rgba(251,250,246,0.85)', border: '1px solid rgba(160,146,110,0.35)', color: '#8a7f66' }}
+                >
+                  WASD to walk · ESC frees cursor
+                </span>
+              ) : (
+                <button
+                  onClick={() => { try { controlsRef.current?.lock?.(); } catch { /* pointer lock unavailable */ } }}
+                  className="flex items-center gap-2 font-mono text-[9px] uppercase tracking-[0.2em] px-3.5 py-2 rounded-full transition-all"
+                  style={{ background: '#b0873a', color: '#fbfaf6', border: '1px solid rgba(160,146,110,0.35)' }}
+                >
+                  <Move className="w-3.5 h-3.5" /> Resume walk — WASD + mouse
+                </button>
+              )}
               <button
                 onClick={() => step(1)}
                 className="p-2.5 rounded-full transition-colors"
