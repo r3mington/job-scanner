@@ -278,10 +278,9 @@ export async function postToGeminiWithFallback(apiKey, requestedModel, payload, 
 }
 
 export async function analyzeJobPosting(apiKey, modelName, { text, imageBase64, onStatusUpdate }) {
-  if (!apiKey) {
-    throw new Error('Gemini API key is required');
-  }
-
+  // No client key required: postToGeminiWithFallback routes to the gemini-proxy
+  // edge function, which uses the server-held GEMINI_API_KEY. A client key, if
+  // present, is used as an override.
   const selectedModel = modelName || DEFAULT_MODEL;
 
   const contents = [{
@@ -384,10 +383,9 @@ export async function analyzeJobPosting(apiKey, modelName, { text, imageBase64, 
 }
 
 export async function generatePosterSummary(apiKey, modelName, { contactMethod, scansData, onStatusUpdate }) {
-  if (!apiKey) {
-    throw new Error('Gemini API key is required');
-  }
-
+  // No client key required: postToGeminiWithFallback routes to the gemini-proxy
+  // edge function, which uses the server-held GEMINI_API_KEY. A client key, if
+  // present, is used as an override.
   const selectedModel = modelName || DEFAULT_MODEL;
 
   const textPayload = `You are a professional analyst supporting anti-trafficking investigations.
@@ -459,10 +457,9 @@ Ensure all textual values are written in the requested Target Language.
 Ensure the help resources list 2 to 3 real, relevant organizations (such as regional anti-trafficking tip lines, local police numbers, or key foreign embassies like Thai, Chinese, or ASEAN missions) based on the location and language.`;
 
 export async function generatePosterContent(apiKey, modelName, { mode, language, scanData, onStatusUpdate }) {
-  if (!apiKey) {
-    throw new Error('Gemini API key is required');
-  }
-
+  // No client key required: postToGeminiWithFallback routes to the gemini-proxy
+  // edge function, which uses the server-held GEMINI_API_KEY. A client key, if
+  // present, is used as an override.
   const selectedModel = modelName || DEFAULT_MODEL;
 
   const flagsStr = (scanData.activeFlags || []).join(', ') || 'N/A';
@@ -557,10 +554,9 @@ Generate the structured JSON content for the poster in the Target Language (${la
 }
 
 export async function analyzeCrop(apiKey, modelName, { imageBase64, onStatusUpdate }) {
-  if (!apiKey) {
-    throw new Error('Gemini API key is required');
-  }
-
+  // No client key required: postToGeminiWithFallback routes to the gemini-proxy
+  // edge function, which uses the server-held GEMINI_API_KEY. A client key, if
+  // present, is used as an override.
   const selectedModel = modelName || DEFAULT_MODEL;
 
   // imageBase64 usually looks like: data:image/jpeg;base64,/9j/4AAQSkZJRg...
@@ -616,10 +612,9 @@ export async function analyzeCrop(apiKey, modelName, { imageBase64, onStatusUpda
 }
 
 export async function analyzeLanguageDialect(apiKey, modelName, { text, onStatusUpdate }) {
-  if (!apiKey) {
-    throw new Error('Gemini API key is required');
-  }
-
+  // No client key required: postToGeminiWithFallback routes to the gemini-proxy
+  // edge function, which uses the server-held GEMINI_API_KEY. A client key, if
+  // present, is used as an override.
   const selectedModel = modelName || DEFAULT_MODEL;
 
   const payload = {
@@ -706,7 +701,6 @@ Output ONLY valid JSON:
  * Caller should fall back to a curated set if this throws.
  */
 export async function generateHonestAd(apiKey, modelName, { adText, flags, playbook, aiReview, onStatusUpdate }) {
-  if (!apiKey) throw new Error('Gemini API key is required');
   const selectedModel = modelName || DEFAULT_MODEL;
 
   const playbookStr = (playbook || []).map(p => `- ${p.phase}: ${p.tactic}`).join('\n');
@@ -756,7 +750,6 @@ export async function generateHonestAd(apiKey, modelName, { adText, flags, playb
  * Caller should fall back to a curated translation set if this throws.
  */
 export async function translateInterviewLines(apiKey, modelName, { lines, langs, onStatusUpdate }) {
-  if (!apiKey) throw new Error('Gemini API key is required');
   const selectedModel = modelName || DEFAULT_MODEL;
 
   const langList = langs.map(l => `"${l.code}" (${l.name})`).join(', ');

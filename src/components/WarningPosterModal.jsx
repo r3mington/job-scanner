@@ -37,13 +37,11 @@ export default function WarningPosterModal({
       setPosterError('');
       setGeneratedPosterData(null);
       
+      // Client key optional — generatePosterContent routes through the
+      // gemini-proxy edge function (server-held GEMINI_API_KEY) when absent.
       const apiKey = getActiveApiKey();
       const modelName = localStorage.getItem('gemini_model'); // fallback handled in geminiService
-      
-      if (!apiKey) {
-        throw new Error('Gemini API Key is not configured. Please set the VITE_GEMINI_API_KEY environment variable.');
-      }
-      
+
       const finalLanguage = posterLanguage === 'Other' ? customLanguage : posterLanguage;
       if (!finalLanguage || finalLanguage.trim() === '') {
         throw new Error('Please specify a target language.');
