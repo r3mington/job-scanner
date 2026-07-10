@@ -1,5 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { Camera, Image as ImageIcon, FileText, Upload, X, FileSpreadsheet, Play, CheckCircle2, AlertCircle, Loader2, Download, Copy, ArrowRight, ChevronDown, ChevronUp, Globe, Link, Calendar, Cpu, Bot, Key, RefreshCw } from 'lucide-react';
+import { Camera, Image as ImageIcon, FileText, Upload, X, FileSpreadsheet, Play, AlertCircle, Loader2, Download, Copy, ArrowRight, ChevronDown, ChevronUp, Globe, Link, Calendar, Radio } from 'lucide-react';
+import TelegramFeedPanel from '../components/TelegramFeedPanel';
 import { useNavigate } from 'react-router-dom';
 import { supabase, mapRecordToDb } from '../utils/supabaseClient';
 import { analyzeJobPosting } from '../services/geminiService';
@@ -478,9 +479,9 @@ export default function ScannerView() {
           <button
             type="button"
             onClick={() => handleTabChange('api')}
-            className={`flex-1 py-2 px-3 text-xs font-mono font-bold uppercase tracking-wider flex items-center justify-center gap-2 rounded transition-all whitespace-nowrap ${activeTab === 'api' ? 'bg-[#1b2230] text-amber-500 border border-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
+            className={`flex-1 py-2 px-3 text-xs font-mono font-bold uppercase tracking-wider flex items-center justify-center gap-2 rounded transition-all whitespace-nowrap ${activeTab === 'api' ? 'bg-[#1b2230] text-cyan-400 border border-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
           >
-            <Cpu className="w-3.5 h-3.5 flex-shrink-0" /> API Stream
+            <Radio className="w-3.5 h-3.5 flex-shrink-0" /> Live Feed
           </button>
         </div>
 
@@ -705,104 +706,7 @@ export default function ScannerView() {
               )}
             </div>
           ) : (
-            <div className="w-full max-w-md flex flex-col gap-4">
-              <div className="text-[10px] font-mono text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
-                <Cpu className="w-3.5 h-3.5 text-amber-500" />
-                <span>API Integration: Stream Listings from Telegram, TikTok & Webhooks</span>
-              </div>
-
-              {/* Red functional warning banner */}
-              <div className="p-3.5 bg-red-950/20 border border-red-500/30 rounded text-xs text-red-400 font-mono leading-relaxed">
-                <p className="font-bold uppercase tracking-wider mb-1 flex items-center gap-2 text-red-500">
-                  <AlertCircle className="w-4 h-4" />
-                  Integration Not Functional Yet
-                </p>
-                The API stream, webhooks, and channel ingestion features are currently mock interfaces and not active in this environment.
-              </div>
-
-              {/* API Configuration Details */}
-              <div className="bg-[#111318] border border-slate-800 rounded p-4 space-y-4 font-mono text-xs">
-                <div className="border-b border-slate-800 pb-2">
-                  <h4 className="font-bold text-slate-300 uppercase">Mock API Credentials</h4>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-[10px] text-slate-500 uppercase font-bold">API Endpoint</label>
-                  <div className="flex items-center gap-2 bg-[#0a0c12] border border-slate-800 p-2 rounded">
-                    <span className="text-slate-400 select-all truncate flex-1">https://api.sentinel-intel.org/v1/ingest</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        navigator.clipboard.writeText("https://api.sentinel-intel.org/v1/ingest");
-                        alert("Endpoint copied to clipboard!");
-                      }}
-                      className="text-amber-550 hover:text-amber-400 font-bold"
-                    >
-                      Copy
-                    </button>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-[10px] text-slate-500 uppercase font-bold">Analyst API Token</label>
-                  <div className="flex items-center gap-2 bg-[#0a0c12] border border-slate-800 p-2 rounded">
-                    <span className="text-slate-500 select-all truncate flex-1">sentinel_live_key_5f3e9c...</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        navigator.clipboard.writeText("sentinel_live_key_5f3e9c2b4d6e8f0a1c3e5g7i9k");
-                        alert("API Token copied to clipboard!");
-                      }}
-                      className="text-amber-550 hover:text-amber-400 font-bold"
-                    >
-                      Copy
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Feed Streams Mock Toggles */}
-              <div className="bg-[#111318] border border-slate-800 rounded p-4 space-y-3 font-mono text-xs">
-                <div className="border-b border-slate-800 pb-2">
-                  <h4 className="font-bold text-slate-300 uppercase">Ingestion Stream Channels</h4>
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between p-2 bg-[#0a0c12] border border-slate-800 rounded opacity-60">
-                    <div className="flex items-center gap-2">
-                      <Bot className="w-4 h-4 text-slate-400" />
-                      <div>
-                        <div className="font-bold text-slate-300">Telegram Bot Feed</div>
-                        <div className="text-[9px] text-slate-500">Listen to recruiting chatrooms</div>
-                      </div>
-                    </div>
-                    <span className="px-2 py-0.5 rounded text-[10px] bg-red-950/20 text-red-500 border border-red-900/30">INACTIVE</span>
-                  </div>
-
-                  <div className="flex items-center justify-between p-2 bg-[#0a0c12] border border-slate-800 rounded opacity-60">
-                    <div className="flex items-center gap-2">
-                      <Globe className="w-4 h-4 text-slate-400" />
-                      <div>
-                        <div className="font-bold text-slate-300">Instagram Hashtag Scraper</div>
-                        <div className="text-[9px] text-slate-500">Scan targeted location keywords</div>
-                      </div>
-                    </div>
-                    <span className="px-2 py-0.5 rounded text-[10px] bg-red-950/20 text-red-500 border border-red-900/30">INACTIVE</span>
-                  </div>
-
-                  <div className="flex items-center justify-between p-2 bg-[#0a0c12] border border-slate-800 rounded opacity-60">
-                    <div className="flex items-center gap-2">
-                      <RefreshCw className="w-4 h-4 text-slate-400" />
-                      <div>
-                        <div className="font-bold text-slate-300">TikTok Job Ads Webhook</div>
-                        <div className="text-[9px] text-slate-500">Ingest via TikTok Business Graph</div>
-                      </div>
-                    </div>
-                    <span className="px-2 py-0.5 rounded text-[10px] bg-red-950/20 text-red-500 border border-red-900/30">INACTIVE</span>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <TelegramFeedPanel />
           )}
         </div>
 

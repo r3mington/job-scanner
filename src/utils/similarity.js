@@ -258,5 +258,42 @@ export function computeKeywordMatches(oldStr, newStr) {
 
   return { oldResult, newResult };
 }
+/**
+ * Explains why two ads matched by surfacing shared handles, phone numbers, or template text overlap.
+ */
+export function getMatchReasons(currentText, otherText) {
+  const cur = currentText || '';
+  const other = otherText || '';
+  const reasons = [];
 
+  const handleRe = /@[\w]{3,}/g;
+  const curHandles = new Set((cur.match(handleRe) || []).map(h => h.toLowerCase()));
+  const otherHandles = new Set((other.match(handleRe) || []).map(h => h.toLowerCase()));
+  const sharedHandle = [...curHandles].find(h => otherHandles.has(h));
+  if (sharedHandle) {
+    reasons.push({ kind: 'critical', label: `Shared handle ${sharedHandle}` });
+  }
 
+  const phoneRe = /\b\d{7,}\b/g;
+  const curPhones = new Set(cur.match(phoneRe) || []);
+  const otherPhones = new Set(other.match(phoneRe) || []);
+  const sharedPhone = [...curPhones].find(p => otherPhones.has(p));
+  if (sharedPhone) {
+    reasons.push({ kind: 'critical', label: `Shared number ···${sharedPhone.slice(-4)}` });
+  }
+
+  const clean = (w) => w.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const tokenize = (s) => new Set(
+    s.split(/\s+/).map(clean).filter(c => c.length > 2 && !STOP_WORDS.has(c) && !GENERIC_JOB_WORDS.has(c))
+  );
+  const otherTokens = tokenize(other);
+  const sharedTerms = [...tokenize(cur)].filter(k => otherTokens.has(k));
+  if (sharedTerms.length >= 4) {
+    reasons.push({ kind: 'template', label: `Template reuse · ${sharedTerms.length} shared terms` });
+  }
+
+  if (reasons.length === 0) {
+    reasons.push({ kind: 'structural', label: 'Structural text match' });
+  }
+  return reasons;
+}

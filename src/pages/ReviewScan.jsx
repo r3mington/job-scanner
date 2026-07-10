@@ -1,58 +1,27 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { supabase, mapRecordToDb, mapDbToRecord, uploadBase64Image } from '../utils/supabaseClient';
-import { calculateRiskScore, getRiskLevel, RISK_FLAGS } from '../utils/scoring';
-import { ShieldAlert, CheckCircle, AlertTriangle, Save, ArrowLeft, Loader2, MapPin, TrendingUp, BrainCircuit, Columns, Copy, X, MessageSquare, ChevronDown, ChevronUp, Eye, EyeOff, Image as ImageIcon, FileText, PhoneCall, Layers, Globe, HelpCircle, Users, ExternalLink } from 'lucide-react';
+import { supabase, mapDbToRecord, mapRecordToDb, uploadBase64Image, SCAN_DETAIL_COLUMNS } from '../utils/supabaseClient';
+import { calculateRiskScore, getRiskLevel } from '../utils/scoring';
+import { ShieldAlert, AlertTriangle, Save, ArrowLeft, Loader2, MapPin, Columns, X, ChevronDown, ChevronUp, Image as ImageIcon, ExternalLink, TrendingUp, HelpCircle, BrainCircuit, MessageSquare, FileText, Send, Phone, Mail, Users, UserX } from 'lucide-react';
 import { analyzeJobPosting, analyzeCrop, analyzeLanguageDialect } from '../services/geminiService';
-import { getMedianSalary } from '../utils/countryMedians';
-import { getCleanContactValue } from './DashboardView';
+import { getTakedownDetails, buildCaseSummary, getCleanContactValue } from '../utils/caseHelpers';
 import { useAuth } from '../context/AuthContext';
 import { getActiveApiKey } from '../utils/apiKey';
-import RiskGauge from '../components/RiskGauge';
-import STIXExportModal from '../components/STIXExportModal';
-import WarningPosterModal from '../components/WarningPosterModal';
-import { calculateSimilarity, computeWordDiff, computeKeywordMatches, STOP_WORDS, GENERIC_JOB_WORDS } from '../utils/similarity';
+import { computeWordDiff, computeKeywordMatches, prepareSimilarity, similarityFromPrepared, STOP_WORDS, GENERIC_JOB_WORDS } from '../utils/similarity';
 import { generateStixBundle } from '../utils/stixExporter';
+import { getMedianSalary } from '../utils/countryMedians';
 
-const sanitizeTraumaLanguage = (text) => {
-  if (!text) return text;
-  return text.replace(/\bvictim\b/gi, "worker").replace(/\bvictims\b/gi, "workers");
-};
-
-const makeTentative = (text) => {
-  if (!text) return text;
-  let t = sanitizeTraumaLanguage(text.trim());
-  
-  // If it already starts with a tentative prefix, leave it
-  if (/^(it's probable|it is probable|it's possible|it is possible|it might|recruiter might|workers might|probably|possibly)/i.test(t)) {
-    return t.charAt(0).toUpperCase() + t.slice(1);
-  }
-
-  // Handle present participle (-ing) verb starts
-  if (/^[a-zA-Z]+ing\b/i.test(t)) {
-    t = t.charAt(0).toLowerCase() + t.slice(1);
-    return `It is probable that this stage involves ${t}`;
-  }
-  
-  // Specific replacements for common patterns
-  t = t.replace(/^workers are subjected to/i, "it's probable that workers are subjected to");
-  t = t.replace(/^recruiter will likely use/i, "it's probable that the recruiter will use");
-  t = t.replace(/^recruiter will use/i, "it's probable that the recruiter will use");
-  t = t.replace(/^workers might be/i, "it's possible that workers might be");
-  t = t.replace(/^workers are/i, "it is possible that workers are");
-  t = t.replace(/^recruiter requests/i, "it is probable that the recruiter will request");
-  t = t.replace(/^recruiter demands/i, "it is probable that the recruiter will demand");
-  t = t.replace(/^arranges/i, "it is probable that the recruiter will arrange");
-  
-  return t.charAt(0).toUpperCase() + t.slice(1);
-};
-
-const BUBBLE_FLOAT_CLASSES = [
-  'threat-bubble-1', 'threat-bubble-2', 'threat-bubble-3', 'threat-bubble-4',
-  'threat-bubble-5', 'threat-bubble-6', 'threat-bubble-7', 'threat-bubble-8'
-];
-
-const CRITICAL_FLAGS = new Set(['Passport/ID Control', 'Upfront Fees', 'Immediate Travel Pressure', 'Housing Compound Isolation', 'Suspect Location Hub']);
+// Extracted sub-components
+import ScoreBreakdown from '../components/ScoreBreakdown';
+import ThreatAnalysis from '../components/ThreatAnalysis';
+import EscalationStages from '../components/EscalationStages';
+import ActionGrid from '../components/ActionGrid';
+import SourceContext from '../components/SourceContext';
+import SimilarAds from '../components/SimilarAds';
+import IndicatorChecklist from '../components/IndicatorChecklist';
+import WarningPosterModal from '../components/WarningPosterModal';
+import STIXExportModal from '../components/STIXExportModal';
+import RiskGauge from '../components/RiskGauge';
 
 const LOADING_STEPS = [
   "Acquiring and registering flyer media...",
@@ -63,270 +32,19 @@ const LOADING_STEPS = [
   "Compiling parsed intelligence..."
 ];
 
-const getTakedownDetails = (contactMethod, jobUrl) => {
-  const method = (contactMethod || '').toLowerCase();
-  const url = (jobUrl || '').toLowerCase();
-  
-  if (method.includes('telegram') || method.includes('@') || url.includes('t.me') || url.includes('telegram.org')) {
-    const handle = contactMethod.replace(/Telegram:\s*@?/i, '').replace(/@/, '').trim() || 'suspect_recruiter';
-    return {
-      platform: 'Telegram',
-      target: 'abuse@telegram.org',
-      webLink: 'https://telegram.org/support',
-      subject: `[ALERT] Severe Exploitation & Trafficking Activity - Telegram Handle: @${handle}`,
-      body: `Dear Telegram Trust & Safety Team,\n\nI am writing to report the Telegram handle @${handle} for severe violations of Telegram's Terms of Service regarding human exploitation and deceptive recruiting.\n\nOur OSINT safety scanner, Sentinel AI, has analyzed recruitment advertisements posted by this account and flagged multiple high-confidence indicators of labor trafficking, including:\n- Migration to encrypted chat platforms for isolation\n- Promises of high-pressure offshore relocation\n- Suspect security profiles\n\nEvidence Details:\n- Handle: @${handle}\n- Target Group/Posting Reference: ${jobUrl || 'Not specified'}\n\nPlease review and terminate this account immediately to protect people at risk from exploitation.\n\nSincerely,\nSentinel AI Safety Operations & Investigators`
-    };
-  }
-  
-  if (method.includes('whatsapp') || method.includes('+') || url.includes('wa.me') || url.includes('whatsapp.com')) {
-    const phone = contactMethod.replace(/WhatsApp:\s*/i, '').trim() || 'unknown_number';
-    return {
-      platform: 'WhatsApp',
-      target: 'support@whatsapp.com',
-      webLink: 'https://www.whatsapp.com/contact/',
-      subject: `[ALERT] Severe Human Exploitation & Deceptive Recruiting - WhatsApp: ${phone}`,
-      body: `Dear WhatsApp Trust & Safety Team,\n\nI am reporting the WhatsApp account associated with the phone number ${phone} for violations of the WhatsApp Terms of Service, specifically involving human exploitation and fraudulent recruiting.\n\nOur system has identified threat indicators linked to this recruiter, including deceptive job postings reaching people in situations of vulnerability with promises of high salaries and relocation under high-pressure conditions.\n\nEvidence Details:\n- Phone/Account: ${phone}\n- Active Posting: ${jobUrl || 'Not specified'}\n\nWe request immediate investigation and suspension of this account to mitigate ongoing risk.\n\nSincerely,\nSentinel AI Safety Operations & Investigators`
-    };
-  }
-
-  if (method.includes('email') || method.includes('.') && method.includes('@')) {
-    const email = contactMethod.replace(/Email:\s*/i, '').trim() || 'abuse@domain.com';
-    const domain = email.includes('@') ? email.split('@')[1] : 'domain.com';
-    return {
-      platform: 'Email Host',
-      target: `abuse@${domain}`,
-      webLink: null,
-      subject: `[ALERT] Abuse Report: Human Exploitation & Fraudulent Recruiting - ${email}`,
-      body: `Dear Abuse Operations Team,\n\nI am reporting the email address ${email} hosted on your network for engaging in human exploitation, forced labor, or deceptive recruiting campaigns.\n\nOur security scanner has compiled verified red-flag indicators associated with job advertisements utilizing this contact email. We request immediate suspension of this address.\n\nDetails:\n- Target Email: ${email}\n- Associated URL: ${jobUrl || 'Not specified'}\n\nSincerely,\nSentinel AI Safety Operations`
-    };
-  }
-  
-  // Default fallback for custom websites
-  const domain = url.replace(/https?:\/\/(www\.)?/, '').split('/')[0] || 'domain.com';
+// Recency label for the sticky-bar recruiter strip
+function formatLastActive(ts) {
+  if (!ts) return null;
+  const days = Math.floor((Date.now() - ts) / 86400000);
+  if (days <= 0) return { label: 'active today', live: true };
+  if (days === 1) return { label: 'active yesterday', live: false };
+  if (days < 30) return { label: `last seen ${days}d ago`, live: false };
   return {
-    platform: 'Web Host',
-    target: `abuse@${domain}`,
-    webLink: null,
-    subject: `[ALERT] Abuse Report: Deceptive Recruiting & Labor Exploitation on ${domain}`,
-    body: `Dear Abuse Department,\n\nI am writing to report deceptive recruiting practices and human exploitation hosted at the following URL:\n${jobUrl || 'http://' + domain}\n\nOur safety analysis engine has flagged this posting with severe risk metrics, indicating recruitment campaigns linked to labor trafficking rings.\n\nPlease suspend the hosting or domain registration for this site immediately to protect public safety.\n\nSincerely,\nSentinel AI Safety Operations`
+    label: `last seen ${new Date(ts).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}`,
+    live: false
   };
-};
-
-const CARD_W = 218;
-const CARD_H = 34;
-
-const TAKE_ACTIONS = [
-  {
-    id: 'poster',
-    title: 'Generate Investigation Poster (PDF)',
-    description: 'Create a downloadable PDF poster summarizing the ad, risk score, and highlighted key threat indicators. Fully translated/localized.',
-    icon: FileText,
-    badge: 'PDF REPORT',
-    ctaText: 'Generate Poster',
-  },
-  {
-    id: 'contact',
-    title: 'Initiate contact with poster',
-    description: 'Access recommended next steps, supervised contact templates, and secure evidence gathering documentation guidelines.',
-    icon: PhoneCall,
-    badge: 'EVIDENCE',
-    ctaText: 'Initiate Contact',
-  },
-  {
-    id: 'related',
-    title: 'View Related Ads from Same Poster',
-    description: 'Scan historical ads matching this advertiser ID, layout style, or contact details to track campaign scale and networks.',
-    icon: Layers,
-    badge: 'CROSS-INTEL',
-    ctaText: 'Find Matches',
-  },
-  {
-    id: 'dossier',
-    title: 'Investigate Recruiter Profile',
-    description: 'Access the threat dossier, geographical footprint, and intelligence summary for the recruiter account associated with this posting.',
-    icon: Users,
-    badge: 'RECRUITER INTEL',
-    ctaText: 'View Dossier',
-  },
-  {
-    id: 'takedown',
-    title: 'Abuse & Takedown Dispatcher',
-    description: 'Auto-detect target host/platform and generate pre-filled safety complaints with evidence citation templates for domain/account suspension.',
-    icon: ShieldAlert,
-    badge: 'TAKEDOWN COMMS',
-    ctaText: 'Automate Takedown',
-  },
-  {
-    id: 'stix',
-    title: 'STIX Intelligence Export',
-    description: 'Packages the scan metadata, text analysis, and risk logs into a standardized STIX 2.1 (Structured Threat Information Expression) JSON file or sanitized intelligence brief.',
-    icon: Globe,
-    badge: 'STIX FEED',
-    ctaText: 'Share/Export',
-  },
-  {
-    id: 'image_osint',
-    title: 'Reverse Image OSINT',
-    description: 'Extract cropped graphics, logos, or backgrounds from the physical flyer scan to track template reuse across syndicates.',
-    icon: ImageIcon,
-    badge: 'IMAGE OSINT',
-    ctaText: 'Analyze Graphic',
-  },
-  {
-    id: 'file_forensics',
-    title: 'EXIF & Metadata Forensics',
-    description: 'Scan image binary segments to extract camera profiles, creation timestamps, and GPS geolocation coordinates.',
-    icon: FileText,
-    badge: 'FILE FORENSICS',
-    ctaText: 'Scan Metadata',
-  },
-  {
-    id: 'language_osint',
-    title: 'Dialect & Language Heuristics',
-    description: 'Analyze syntax structure, literal translation artifacts, and filter-evading text obfuscation to trace template origins.',
-    icon: MessageSquare,
-    badge: 'LANGUAGE OSINT',
-    ctaText: 'Audit Dialect',
-  }
-];
-
-const PRIMARY_ACTIONS = TAKE_ACTIONS.filter(a => ['poster', 'takedown', 'related'].includes(a.id));
-const ADVANCED_ACTIONS = TAKE_ACTIONS.filter(a => !['poster', 'takedown', 'related'].includes(a.id));
-
-function ThreatBubbles({ spans, showHighlights }) {
-  if (!showHighlights || !spans || spans.length === 0) return null;
-  const unique = Array.from(new Map(spans.map(s => [s.red_flag, s])).values());
-  return (
-    <div className="flex flex-wrap gap-2">
-      {unique.map((span, i) => {
-        const isHigh = CRITICAL_FLAGS.has(span.red_flag);
-        return (
-          <span
-            key={span.red_flag}
-            className={`${BUBBLE_FLOAT_CLASSES[i % BUBBLE_FLOAT_CLASSES.length]} inline-flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-full border cursor-default select-none bg-slate-900 text-slate-400 border-slate-700`}
-          >
-            <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 flex-shrink-0 ${isHigh ? 'bg-red-500' : 'bg-amber-500'}`} />
-            {span.red_flag}
-          </span>
-        );
-      })}
-    </div>
-  );
 }
 
-function highlightWords(text, spans, showHighlights, isTranslationActive, hoveredKey, setHoveredKey) {
-  if (!text) return '';
-  if (!showHighlights || !spans || spans.length === 0) {
-    return <span className="whitespace-pre-wrap select-text">{text}</span>;
-  }
-
-  const sortedSpans = [...spans]
-    .map(span => ({
-      snippet: isTranslationActive ? span.translated_snippet : span.original_snippet,
-      flag: span.red_flag,
-    }))
-    .filter(s => s.snippet && s.snippet.trim().length > 0)
-    .sort((a, b) => b.snippet.length - a.snippet.length);
-
-  if (sortedSpans.length === 0) {
-    return <span className="whitespace-pre-wrap select-text">{text}</span>;
-  }
-
-  const escapeRegExp = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const pattern = sortedSpans.map(s => `(${escapeRegExp(s.snippet)})`).join('|');
-  if (!pattern) return <span className="whitespace-pre-wrap select-text">{text}</span>;
-
-  const regex = new RegExp(pattern, 'gi');
-  const parts = text.split(regex);
-  if (parts.length <= 1) {
-    return <span className="whitespace-pre-wrap select-text">{text}</span>;
-  }
-
-  const isAnyHovered = hoveredKey !== null;
-
-  return (
-    <span className="whitespace-pre-wrap select-text leading-7">
-      {parts.map((part, index) => {
-        if (!part) return null;
-        const matchedSpan = sortedSpans.find(s => s.snippet.toLowerCase() === part.toLowerCase());
-        if (matchedSpan) {
-          const isHigh = CRITICAL_FLAGS.has(matchedSpan.flag);
-          const isCurrentHovered = hoveredKey === matchedSpan.flag;
-          
-          let highlightClass = "";
-          if (isAnyHovered) {
-            if (isCurrentHovered) {
-              highlightClass = isHigh
-                ? 'text-white border-b-2 border-red-500 bg-transparent scale-[1.02] shadow-[0_0_12px_rgba(239,68,68,0.15)]'
-                : 'text-white border-b-2 border-amber-500 bg-transparent scale-[1.02] shadow-[0_0_12px_rgba(245,158,11,0.12)]';
-            } else {
-              highlightClass = 'text-slate-650 border-transparent bg-transparent opacity-25';
-            }
-          } else {
-            highlightClass = isHigh
-              ? 'text-white border-b-2 border-red-500/80 bg-transparent'
-              : 'text-white border-b border-amber-500/70 bg-transparent';
-          }
-
-          return (
-            <span
-              key={index}
-              data-threat-key={matchedSpan.flag}
-              onMouseEnter={() => setHoveredKey(matchedSpan.flag)}
-              onMouseLeave={() => setHoveredKey(null)}
-              className={`inline px-0.5 font-medium transition-all duration-200 cursor-pointer ${highlightClass}`}
-            >
-              {part}
-            </span>
-          );
-        }
-        return (
-          <span
-            key={index}
-            className={`transition-all duration-200 ${isAnyHovered ? 'opacity-25 text-slate-650' : ''}`}
-          >
-            {part}
-          </span>
-        );
-      })}
-    </span>
-  );
-}
-
-function CountUp({ end, duration = 1000, delay = 150 }) {
-  const [count, setCount] = useState(0);
-
-  useEffect(() => {
-    let startTimestamp = null;
-    let timer = null;
-
-    const step = (timestamp) => {
-      if (!startTimestamp) startTimestamp = timestamp;
-      const progress = Math.min((timestamp - startTimestamp) / duration, 1);
-      
-      // easeOutQuad
-      const easedProgress = progress * (2 - progress);
-      setCount(Math.floor(easedProgress * end));
-
-      if (progress < 1) {
-        timer = requestAnimationFrame(step);
-      } else {
-        setCount(end);
-      }
-    };
-
-    const delayTimeout = setTimeout(() => {
-      timer = requestAnimationFrame(step);
-    }, delay);
-
-    return () => {
-      clearTimeout(delayTimeout);
-      if (timer) cancelAnimationFrame(timer);
-    };
-  }, [end, duration, delay]);
-
-  return <>{count}</>;
-}
 
 export default function ReviewScan() {
   const location = useLocation();
@@ -382,25 +100,24 @@ export default function ReviewScan() {
   const [sourceUrl, setSourceUrl] = useState('unspecified');
   const [ingestionMethod, setIngestionMethod] = useState('Analyst Upload');
   const [postDate, setPostDate] = useState('unspecified');
-  const [isSourceExpanded, setIsSourceExpanded] = useState(false);
   const [isNotesExpanded, setIsNotesExpanded] = useState(false);
+  const [isSourceExpanded, setIsSourceExpanded] = useState(false);
   const [isIndicatorsExpanded, setIsIndicatorsExpanded] = useState(false);
+  const [isPlaybookExpanded, setIsPlaybookExpanded] = useState(false);
   const [suspiciousSpans, setSuspiciousSpans] = useState([]);
   const [showHighlights, setShowHighlights] = useState(true);
   const [isImageExpanded, setIsImageExpanded] = useState(false);
-  const [annotationCards, setAnnotationCards] = useState([]);
-  const [containerMinHeight, setContainerMinHeight] = useState(100);
+  // Flyer reference image. New scans get it from nav state; registry-opened
+  // scans load it lazily (separately from the detail fetch) so a multi-MB
+  // base64 blob never blocks first paint.
+  const [flyerImageUrl, setFlyerImageUrl] = useState(scanInput?.image || scanInput?.originalImage || null);
   const [hoveredKey, setHoveredKey] = useState(null);
   const [loadingStepIdx, setLoadingStepIdx] = useState(0);
   const [apiTelemetryLogs, setApiTelemetryLogs] = useState([]);
   const consoleContainerRef = useRef(null);
   const [predictedPlaybook, setPredictedPlaybook] = useState([]);
-  const [isPlaybookExpanded, setIsPlaybookExpanded] = useState(false);
-  const [expandedPlaybookRows, setExpandedPlaybookRows] = useState(new Set());
   const [scoreBarsVisible, setScoreBarsVisible] = useState(false);
   const [activeActionToast, setActiveActionToast] = useState(null);
-  const [isOcrExpanded, setIsOcrExpanded] = useState(false);
-  const [showAdvancedTools, setShowAdvancedTools] = useState(false);
   const [showBriefing, setShowBriefing] = useState(() => {
     const saved = localStorage.getItem('sentinel_show_review_briefing');
     return saved === 'true';
@@ -448,6 +165,106 @@ export default function ReviewScan() {
     includeFlags: true,
   });
 
+  // Anchor nav scroll-spy + score-bar evidence jump
+  const [activeNavSection, setActiveNavSection] = useState('section-score');
+  const evidencePulseTimer = useRef(null);
+
+  // Live score-delta feedback on indicator toggle
+  const [scoreDelta, setScoreDelta] = useState(null); // { value, id }
+  const scoreDeltaTimer = useRef(null);
+
+  // Recruiter identity strip intel — { linkedCount, lastActive }. Loaded
+  // after paint; the handle itself renders instantly from formData.
+  const [actorIntel, setActorIntel] = useState(null);
+
+  useEffect(() => {
+    if (loading || !user) return;
+    const cc = getCleanContactValue(formData.contact_method);
+    if (!cc) { setActorIntel(null); return; }
+
+    // Distinctive token to match against stored contact strings: the handle
+    // for Telegram, digits for WhatsApp, the address for email.
+    const raw = cc.includes(':') ? cc.split(':').slice(1).join(':').trim() : cc;
+    const token = raw.startsWith('+') ? raw.slice(1) : raw;
+    if (!token || token.length < 4) { setActorIntel(null); return; }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const pattern = '%' + token.replace(/[\\%_]/g, '\\$&') + '%';
+        const { data, error } = await supabase
+          .from('scans')
+          .select('id, timestamp')
+          .eq('user_id', user.id)
+          .ilike('extracted_data->>contact_method', pattern);
+        if (error) throw error;
+        if (cancelled || !data) return;
+
+        const linkedCount = data.filter(d => d.id !== scanInput?.id).length;
+        const lastActive = data.reduce((max, d) => {
+          const t = typeof d.timestamp === 'number' ? d.timestamp : (Number(d.timestamp) || Date.parse(d.timestamp) || 0);
+          return Math.max(max, t);
+        }, 0);
+        setActorIntel({ linkedCount, lastActive: lastActive || null });
+      } catch (err) {
+        console.warn('Recruiter intel lookup failed:', err?.message || err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [loading, user, formData.contact_method, scanInput?.id]);
+
+  useEffect(() => {
+    let rafId = null;
+    const onScroll = () => {
+      if (rafId) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        const sections = document.querySelectorAll('[data-nav-section]');
+        let current = null;
+        sections.forEach(el => {
+          if (el.getBoundingClientRect().top <= 130) current = el.id;
+        });
+        if (current) setActiveNavSection(current);
+      });
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      if (rafId) cancelAnimationFrame(rafId);
+    };
+  }, [loading, error]);
+
+  useEffect(() => () => {
+    if (evidencePulseTimer.current) clearTimeout(evidencePulseTimer.current);
+    if (scoreDeltaTimer.current) clearTimeout(scoreDeltaTimer.current);
+  }, []);
+
+  const handleNavJump = (id) => {
+    if (id === 'section-notes') setIsNotesExpanded(true);
+    if (id === 'section-source') setIsSourceExpanded(true);
+    if (id === 'section-indicators') setIsIndicatorsExpanded(true);
+    if (id === 'section-playbook') setIsPlaybookExpanded(true);
+    requestAnimationFrame(() => {
+      document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  };
+
+  // Scroll to the flagged phrase in the ad text and pulse it via the hover-emphasis mechanic
+  const jumpToEvidence = (flagName) => {
+    setShowHighlights(true);
+    if (activeTabInput === 'normalized') setActiveTabInput('original');
+    setTimeout(() => {
+      const el = document.querySelector(`[data-threat-key="${CSS.escape(flagName)}"]`);
+      if (!el) return;
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setHoveredKey(flagName);
+      if (evidencePulseTimer.current) clearTimeout(evidencePulseTimer.current);
+      evidencePulseTimer.current = setTimeout(() => {
+        setHoveredKey(k => (k === flagName ? null : k));
+      }, 2200);
+    }, 80);
+  };
+
   const generateCropSlice = useCallback((imageUrl) => {
     if (!imageUrl) return;
     const img = new Image();
@@ -476,13 +293,10 @@ export default function ReviewScan() {
   }, [cropBox]);
 
   useEffect(() => {
-    if (isOsintModalOpen) {
-      const flyerUrl = scanInput?.image || scanInput?.originalImage;
-      if (flyerUrl) {
-        generateCropSlice(flyerUrl);
-      }
+    if (isOsintModalOpen && flyerImageUrl) {
+      generateCropSlice(flyerImageUrl);
     }
-  }, [isOsintModalOpen, cropBox, generateCropSlice, scanInput]);
+  }, [isOsintModalOpen, cropBox, generateCropSlice, flyerImageUrl]);
 
   const getStixBundlePayload = () => {
     return generateStixBundle({
@@ -534,7 +348,7 @@ export default function ReviewScan() {
   };
 
   const handleParseMetadata = () => {
-    const flyerUrl = scanInput?.image || scanInput?.originalImage;
+    const flyerUrl = flyerImageUrl;
     if (!flyerUrl) {
       setMetadataError('No reference image attached to this case.');
       return;
@@ -645,12 +459,14 @@ export default function ReviewScan() {
     if (isFileForensicsModalOpen) {
       handleParseMetadata();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isFileForensicsModalOpen]);
 
   useEffect(() => {
     if (isLanguageOsintModalOpen) {
       handleAnalyzeHeuristics();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLanguageOsintModalOpen]);
 
   const handleStartInteraction = (e, mode) => {
@@ -775,7 +591,7 @@ export default function ReviewScan() {
     } else if (actionId === 'stix') {
       setIsStixModalOpen(true);
     } else if (actionId === 'image_osint') {
-      if (scanInput?.image || scanInput?.originalImage) {
+      if (flyerImageUrl) {
         setIsOsintModalOpen(true);
         setOsintError('');
         setCropAnalysisResult(null);
@@ -786,7 +602,7 @@ export default function ReviewScan() {
         });
       }
     } else if (actionId === 'file_forensics') {
-      if (scanInput?.image || scanInput?.originalImage) {
+      if (flyerImageUrl) {
         setIsFileForensicsModalOpen(true);
       } else {
         setActiveActionToast({
@@ -806,8 +622,6 @@ export default function ReviewScan() {
       }
     }
   };
-
-  const textContainerRef = useRef(null);
   const imageContainerRef = useRef(null);
 
   useEffect(() => {
@@ -828,313 +642,74 @@ export default function ReviewScan() {
   // Extract inputs from navigation state (image or text)
   const normalizedTextVal = normalizedText || '';
 
-  // --- Annotation card positioning ---
-  const computeAnnotations = useCallback(() => {
-    const container = textContainerRef.current;
-    if (!container || !showHighlights || suspiciousSpans.length === 0) {
-      setAnnotationCards([]);
-      return;
-    }
-    const containerRect = container.getBoundingClientRect();
-    const containerW = containerRect.width;
-
-    const els = container.querySelectorAll('[data-threat-key]');
-    const seen = new Set();
-    const raw = [];
-
-    els.forEach(el => {
-      const key = el.getAttribute('data-threat-key');
-      if (seen.has(key)) return;
-      seen.add(key);
-      const rect = el.getBoundingClientRect();
-      raw.push({
-        key,
-        dotX: rect.left - containerRect.left + rect.width / 2,
-        dotY: rect.top - containerRect.top + rect.height / 2,
-        span: suspiciousSpans.find(s => s.red_flag === key),
-        isHigh: CRITICAL_FLAGS.has(key),
-      });
-    });
-
-    raw.sort((a, b) => a.dotY - b.dotY);
-
-    const numItems = raw.length;
-    const cardElements = container.querySelectorAll('.annotation-card');
-
-    let totalCardsHeight = 0;
-    if (cardElements.length > 0) {
-      cardElements.forEach(el => {
-        totalCardsHeight += el.offsetHeight;
-      });
-    } else {
-      totalCardsHeight = numItems > 0 ? (numItems - 1) * 34 + (hoveredKey ? 180 : 34) : 0;
-    }
-
-    // Measure the natural height of the text content inside the container
-    const textEl = container.querySelector('.text-sm, .text-xs');
-    const textHeight = textEl ? textEl.scrollHeight : 100;
-
-    const minRequiredHeight = totalCardsHeight + (numItems - 1) * 16 + 40;
-    const containerHeight = Math.max(textHeight + 40, minRequiredHeight);
-
-    // Initialize positions at ideal Y (centered on the dot)
-    let ys = raw.map(item => {
-      const cardEl = Array.from(cardElements).find(e => e.getAttribute('data-card-key') === item.key);
-      const h = cardEl ? cardEl.offsetHeight : (item.key === hoveredKey ? 180 : 34);
-      return item.dotY - h / 2;
-    });
-
-    // Run a relaxation loop to space target coordinates using actual dynamic heights
-    const minGap = 16;
-    for (let iter = 0; iter < 100; iter++) {
-      for (let i = 0; i < numItems - 1; i++) {
-        const cardElA = Array.from(cardElements).find(e => e.getAttribute('data-card-key') === raw[i].key);
-        const cardElB = Array.from(cardElements).find(e => e.getAttribute('data-card-key') === raw[i + 1].key);
-        const hA = cardElA ? cardElA.offsetHeight : (raw[i].key === hoveredKey ? 180 : 34);
-        const hB = cardElB ? cardElB.offsetHeight : (raw[i + 1].key === hoveredKey ? 180 : 34);
-
-        const overlap = (ys[i] + hA + minGap) - ys[i + 1];
-        if (overlap > 0) {
-          ys[i] -= overlap / 2;
-          ys[i + 1] += overlap / 2;
-        }
-      }
-      if (ys[0] < 16) {
-        const shift = 16 - ys[0];
-        for (let i = 0; i < numItems; i++) {
-          ys[i] += shift;
-        }
-      }
-    }
-
-    const positioned = raw.map((item, i) => {
-      const cardY = ys[i];
-      const cardX = Math.min(containerW * 0.65 + 16, containerW - CARD_W - 6);
-      return { ...item, cardX, cardY, floatIdx: i };
-    });
-
-    setAnnotationCards(positioned);
-    setContainerMinHeight(containerHeight);
-  }, [suspiciousSpans, showHighlights, activeTabInput, hoveredKey]);
-
-  const cardsPhysicsRef = useRef([]);
-
-  const handleDragStart = useCallback((key, event) => {
-    if (event.target.closest('button, input, select, a')) return;
-    event.preventDefault();
-
-    const clientX = event.touches ? event.touches[0].clientX : event.clientX;
-    const clientY = event.touches ? event.touches[0].clientY : event.clientY;
-
-    const card = cardsPhysicsRef.current.find(c => c.key === key);
-    if (!card) return;
-
-    card.isDragging = true;
-    card.dragStartX = clientX - card.x;
-    card.dragStartY = clientY - card.y;
-
-    const handleMouseMove = (e) => {
-      const curX = e.touches ? e.touches[0].clientX : e.clientX;
-      const curY = e.touches ? e.touches[0].clientY : e.clientY;
-      card.x = curX - card.dragStartX;
-      card.y = curY - card.dragStartY;
-    };
-
-    const handleMouseUp = () => {
-      card.isDragging = false;
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-      window.removeEventListener('touchmove', handleMouseMove);
-      window.removeEventListener('touchend', handleMouseUp);
-    };
-
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
-    window.addEventListener('touchmove', handleMouseMove);
-    window.addEventListener('touchend', handleMouseUp);
-  }, []);
 
   useEffect(() => {
-    cardsPhysicsRef.current = annotationCards.map(card => {
-      const existing = cardsPhysicsRef.current.find(c => c.key === card.key);
-      return {
-        key: card.key,
-        element: existing?.element || null,
-        dotX: card.dotX,
-        dotY: card.dotY,
-        x: existing ? existing.x : card.cardX,
-        y: existing ? existing.y : card.cardY,
-        vx: existing ? existing.vx : 0,
-        vy: existing ? existing.vy : 0,
-        targetX: card.cardX,
-        targetY: card.cardY,
-        isDragging: existing ? existing.isDragging : false,
-        dragStartX: existing ? existing.dragStartX : 0,
-        dragStartY: existing ? existing.dragStartY : 0,
-        isHigh: card.isHigh,
-      };
-    });
-  }, [annotationCards]);
+    if (loading || !user || !normalizedTextVal) return;
 
-  useEffect(() => {
-    let animId;
-    const runPhysics = () => {
-      const container = textContainerRef.current;
-      if (!container) {
-        animId = requestAnimationFrame(runPhysics);
-        return;
-      }
-      const containerRect = container.getBoundingClientRect();
-      const containerW = containerRect.width;
-      const containerH = containerMinHeight;
-
-      const cards = cardsPhysicsRef.current;
-      const numCards = cards.length;
-
-      // Read actual heights from the DOM first
-      for (let i = 0; i < numCards; i++) {
-        const card = cards[i];
-        card.h = card.element ? card.element.offsetHeight : (card.key === hoveredKey ? 180 : 34);
-      }
-
-      // 1. Spring force to target position
-      const k = 0.08;
-      const damping = 0.8;
-      for (let i = 0; i < numCards; i++) {
-        const card = cards[i];
-        if (!card.isDragging) {
-          const ax = (card.targetX - card.x) * k;
-          const ay = (card.targetY - card.y) * k;
-          card.vx = (card.vx + ax) * damping;
-          card.vy = (card.vy + ay) * damping;
-          card.x += card.vx;
-          card.y += card.vy;
-        } else {
-          card.vx = 0;
-          card.vy = 0;
-        }
-      }
-
-      // 2. Resolve card overlap collisions (using dynamic measured heights)
-      const minGapX = 12;
-      const minGapY = 12;
-      const boxW = CARD_W + minGapX;
-
-      for (let step = 0; step < 4; step++) {
-        for (let i = 0; i < numCards; i++) {
-          for (let j = i + 1; j < numCards; j++) {
-            const A = cards[i];
-            const B = cards[j];
-
-            const hA = A.h;
-            const hB = B.h;
-
-            const dx = B.x - A.x;
-            const centerA_Y = A.y + hA / 2;
-            const centerB_Y = B.y + hB / 2;
-            const dy = centerB_Y - centerA_Y;
-
-            const absDx = Math.abs(dx);
-            const absDy = Math.abs(dy);
-            const boxH = (hA + hB) / 2 + minGapY;
-
-            if (absDx < boxW && absDy < boxH) {
-              const overlapX = boxW - absDx;
-              const overlapY = boxH - absDy;
-
-              if (overlapX < overlapY) {
-                const pushX = overlapX * 0.25;
-                const dir = dx > 0 ? 1 : -1;
-                if (!B.isDragging) B.x += pushX * dir * 0.5;
-                if (!A.isDragging) A.x -= pushX * dir * 0.5;
-              } else {
-                const pushY = overlapY * 0.25;
-                const dir = dy > 0 ? 1 : -1;
-                if (!B.isDragging) B.y += pushY * dir * 0.5;
-                if (!A.isDragging) A.y -= pushY * dir * 0.5;
-              }
-            }
-          }
-        }
-      }
-
-      // 3. Render directly to DOM elements
-      const margin = 8;
-      const maxX = containerW - CARD_W - margin;
-
-      for (let i = 0; i < numCards; i++) {
-        const card = cards[i];
-        const hCard = card.h;
-        const maxY = containerH - hCard - margin;
-
-        if (card.x < margin) { card.x = margin; card.vx = 0; }
-        if (card.x > maxX) { card.x = maxX; card.vx = 0; }
-        if (card.y < margin) { card.y = margin; card.vy = 0; }
-        if (card.y > maxY) { card.y = maxY; card.vy = 0; }
-
-        if (card.element) {
-          card.element.style.left = `${card.x}px`;
-          card.element.style.top = `${card.y}px`;
-        }
-
-        const pathEl = document.getElementById(`path-${card.key}`);
-        if (pathEl) {
-          pathEl.setAttribute('d', `M ${card.dotX + 3},${card.dotY} C ${card.dotX + 40},${card.dotY} ${card.x - 40},${card.y + hCard / 2} ${card.x},${card.y + hCard / 2}`);
-        }
-      }
-
-      animId = requestAnimationFrame(runPhysics);
-    };
-
-    animId = requestAnimationFrame(runPhysics);
-    return () => cancelAnimationFrame(animId);
-  }, [containerMinHeight, hoveredKey]);
-
-  useEffect(() => {
-    const t = setTimeout(computeAnnotations, 100);
-    return () => clearTimeout(t);
-  }, [computeAnnotations]);
-
-  useEffect(() => {
-    const el = textContainerRef.current;
-    if (!el) return;
-    const obs = new ResizeObserver(computeAnnotations);
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, [computeAnnotations]);
-
-  useEffect(() => {
-    if (!user || !normalizedTextVal) return;
+    const TOP_MATCHES = 12;
 
     const fetchSimilarScans = async () => {
       try {
+        // Rank on normalized_text only — the big original_text/ocr_text columns
+        // are fetched afterwards for just the handful of surviving matches.
         const { data, error } = await supabase
           .from('scans')
-          .select('*')
+          .select('id, timestamp, job_title, employer, normalized_text')
           .eq('user_id', user.id);
 
         if (error) throw error;
+        if (!data) return;
 
-        if (data) {
-          const processed = data
-            .map(scan => {
-              const record = mapDbToRecord(scan);
-              const similarity = calculateSimilarity(normalizedTextVal, record.normalizedText || '');
-              return { ...record, similarity };
-            })
-            // Filter out the current scan being reviewed and keep similarities above 40%
-            .filter(item => item.id !== scanInput?.id && item.similarity > 0.40)
-            .sort((a, b) => b.similarity - a.similarity);
+        // Prepare the current ad once instead of re-tokenizing it per row.
+        const preparedCurrent = prepareSimilarity(normalizedTextVal);
 
-          setSimilarScans(processed);
+        const ranked = data
+          .map(scan => {
+            const record = mapDbToRecord(scan);
+            const similarity = similarityFromPrepared(preparedCurrent, prepareSimilarity(record.normalizedText || ''));
+            return { ...record, similarity };
+          })
+          .filter(item => item.id !== scanInput?.id && item.similarity > 0.40)
+          .sort((a, b) => b.similarity - a.similarity)
+          .slice(0, TOP_MATCHES);
+
+        if (ranked.length === 0) {
+          setSimilarScans([]);
+          return;
         }
+
+        // Hydrate only the top matches with the full text needed to explain the
+        // match (shared handle / template overlap) in the UI.
+        const { data: textData, error: textErr } = await supabase
+          .from('scans')
+          .select('id, original_text, ocr_text')
+          .in('id', ranked.map(r => r.id));
+
+        if (!textErr && textData) {
+          const textById = new Map(textData.map(t => [t.id, t]));
+          ranked.forEach(r => {
+            const t = textById.get(r.id);
+            if (t) {
+              r.originalText = t.original_text;
+              r.ocrText = t.ocr_text;
+            }
+          });
+        }
+
+        setSimilarScans(ranked);
       } catch (err) {
-        console.error('Failed to fetch similar scans:', err);
+        console.error('Failed to fetch similar scans:', err?.message || err);
       }
     };
 
-    fetchSimilarScans();
-  }, [user, normalizedTextVal, scanInput?.id]);
+    // Defer off the first-paint frame so ranking/hydration never competes with
+    // rendering the case the analyst actually opened.
+    const schedule = window.requestIdleCallback || ((cb) => setTimeout(cb, 200));
+    const handle = schedule(fetchSimilarScans);
+    return () => {
+      if (window.cancelIdleCallback && typeof handle === 'number') window.cancelIdleCallback(handle);
+    };
+  }, [loading, user, normalizedTextVal, scanInput?.id]);
 
   useEffect(() => {
     if (!scanInput) {
@@ -1145,7 +720,9 @@ export default function ReviewScan() {
     if (scanInput.isExistingScan) {
       if (scanInput.ocrText === undefined && scanInput.id) {
         setLoading(true);
-        supabase.from('scans').select('*').eq('id', scanInput.id).single()
+        // Critical path: fetch every detail column EXCEPT the image blob so the
+        // page paints without waiting on a potentially multi-MB base64 field.
+        supabase.from('scans').select(SCAN_DETAIL_COLUMNS).eq('id', scanInput.id).single()
           .then(({ data, error }) => {
             if (error) {
               setError("Failed to fetch full scan details: " + error.message);
@@ -1172,30 +749,43 @@ export default function ReviewScan() {
               setPredictedPlaybook(fullScan.extractedData?.predicted_playbook || []);
               setAuditStatus(fullScan.extractedData?.audit_status || 'pending');
               setLoading(false);
+
+              // Lazily pull the flyer image reference after paint — off the
+              // critical path since it can be a large base64 data-URI.
+              if (!flyerImageUrl) {
+                supabase.from('scans').select('original_image_url').eq('id', scanInput.id).single()
+                  .then(({ data: imgData, error: imgErr }) => {
+                    if (!imgErr && imgData?.original_image_url) {
+                      setFlyerImageUrl(imgData.original_image_url);
+                    }
+                  });
+              }
             }
           });
       } else {
         // Viewing/Editing an existing history record
-        setFormData(scanInput.extractedData);
-        setActiveFlags(scanInput.activeFlags || []);
-        setOcrText(scanInput.ocrText || null);
-        setOriginalText(scanInput.originalText || scanInput.text || '');
-        setAiReview(scanInput.aiReview || '');
-        setParsedSalaryUsd(scanInput.parsedSalaryUsd || null);
-        setLocationCountry(scanInput.locationCountry || null);
-        setDetectedLanguage(scanInput.detectedLanguage || 'English');
-        setIsTranslated(scanInput.isTranslated || false);
-        setTranslatedText(scanInput.translatedText || null);
-        setNormalizedText(scanInput.normalizedText || '');
-        setNotes(scanInput.notes || '');
-        setSourcePlatform(scanInput.sourcePlatform || 'unspecified');
-        setSourceUrl(scanInput.sourceUrl || 'unspecified');
-        setIngestionMethod(scanInput.ingestionMethod || 'Analyst Upload');
-        setPostDate(scanInput.postDate || 'unspecified');
-        setSuspiciousSpans(scanInput.extractedData?.suspicious_spans || []);
-        setPredictedPlaybook(scanInput.extractedData?.predicted_playbook || []);
-        setAuditStatus(scanInput.extractedData?.audit_status || 'pending');
-        setLoading(false);
+      setFormData(scanInput.extractedData || {
+        job_title: '', employer_identity: '', salary_range: '',
+        location: '', industry: '', contact_method: ''
+      });
+      setActiveFlags(scanInput.activeFlags || []);
+      setOriginalText(scanInput.originalText || null);
+      setOcrText(scanInput.ocrText || null);
+      setParsedSalaryUsd(scanInput.parsedSalaryUsd || null);
+      setLocationCountry(scanInput.locationCountry || null);
+      setDetectedLanguage(scanInput.detectedLanguage || 'English');
+      setIsTranslated(scanInput.isTranslated || false);
+      setTranslatedText(scanInput.translatedText || null);
+      setNormalizedText(scanInput.normalizedText || '');
+      setNotes(scanInput.notes || '');
+      setSourcePlatform(scanInput.sourcePlatform || 'unspecified');
+      setSourceUrl(scanInput.sourceUrl || 'unspecified');
+      setIngestionMethod(scanInput.ingestionMethod || 'Analyst Upload');
+      setPostDate(scanInput.postDate || 'unspecified');
+      setSuspiciousSpans(scanInput.extractedData?.suspicious_spans || []);
+      setPredictedPlaybook(scanInput.extractedData?.predicted_playbook || []);
+      setAuditStatus(scanInput.extractedData?.audit_status || 'pending');
+      setLoading(false);
       }
     } else {
       // New scan - call Gemini API
@@ -1205,6 +795,7 @@ export default function ReviewScan() {
       setPostDate(scanInput.postDate || 'unspecified');
       performScan();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scanInput, navigate]);
 
   useEffect(() => {
@@ -1340,7 +931,9 @@ export default function ReviewScan() {
           try {
             imageUrl = await uploadBase64Image(imageUrl);
           } catch (uploadErr) {
-            console.error("Image upload failed during auto-save:", uploadErr);
+            // Drop the image rather than writing a multi-MB base64 blob to the DB.
+            console.warn('Image upload failed during auto-save; saving without it:', uploadErr?.message || uploadErr);
+            imageUrl = null;
           }
         }
 
@@ -1412,9 +1005,38 @@ export default function ReviewScan() {
   };
 
   const handleFlagToggle = (flag) => {
-    setActiveFlags(prev => 
-      prev.includes(flag) ? prev.filter(f => f !== flag) : [...prev, flag]
-    );
+    const nextFlags = activeFlags.includes(flag)
+      ? activeFlags.filter(f => f !== flag)
+      : [...activeFlags, flag];
+
+    // Compute the true score delta (includes combo multipliers + contextual
+    // scaling/capping), not just the raw flag weight, so the feedback matches
+    // the recalculated Total Risk Index.
+    const scoringContext = {
+      parsedSalaryUsd,
+      locationCountry,
+      detectedLanguage,
+      contactMethod: formData.contact_method,
+      suspiciousSpans,
+      predictedPlaybook,
+      obfuscationLevel: heuristicsResult?.obfuscationLevel ?? null,
+      sourcePlatform,
+      employer: formData.employer_identity
+    };
+    const before = calculateRiskScore(activeFlags, scoringContext).score;
+    const after = calculateRiskScore(nextFlags, scoringContext).score;
+
+    setActiveFlags(nextFlags);
+
+    const diff = after - before;
+    if (diff !== 0) {
+      const id = Date.now();
+      setScoreDelta({ value: diff, id });
+      if (scoreDeltaTimer.current) clearTimeout(scoreDeltaTimer.current);
+      scoreDeltaTimer.current = setTimeout(() => {
+        setScoreDelta(cur => (cur && cur.id === id ? null : cur));
+      }, 1800);
+    }
   };
 
   const handleSave = async () => {
@@ -1434,13 +1056,17 @@ export default function ReviewScan() {
       const score = scoreResult.score;
       const level = getRiskLevel(score);
 
-      // Handle uploading image if raw Base64
-      let imageUrl = scanInput.image || scanInput.originalImage || null;
+      // Handle uploading image if raw Base64. flyerImageUrl preserves the
+      // reference for registry-opened scans (whose nav state has no image).
+      let imageUrl = scanInput.image || scanInput.originalImage || flyerImageUrl || null;
       if (imageUrl && imageUrl.startsWith('data:image/')) {
         try {
           imageUrl = await uploadBase64Image(imageUrl);
         } catch (uploadErr) {
-          console.error("Image upload failed, saving record anyway:", uploadErr);
+          // Never persist a multi-MB base64 data-URI into the DB column — it
+          // would bloat the table and slow every future load. Drop it instead.
+          console.warn('Image upload failed; saving without the flyer image:', uploadErr?.message || uploadErr);
+          imageUrl = null;
         }
       }
 
@@ -1708,8 +1334,73 @@ export default function ReviewScan() {
   const scoreDetails = scoreResult.details;
   const riskInfo = getRiskLevel(score);
 
+  // Score reconciliation: History/Dashboard show the score stored at save time.
+  // ReviewScan always recomputes live, so an existing scan saved under older
+  // scoring logic can display a different number here. Surface the drift instead
+  // of silently contradicting the registry.
+  const storedScore = (scanInput?.isExistingScan || isExistingScan) && typeof scanInput?.riskScore === 'number'
+    ? scanInput.riskScore
+    : null;
+  const scoreDrifted = storedScore !== null && storedScore !== score;
+
   // Sticky intel bar derived values
   const stickyScoreColor = score >= 60 ? 'text-red-400 bg-red-500/10 border-red-500/30' : score >= 30 ? 'text-amber-400 bg-amber-500/10 border-amber-500/30' : 'text-amber-400 bg-amber-500/10 border-amber-500/30';
+
+  // Recruiter identity strip derivations
+  const cleanContact = getCleanContactValue(formData.contact_method);
+  const contactDisplay = cleanContact
+    ? (cleanContact.includes(':') ? cleanContact.split(':').slice(1).join(':').trim() : cleanContact)
+    : null;
+  const contactKindLc = (cleanContact || '').toLowerCase();
+  const ContactIcon = contactKindLc.startsWith('telegram') ? Send
+    : contactKindLc.startsWith('whatsapp') ? Phone
+    : contactKindLc.startsWith('email') ? Mail
+    : Users;
+  const isActorHub = (actorIntel?.linkedCount ?? 0) >= 1;
+  const actorRecency = formatLastActive(actorIntel?.lastActive);
+  const openDossier = () => cleanContact && navigate(`/poster/${encodeURIComponent(cleanContact)}`);
+
+  // One-shot text digest of the case for pasting into reports / secure channels.
+  const handleCopySummary = async () => {
+    const text = buildCaseSummary({
+      caseId: (scanInput?.isExistingScan && scanInput?.id) ? scanInput.id.substring(0, 8).toUpperCase() : 'NEW',
+      jobTitle: formData.job_title,
+      score,
+      riskLabel: riskInfo.label,
+      auditStatus,
+      location: formData.location,
+      contactMethod: formData.contact_method,
+      sourcePlatform,
+      salaryRange: formData.salary_range,
+      employer: formData.employer_identity,
+      scoreDetails,
+      playbookData: getPlaybookData(),
+      notes
+    });
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
+      setActiveActionToast({
+        title: 'Case Summary Copied',
+        description: 'Plain-text digest copied to clipboard — ready to paste into a report or secure channel.'
+      });
+    } catch {
+      setActiveActionToast({
+        title: 'Copy Failed',
+        description: 'Clipboard access was blocked by the browser. Try again or copy manually.'
+      });
+    }
+  };
 
   return (
     <div className="flex flex-col flex-1 p-4 max-w-screen-md w-full mx-auto space-y-6">
@@ -1795,7 +1486,8 @@ export default function ReviewScan() {
       </div>
 
       {/* Sticky intel bar */}
-      <div className="sticky top-0 z-40 -mx-4 px-4 py-2 flex items-center justify-between gap-3 backdrop-blur-md border-b" style={{ background: 'rgba(10,12,18,0.92)', borderColor: 'rgba(255,255,255,0.06)' }}>
+      <div className="sticky top-0 z-40 -mx-4 backdrop-blur-md border-b" style={{ background: 'rgba(10,12,18,0.92)', borderColor: 'rgba(255,255,255,0.06)' }}>
+      <div className="px-4 py-2 flex items-center justify-between gap-3">
         <span className="text-xs font-mono font-bold text-slate-400 truncate flex items-center gap-1.5">
           <span className="text-slate-650 font-normal">
             [{scanInput?.isExistingScan && scanInput?.id ? `ID: ${scanInput.id.substring(0, 8).toUpperCase()}` : 'ID: NEW'}]
@@ -1822,10 +1514,24 @@ export default function ReviewScan() {
               <option value="waiting_action" className="text-slate-400 bg-[#0d1117]">ACTION REQ</option>
             </select>
           </div>
-          <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${stickyScoreColor}`}>
-            RISK {score}
+          <span className="relative flex items-center gap-1.5">
+            <span key={score} className={`score-chip-bump text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${stickyScoreColor}`}>
+              RISK {score}
+            </span>
+            {scoreDelta && (
+              <span
+                key={scoreDelta.id}
+                className={`score-delta-pop pointer-events-none text-[10px] font-mono font-black px-1.5 py-0.5 rounded ${
+                  scoreDelta.value > 0
+                    ? 'text-red-300 bg-red-500/15 border border-red-500/25'
+                    : 'text-emerald-300 bg-emerald-500/15 border border-emerald-500/25'
+                }`}
+              >
+                {scoreDelta.value > 0 ? `+${scoreDelta.value}` : scoreDelta.value}
+              </span>
+            )}
           </span>
-          <button 
+          <button
             type="button"
             onClick={handleSave}
             disabled={saving}
@@ -1837,541 +1543,136 @@ export default function ReviewScan() {
         </div>
       </div>
 
-      {/* Risk Score Widget — Radial Gauge */}
-      {(() => {
-        const gaugeSize = 120;
-        const strokeW = 10;
-        const r = (gaugeSize / 2) - strokeW;
-        // Arc spans 240 degrees (from 150° to 390°/30°)
-        const arcDeg = 240;
-        const circumference = Math.PI * 2 * r;
-        const arcLen = (arcDeg / 360) * circumference;
-        const gapLen = circumference - arcLen;
-        // dashoffset: fill proportion based on score
-        const fillPct = Math.min(score, 100) / 100;
-        const fillLen = fillPct * arcLen;
-        const dashOffset = arcLen - fillLen;
-        const scoreColor = score >= 60 ? '#e5534b' : score >= 30 ? '#f0b429' : '#3fb950';
-        const scoreGlow = score >= 60 ? 'rgba(229,83,75,0.35)' : score >= 30 ? 'rgba(240,180,41,0.30)' : 'rgba(63,185,80,0.30)';
-        const scoreBorder = score >= 60 ? 'border-red-800/40' : score >= 30 ? 'border-amber-800/40' : 'border-amber-800/40';
-        // rotation so arc starts at bottom-left
-        const rotation = 150;
-        // tip coordinate calculation for the flare glow
-        const angleRad = ((rotation + fillPct * arcDeg) * Math.PI) / 180;
-        const flareX = (gaugeSize / 2) + r * Math.cos(angleRad);
-        const flareY = (gaugeSize / 2) + r * Math.sin(angleRad);
-
-        return (
-          <div className={`rounded overflow-hidden border ${scoreBorder}`} style={{background:'#111318'}}>
-            {/* Gauge hero */}
-            <div className="px-5 pt-5 pb-3 flex items-center gap-6">
-              {/* SVG Radial Arc */}
-              <RiskGauge score={score} size={120} strokeWidth={10} />
-              {!scoreBarsVisible && (
-                <span className="sr-only" ref={el => { if (el) requestAnimationFrame(() => setScoreBarsVisible(true)); }} />
-              )}
-
-              {/* Breakdown bars */}
-              <div className="flex-1 min-w-0">
-                <p className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-widest mb-3">Risk Breakdown</p>
-                {scoreDetails && scoreDetails.length > 0 ? (
-                  <div className="space-y-3.5">
-                    {[...scoreDetails].sort((a, b) => b.weight - a.weight).map((detail, idx) => {
-                      const maxWeight = Math.max(...scoreDetails.map(d => d.weight));
-                      const pct = Math.round((detail.weight / maxWeight) * 100);
-                      const isCritical = CRITICAL_FLAGS.has(detail.name);
-                      const barColor = detail.isSalaryAnomaly || detail.isCrossBorderMismatch
-                        ? '#f59e0b' : isCritical ? '#ef4444' : '#f87171';
-                      return (
-                        <div key={detail.name} className="space-y-1">
-                          <div className="flex justify-between items-center text-xs font-mono">
-                            <span className="text-slate-300 font-medium truncate pr-2">{detail.name}</span>
-                            <span className="text-slate-450 font-bold flex-shrink-0">+{detail.weight} pts</span>
-                          </div>
-                          <div className="w-full h-2.5 bg-slate-900 border border-slate-800 rounded-full overflow-hidden">
-                            <div
-                              className="h-full rounded-full transition-all ease-out"
-                              style={{
-                                width: scoreBarsVisible ? `${pct}%` : '0%',
-                                background: barColor,
-                                transitionDuration: '600ms',
-                                transitionDelay: `${150 + idx * 60}ms`,
-                              }}
-                            />
-                          </div>
-                        </div>
-                      );
-                    })}
-                    <div className="flex justify-between items-center mt-3 pt-3 border-t border-slate-800">
-                      <span className="text-[10px] text-slate-500 uppercase tracking-widest font-mono font-bold">Total Risk Index (capped)</span>
-                      <span className="text-sm font-black font-mono" style={{color: scoreColor}}>{score} / 100</span>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="text-xs text-slate-500 font-mono">No risk triggers detected.</p>
-                )}
-              </div>
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* Interactive Ad Analysis — Tactical threat card */}
-      <div className="rounded overflow-hidden border border-slate-800" style={{background: '#111318'}}>
-        {/* 1px amber classification stripe at very top */}
-        <div className="h-px bg-amber-500/60 w-full" />
-
-        {/* Card header — flat, no glow */}
-        <div className="px-5 py-4 border-b border-slate-800 flex flex-wrap gap-3 items-center justify-between">
-          <div>
-            <h3 className="font-bold text-slate-200 flex items-center gap-2 text-sm tracking-tight">
-              <BrainCircuit className="w-4 h-4 text-slate-500" />
-              Threat Analysis
-              {suspiciousSpans.length > 0 && (
-                <span className="ml-1 text-[9px] font-mono font-semibold text-slate-400 border border-slate-700 px-1.5 py-0.5 rounded-sm tracking-wider">
-                  {suspiciousSpans.length} flagged
-                </span>
-              )}
-            </h3>
-            <p className="text-[11px] text-slate-600 mt-0.5">Hover flagged phrases to view threat intelligence.</p>
-          </div>
-
-          {/* Highlight Toggle — plain text switch */}
-          <button
-            onClick={() => setShowHighlights(prev => !prev)}
-            className="text-[11px] font-semibold text-slate-400 hover:text-slate-200 transition-colors border border-slate-800 hover:border-slate-700 px-3 py-1.5 rounded"
-          >
-            {showHighlights ? 'Hide Highlights' : 'Show Highlights'}
-          </button>
-        </div>
-
-        {/* Floating Threat Chip Zone */}
-        {suspiciousSpans.length > 0 && showHighlights && (
-          <div className="border-b border-slate-800/60 px-5 py-4">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-600 mb-3">Detected Threats</p>
-            <ThreatBubbles spans={suspiciousSpans} showHighlights={showHighlights} />
-          </div>
-        )}
-
-        {/* Tab Bar */}
-        <div className="border-b border-slate-800 px-4 py-2.5 flex flex-wrap gap-2 items-center justify-between">
-          <div className="flex items-center gap-1.5 text-[11px] text-slate-600">
-            {isTranslated ? (
-              <span className="flex items-center gap-1.5">
-                <BrainCircuit className="w-3 h-3" />
-                Translated from {detectedLanguage}
-              </span>
-            ) : (
-              <span>Language: {detectedLanguage}</span>
-            )}
-          </div>
-          <div className="flex bg-slate-900/60 border border-slate-800 p-0.5 rounded text-xs">
-            {['original', ...(isTranslated ? ['translation'] : []), 'normalized'].map(tab => (
+      {/* Recruiter identity strip — always visible; empty state when no contact */}
+      <div className={`px-4 py-1.5 flex items-center gap-2.5 flex-wrap border-t ${
+        !contactDisplay ? 'border-slate-800/60 bg-slate-900/20'
+          : isActorHub ? 'border-purple-500/20 bg-purple-950/20' : 'border-slate-800/60 bg-slate-900/30'
+      }`}>
+        {contactDisplay ? (
+          <>
+            <button
+              type="button"
+              onClick={openDossier}
+              title="Open recruiter dossier"
+              className={`flex items-center gap-1.5 text-[11px] font-mono font-bold transition-colors ${
+                isActorHub ? 'text-purple-200 hover:text-white' : 'text-slate-300 hover:text-white'
+              }`}
+            >
+              <ContactIcon className="w-3 h-3" />
+              {contactDisplay}
+            </button>
+            {isActorHub && (
               <button
-                key={tab}
                 type="button"
-                onClick={() => setActiveTabInput(tab)}
-                className={`px-3 py-1.5 rounded-sm font-semibold capitalize transition-all ${
-                  activeTabInput === tab
-                    ? 'bg-slate-800 text-slate-200 shadow-sm'
-                    : 'text-slate-500 hover:text-slate-400'
-                }`}
+                onClick={() => navigate('/history', { state: { viewType: 'graph', focusContact: cleanContact } })}
+                title="View this recruiter's cluster in the connections graph"
+                className="text-[9px] font-mono font-bold uppercase tracking-wider text-purple-300 bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/40 rounded-full px-2 py-0.5 transition-colors"
               >
-                {tab === 'translation' ? 'Translation' : tab.charAt(0).toUpperCase() + tab.slice(1)}
+                Hub · {actorIntel.linkedCount} linked ad{actorIntel.linkedCount > 1 ? 's' : ''}
               </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Text Body + Annotation Overlay — Forensic evidence document, dark edition */}
-        <div
-          ref={textContainerRef}
-          className="relative rounded border border-slate-800/80 overflow-hidden"
-          style={{
-            minHeight: `${containerMinHeight}px`,
-            background: '#10141f',
-            backgroundImage: `repeating-linear-gradient(
-              transparent,
-              transparent 27px,
-              rgba(255,255,255,0.032) 27px,
-              rgba(255,255,255,0.032) 28px
-            )`,
-            boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.04), inset 0 4px 20px rgba(0,0,0,0.4)',
-          }}
-        >
-          {/* Forensic EXHIBIT watermark */}
-          <div
-            aria-hidden="true"
-            style={{
-              position: 'absolute',
-              inset: 0,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              pointerEvents: 'none',
-              zIndex: 0,
-              overflow: 'hidden',
-            }}
-          >
-            <span style={{
-              fontSize: '7rem',
-              fontWeight: 900,
-              fontFamily: 'monospace',
-              letterSpacing: '0.25em',
-              color: 'rgba(255,255,255,0.028)',
-              transform: 'rotate(-30deg)',
-              userSelect: 'none',
-              whiteSpace: 'nowrap',
-            }}>EXHIBIT</span>
-          </div>
-
-          {/* Left margin rule */}
-          <div style={{
-            position: 'absolute',
-            top: 0,
-            bottom: 0,
-            left: '2rem',
-            width: '1px',
-            background: 'rgba(239, 68, 68, 0.22)',
-            pointerEvents: 'none',
-            zIndex: 1,
-          }} />
-
-          <div className="relative w-[65%] pl-12 pr-6 py-5" style={{ zIndex: 2 }}>
-            {activeTabInput === 'original' && (
-              <div className="text-sm leading-7 whitespace-pre-wrap select-text font-mono text-slate-300">
-                {highlightWords(originalText || ocrText || 'No input text provided.', suspiciousSpans, showHighlights, false, hoveredKey, setHoveredKey)}
-              </div>
             )}
-            {isTranslated && activeTabInput === 'translation' && (
-              <div className="text-sm leading-7 whitespace-pre-wrap select-text font-mono text-slate-300">
-                {highlightWords(translatedText || 'No translation available.', suspiciousSpans, showHighlights, true, hoveredKey, setHoveredKey)}
-              </div>
+            {actorRecency && (
+              <span className={`flex items-center gap-1 text-[10px] font-mono ${
+                actorRecency.live ? 'text-emerald-400' : 'text-slate-500'
+              }`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${actorRecency.live ? 'bg-emerald-500 animate-pulse' : 'bg-slate-600'}`} />
+                {actorRecency.label}
+              </span>
             )}
-            {activeTabInput === 'normalized' && (
-              <div className="text-xs text-slate-500 font-mono leading-6 whitespace-pre-wrap select-text">
-                {normalizedTextVal || 'No normalized text generated.'}
-              </div>
-            )}
-          </div>
-
-          {/* Annotation Overlay — SVG connectors + floating cards */}
-          {showHighlights && annotationCards.length > 0 && activeTabInput !== 'normalized' && (
-            <>
-              {/* SVG bezier dotted connectors */}
-              <svg
-                className="absolute inset-0 w-full h-full pointer-events-none"
-                style={{ overflow: 'visible', zIndex: 10 }}
-              >
-                <defs>
-                  {/* Pulse ring filter for source dots */}
-                  <filter id="dot-glow" x="-100%" y="-100%" width="300%" height="300%">
-                    <feGaussianBlur stdDeviation="2" result="blur" />
-                    <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-                  </filter>
-                </defs>
-                {annotationCards.map(card => {
-                  const isCurrentHovered = hoveredKey === card.key;
-                  const isAnyHovered = hoveredKey !== null;
-                  const strokeOpacity = isAnyHovered ? (isCurrentHovered ? 0.95 : 0.08) : 0.45;
-
-                  return (
-                    <g
-                      key={card.key + '-svg'}
-                      style={{ opacity: strokeOpacity, transition: 'opacity 0.25s ease' }}
-                    >
-                      {/* Outer halo ring */}
-                      <circle
-                        cx={card.dotX} cy={card.dotY} r="8"
-                        fill={card.isHigh ? 'rgba(239,68,68,0.08)' : 'rgba(245,158,11,0.07)'}
-                      />
-                      {/* Mid ring */}
-                      <circle
-                        cx={card.dotX} cy={card.dotY} r="5"
-                        fill={card.isHigh ? 'rgba(239,68,68,0.14)' : 'rgba(245,158,11,0.12)'}
-                      />
-                      {/* Core dot */}
-                      <circle
-                        cx={card.dotX} cy={card.dotY} r="3"
-                        fill={card.isHigh ? '#ef4444' : '#f59e0b'}
-                        filter="url(#dot-glow)"
-                      />
-                      {/* Bezier connector — thicker, more opaque */}
-                      <path
-                        id={`path-${card.key}`}
-                        d={`M ${card.dotX + 3},${card.dotY} C ${card.dotX + 40},${card.dotY} ${card.cardX - 40},${card.cardY + CARD_H / 2} ${card.cardX},${card.cardY + CARD_H / 2}`}
-                        fill="none"
-                        stroke={card.isHigh ? 'rgba(239,68,68,0.45)' : 'rgba(245,158,11,0.40)'}
-                        strokeWidth="1.2"
-                        strokeDasharray="3,4"
-                        className="connector-dash"
-                      />
-                    </g>
-                  );
-                })}
-              </svg>
- 
-              {/* Floating annotation cards */}
-              {annotationCards.map(card => {
-                const isCurrentHovered = hoveredKey === card.key;
-                const isAnyHovered = hoveredKey !== null;
-                const cardOpacity = isAnyHovered ? (isCurrentHovered ? 1.0 : 0.15) : 1.0;
-
-                return (
-                  <div
-                    key={card.key}
-                    data-card-key={card.key}
-                    ref={el => {
-                      const c = cardsPhysicsRef.current.find(p => p.key === card.key);
-                      if (c) c.element = el;
-                    }}
-                    onMouseDown={e => handleDragStart(card.key, e)}
-                    onTouchStart={e => handleDragStart(card.key, e)}
-                    onMouseEnter={() => setHoveredKey(card.key)}
-                    onMouseLeave={() => setHoveredKey(null)}
-                    className={`annotation-card float-card-${card.floatIdx % 6} absolute cursor-grab active:cursor-grabbing select-none transition-all duration-200`}
-                    style={{
-                      left: card.cardX,
-                      top: card.cardY,
-                      width: CARD_W,
-                      height: isCurrentHovered ? 'auto' : 34,
-                      zIndex: isCurrentHovered ? 30 : 20,
-                      opacity: cardOpacity,
-                      filter: isAnyHovered && !isCurrentHovered ? 'grayscale(80%) opacity(70%)' : 'none'
-                    }}
-                  >
-                  {/* Left-pointing callout arrow */}
-                  <div className="absolute left-0 top-1/2 -translate-y-1/2" style={{ left: -7, zIndex: 1 }}>
-                    <div className={`w-0 h-0 border-t-[7px] border-b-[7px] border-r-[8px] border-t-transparent border-b-transparent ${
-                      card.isHigh ? 'border-r-red-500/30' : 'border-r-amber-500/25'
-                    }`} />
-                  </div>
-                  <div className={`relative rounded-lg overflow-hidden shadow-2xl shadow-black/70 ring-1 ring-white/5 border-l-[3px] w-full h-full ${
-                    card.isHigh ? 'border-l-red-500' : 'border-l-amber-400'
-                  }`} style={{ background: 'linear-gradient(160deg, #0d1520 0%, #0a0f18 100%)' }}>
-                    {/* Header */}
-                    <div className={`px-3 pt-2.5 pb-2 ${
-                      isCurrentHovered 
-                        ? `border-b ${card.isHigh ? 'border-red-900/40' : 'border-amber-900/30'}`
-                        : ''
-                    }`}>
-                      <div className="flex items-center gap-1.5">
-                        <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-                          card.isHigh ? 'bg-red-500' : 'bg-amber-400'
-                        }`} />
-                        <span className={`text-[9px] font-black uppercase tracking-widest ${
-                          card.isHigh ? 'text-red-400' : 'text-amber-400'
-                        }`}>{card.key}</span>
-                      </div>
-                    </div>
-                    {/* Body */}
-                    {isCurrentHovered && (
-                      <div className="px-3 py-2.5">
-                        <p className="text-[10.5px] text-slate-400 leading-[1.5]">
-                          {card.span?.detailed_explanation || card.span?.explanation}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-            </>
-          )}
-        </div>
+            <span className="flex-1" />
+            <button
+              type="button"
+              onClick={openDossier}
+              className={`text-[10px] font-mono font-bold uppercase tracking-wider transition-colors ${
+                isActorHub ? 'text-purple-300 hover:text-purple-100' : 'text-slate-500 hover:text-slate-300'
+              }`}
+            >
+              Dossier →
+            </button>
+          </>
+        ) : (
+          <span className="flex items-center gap-1.5 text-[11px] font-mono font-medium text-slate-500">
+            <UserX className="w-3 h-3" />
+            No recruiter contact identified
+            <span className="text-slate-600 font-normal">· anonymous posting</span>
+          </span>
+        )}
       </div>
 
-
-      {/* Trafficker Playbook — compact summary-first (Option C) */}
-      {getPlaybookData().length > 0 && (
-        <div className="rounded overflow-hidden border border-slate-800/80" style={{background:'#111318'}}>
-          {/* Collapsed summary bar — always visible */}
+      {/* Anchor nav — section jump links */}
+      <nav className="px-4 pb-1.5 pt-1.5 flex items-center gap-1 overflow-x-auto scrollbar-thin scrollbar-thumb-slate-850 scrollbar-track-transparent border-t border-slate-800/60" aria-label="Page sections">
+        {[
+          { id: 'section-score', label: 'Score' },
+          { id: 'section-threat', label: 'Analysis' },
+          ...(getPlaybookData().length > 0 ? [{ id: 'section-playbook', label: 'Escalation' }] : []),
+          { id: 'section-actions', label: 'Actions' },
+          ...(similarScans.length > 0 ? [{ id: 'similar-postings-section', label: 'Similar Ads' }] : []),
+          ...(aiReview ? [{ id: 'section-ai-review', label: 'AI Review' }] : []),
+          { id: 'section-notes', label: 'Notes' },
+          { id: 'section-source', label: 'Source' },
+          { id: 'section-details', label: 'Details' },
+          { id: 'section-indicators', label: 'Indicators' },
+        ].map(item => (
           <button
+            key={item.id}
             type="button"
-            onClick={() => setIsPlaybookExpanded(p => !p)}
-            className="w-full px-4 py-3 flex items-center justify-between gap-3 text-left hover:bg-red-950/10 transition-colors"
+            onClick={() => handleNavJump(item.id)}
+            className={`flex-shrink-0 px-2.5 py-1 rounded text-[10px] font-mono font-bold uppercase tracking-wider transition-colors ${
+              activeNavSection === item.id
+                ? 'text-amber-400 bg-amber-500/10 border border-amber-500/30'
+                : 'text-slate-500 hover:text-slate-300 border border-transparent'
+            }`}
           >
-            <div className="flex items-center gap-2.5 min-w-0">
-              <ShieldAlert className="w-4 h-4 text-red-500 flex-shrink-0" />
-              <span className="text-sm text-slate-300 font-medium">
-                <span className="font-bold text-red-500">{getPlaybookData().length} potential risk escalation stages</span>
-                <span className="text-slate-400 font-normal"> detected based on current indicators</span>
-              </span>
-            </div>
-            <span className="flex items-center gap-1 text-xs text-red-400 font-semibold flex-shrink-0 font-mono">
-              {isPlaybookExpanded ? 'Hide' : 'View Playbook'}
-              {isPlaybookExpanded
-                ? <ChevronUp className="w-3.5 h-3.5" />
-                : <ChevronDown className="w-3.5 h-3.5" />}
-            </span>
+            {item.label}
           </button>
-
-          {/* Slide-down panel */}
-          {isPlaybookExpanded && (
-            <div className="border-t border-slate-800 divide-y divide-slate-800/80">
-              {getPlaybookData().map((step, idx) => {
-                const isRowOpen = expandedPlaybookRows.has(idx);
-                // Extract a short stage label from the phase string e.g. "Stage 1: Contact" -> "Contact"
-                const stageLabel = step.phase?.replace(/^Stage \d+:\s*/i, '') || step.phase;
-                // Severity: first 2 stages are higher risk
-                const isHighSeverity = idx < 2;
-                return (
-                  <div key={idx} className="select-text">
-                    {/* Compact row */}
-                    <div className="flex items-start gap-3 px-4 py-3">
-                      {/* Severity bar */}
-                      <div className={`w-[3px] self-stretch rounded-full flex-shrink-0 mt-0.5 ${
-                        isHighSeverity ? 'bg-red-500' : 'bg-amber-500'
-                      }`} />
-
-                      {/* Step number */}
-                      <span className={`text-[10px] font-bold font-mono flex-shrink-0 mt-0.5 ${
-                        isHighSeverity ? 'text-red-400' : 'text-amber-400'
-                      }`}>
-                        {String(idx + 1).padStart(2, '0')}
-                      </span>
-
-                      {/* Stage label + tactic summary */}
-                      <div className="flex-1 min-w-0">
-                        <span className={`text-[9px] font-bold uppercase tracking-widest font-mono ${
-                          isHighSeverity ? 'text-red-400' : 'text-amber-400'
-                        }`}>{stageLabel}</span>
-                        <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">{makeTentative(step.tactic)}</p>
-                      </div>
-
-                      {/* Per-row details toggle */}
-                      <button
-                        type="button"
-                        onClick={() => setExpandedPlaybookRows(prev => {
-                          const next = new Set(prev);
-                          next.has(idx) ? next.delete(idx) : next.add(idx);
-                          return next;
-                        })}
-                        className="flex-shrink-0 text-[10px] font-mono font-semibold text-slate-400 hover:text-amber-400 transition-colors mt-0.5 whitespace-nowrap"
-                      >
-                        {isRowOpen ? '− hide' : '+ watch for'}
-                      </button>
-                    </div>
-
-                    {/* Inline indicator detail */}
-                    {isRowOpen && (
-                      <div className="px-4 pb-3 ml-[calc(3px+12px+20px+12px)]">
-                        <p className="text-[11px] text-amber-400/90 leading-relaxed bg-amber-500/5 border border-amber-500/15 rounded px-3 py-2">
-                          {sanitizeTraumaLanguage(step.red_flag_indicator)}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
-
-      {/* Take Action Operational Dashboard */}
-      <div className="rounded overflow-hidden border border-slate-800/80 p-5" style={{background:'#111318'}}>
-        <div className="border-b border-slate-800 pb-3 mb-5">
-          <h3 className="font-bold text-slate-200">Take Action</h3>
-          <p className="text-xs text-slate-500 mt-1">Operational next steps and evidence-gathering tools for analysts.</p>
-        </div>
-
-        {/* Primary Actions Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
-          {PRIMARY_ACTIONS.map(action => {
-            const Icon = action.icon;
-            return (
-              <div 
-                key={action.id} 
-                className="bg-[#0f121d] border-2 border-slate-800/80 rounded-lg p-5 flex flex-col justify-between hover:border-amber-500/50 transition-all duration-300 shadow-md group"
-              >
-                <div>
-                  <div className="flex items-center justify-between">
-                    <div className="p-2.5 bg-slate-900 border border-slate-700/60 rounded-md text-amber-400">
-                      <Icon className="w-5 h-5" />
-                    </div>
-                    <span className="text-[9px] font-bold font-mono tracking-widest bg-amber-950/40 text-amber-400 px-2 py-0.5 rounded border border-amber-800/40">
-                      {action.badge}
-                    </span>
-                  </div>
-                  <h4 className="text-sm font-extrabold text-slate-100 mt-4 select-text leading-snug">
-                    {action.title}
-                  </h4>
-                  <p className="text-xs text-slate-400 mt-2.5 leading-relaxed select-text">
-                    {action.description}
-                  </p>
-                </div>
-                
-                <button
-                  type="button"
-                  onClick={() => handleTakeAction(action.id)}
-                  className="mt-5 w-full py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-mono font-black rounded-md transition-all duration-200 tracking-wider flex items-center justify-center gap-1.5 shadow"
-                >
-                  {action.ctaText}
-                </button>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Advanced Tools Section */}
-        <div className="border border-slate-800/60 rounded bg-[#0a0b0e] overflow-hidden">
-          <button
-            type="button"
-            onClick={() => setShowAdvancedTools(prev => !prev)}
-            className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-slate-900/50 transition-colors"
-          >
-            <div className="flex items-center gap-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
-              <span className="text-xs font-mono font-bold uppercase tracking-wider text-slate-400">Advanced Operational Tools</span>
-              <span className="text-[10px] bg-slate-900 border border-slate-800 text-slate-450 px-2 py-0.5 rounded font-mono font-bold">
-                {ADVANCED_ACTIONS.length} tools
-              </span>
-            </div>
-            {showAdvancedTools ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
-          </button>
-          
-          {showAdvancedTools && (
-            <div className="p-4 border-t border-slate-900 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 bg-[#0a0c12]/50">
-              {ADVANCED_ACTIONS.map(action => {
-                const Icon = action.icon;
-                return (
-                  <div 
-                    key={action.id} 
-                    className="bg-[#0b0c10] border border-slate-850 rounded p-3.5 flex flex-col justify-between hover:border-slate-700 transition-colors duration-200 group"
-                  >
-                    <div>
-                      <div className="flex items-center justify-between">
-                        <div className="p-1.5 bg-slate-950 border border-slate-850 rounded text-slate-450 group-hover:text-slate-200 transition-colors">
-                          <Icon className="w-4 h-4" />
-                        </div>
-                        <span className="text-[8px] font-bold font-mono tracking-wider bg-slate-950 text-slate-450 px-1.5 py-0.5 rounded border border-slate-900">
-                          {action.badge}
-                        </span>
-                      </div>
-                      <h5 className="text-xs font-bold text-slate-300 mt-2.5 select-text leading-snug">
-                        {action.title}
-                      </h5>
-                      <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed select-text">
-                        {action.description}
-                      </p>
-                    </div>
-                    
-                    <button
-                      type="button"
-                      onClick={() => handleTakeAction(action.id)}
-                      className="mt-3.5 w-full py-1.5 bg-slate-950 hover:bg-slate-900 border border-slate-850 hover:border-slate-750 text-slate-450 hover:text-slate-200 text-[10px] font-mono font-bold rounded transition-colors duration-200 tracking-wider flex items-center justify-center gap-1.5"
-                    >
-                      {action.ctaText}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+        ))}
+      </nav>
       </div>
+
+      <ScoreBreakdown
+        score={score}
+        scoreBorder={score >= 60 ? 'border-red-800/40' : 'border-amber-800/40'}
+        scoreDetails={scoreDetails}
+        suspiciousSpans={suspiciousSpans}
+        scoreBarsVisible={scoreBarsVisible}
+        setScoreBarsVisible={setScoreBarsVisible}
+        jumpToEvidence={jumpToEvidence}
+        scoreColor={score >= 60 ? '#e5534b' : score >= 30 ? '#f0b429' : '#3fb950'}
+        scoreDrifted={scoreDrifted}
+        storedScore={storedScore}
+        handleSave={handleSave}
+        saving={saving}
+      />
+
+
+      <ThreatAnalysis
+        originalText={originalText}
+        ocrText={ocrText}
+        translatedText={translatedText}
+        normalizedTextVal={normalizedTextVal}
+        suspiciousSpans={suspiciousSpans}
+        detectedLanguage={detectedLanguage}
+        isTranslated={isTranslated}
+        showHighlights={showHighlights}
+        setShowHighlights={setShowHighlights}
+        activeTabInput={activeTabInput}
+        setActiveTabInput={setActiveTabInput}
+        hoveredKey={hoveredKey}
+        setHoveredKey={setHoveredKey}
+      />
+
+
+
+      <EscalationStages
+        playbookData={getPlaybookData()}
+        isPlaybookExpanded={isPlaybookExpanded}
+        setIsPlaybookExpanded={setIsPlaybookExpanded}
+      />
+
+      <ActionGrid
+        handleCopySummary={handleCopySummary}
+        handleTakeAction={handleTakeAction}
+      />
 
       {/* Floating Action Feedback Toast */}
       {activeActionToast && (
@@ -2392,7 +1693,7 @@ export default function ReviewScan() {
       )}
 
       {/* Collapsible reference flyer image box */}
-      {(scanInput?.image || scanInput?.originalImage) && (
+      {flyerImageUrl && (
         <div className="rounded overflow-hidden border border-slate-800/80" style={{background:'#111318'}}>
           <button
             type="button"
@@ -2408,12 +1709,13 @@ export default function ReviewScan() {
             </div>
             {isImageExpanded ? <ChevronUp className="w-5 h-5 text-slate-500" /> : <ChevronDown className="w-5 h-5 text-slate-500" />}
           </button>
-          
+
           {isImageExpanded && (
             <div className="p-4 border-t border-slate-800 bg-[#0a0c12] flex justify-center">
               <img
-                src={scanInput.image || scanInput.originalImage}
+                src={flyerImageUrl}
                 alt="Raw Flyer"
+                loading="lazy"
                 className="w-full max-w-sm mx-auto rounded border border-slate-800 object-contain max-h-96"
               />
             </div>
@@ -2423,75 +1725,30 @@ export default function ReviewScan() {
 
 
 
-      {/* Similar Job Postings Section */}
-      {similarScans.length > 0 && (
-        <div id="similar-postings-section" className="rounded overflow-hidden border border-slate-800/80" style={{background:'#111318'}}>
-          <div className="p-4 border-b border-slate-800 flex items-center justify-between">
-            <div>
-              <h3 className="font-bold text-slate-200">Similar Job Ads Detected</h3>
-              <p className="text-xs text-slate-500 mt-1">Found potential matches or template re-use in your history.</p>
-            </div>
-            <span className="bg-amber-950 text-amber-400 text-[10px] font-mono px-2 py-0.5 rounded border border-amber-800/60 font-bold">
-              {similarScans.length} similar ad{similarScans.length > 1 ? 's' : ''}
-            </span>
-          </div>
-          <div className="divide-y divide-slate-800 max-h-60 overflow-y-auto">
-            {similarScans.map((scan) => {
-              const pct = Math.round(scan.similarity * 100);
-              return (
-                <div key={scan.id} className="p-4 flex items-center justify-between hover:bg-slate-850/20 transition-colors">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold text-slate-200 truncate">
-                        {scan.jobTitle || 'Unknown Job'}
-                      </span>
-                      <span className="text-xs text-slate-450 truncate">
-                        ({scan.employer || 'Unknown Employer'})
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-550 mt-0.5">
-                      Scanned on {new Date(scan.timestamp).toLocaleDateString()}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-sm border ${
-                      pct >= 80 ? 'bg-red-950/40 text-red-400 border-red-900/30' :
-                      pct >= 60 ? 'bg-amber-950/40 text-amber-400 border-amber-900/30' :
-                      'bg-slate-900 text-slate-400 border-slate-800'
-                    }`}>
-                      {pct}% Match
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setComparisonTarget(scan)}
-                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold font-mono rounded transition-colors flex items-center gap-1"
-                    >
-                      <Columns className="w-3.5 h-3.5" />
-                      Compare Diff
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+      <SimilarAds
+        similarScans={similarScans}
+        formData={formData}
+        originalText={originalText}
+        ocrText={ocrText}
+        setComparisonTarget={setComparisonTarget}
+      />
+
 
       {/* AI Review Widget */}
       {aiReview && (
-        <div className="rounded overflow-hidden border border-indigo-900/40" style={{background:'#111318'}}>
+        <div id="section-ai-review" data-nav-section className="scroll-mt-32 rounded overflow-hidden border border-indigo-900/40" style={{background:'#111318'}}>
           <div className="p-4 border-b border-indigo-900/30 bg-indigo-500/5 flex items-center gap-2">
              <BrainCircuit className="w-4 h-4 text-indigo-400" />
              <h3 className="font-bold text-slate-200 text-sm">AI Scam Analysis</h3>
           </div>
-          <div className="p-4 text-sm text-slate-400 leading-relaxed border-l-2 border-indigo-500/30 ml-4 mr-4 mt-0 pl-3">
+          <div className="p-4 text-[15px] text-slate-200 leading-relaxed border-l-2 border-indigo-500/30 ml-4 mr-4 mt-0 pl-3">
              {aiReview}
           </div>
         </div>
       )}
 
       {/* Analyst Comments & Notes Widget */}
-      <div className="rounded overflow-hidden border border-slate-800/80" style={{background:'#111318'}}>
+      <div id="section-notes" data-nav-section className="scroll-mt-32 rounded overflow-hidden border border-slate-800/80" style={{background:'#111318'}}>
         <button
           type="button"
           onClick={() => setIsNotesExpanded(prev => !prev)}
@@ -2501,7 +1758,7 @@ export default function ReviewScan() {
             <MessageSquare className="w-4 h-4 text-amber-500" />
             <div>
               <h3 className="font-bold text-slate-200 text-sm">Analyst Notes & Case Comments</h3>
-              <p className="text-xs text-slate-600 mt-0.5">
+              <p className="text-xs text-slate-500 mt-0.5">
                 {notes ? 'Click to view/edit existing comments' : 'Click to add internal investigation comments'}
               </p>
             </div>
@@ -2522,105 +1779,26 @@ export default function ReviewScan() {
         )}
       </div>
 
-      {/* Source & Ingestion Metadata Widget */}
-      <div className="rounded overflow-hidden border border-slate-800/80" style={{background:'#111318'}}>
-        <button
-          type="button"
-          onClick={() => setIsSourceExpanded(prev => !prev)}
-          className="w-full p-4 flex items-center justify-between text-left hover:bg-slate-800/30 transition-colors"
-        >
-          <div className="flex items-center gap-2">
-            <Globe className="w-4 h-4 text-amber-500 flex-shrink-0" />
-            <div>
-              <h3 className="font-bold text-slate-200 text-sm">Source & Ingestion Context</h3>
-              <p className="text-xs text-slate-650 mt-0.5">
-                Review platform, URL, ingestion method, and original post date
-              </p>
-            </div>
-          </div>
-          {isSourceExpanded ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
-        </button>
+      <SourceContext
+        sourcePlatform={sourcePlatform}
+        setSourcePlatform={setSourcePlatform}
+        ingestionMethod={ingestionMethod}
+        setIngestionMethod={setIngestionMethod}
+        sourceUrl={sourceUrl}
+        setSourceUrl={setSourceUrl}
+        postDate={postDate}
+        setPostDate={setPostDate}
+        ocrText={ocrText}
+        isSourceExpanded={isSourceExpanded}
+        setIsSourceExpanded={setIsSourceExpanded}
+      />
 
-        {isSourceExpanded && (
-          <div className="p-4 border-t border-slate-800 space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Source Platform */}
-              <div className="space-y-1.5">
-                <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider">
-                  Source Platform
-                </label>
-                <select
-                  value={sourcePlatform}
-                  onChange={(e) => setSourcePlatform(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-sm text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-amber-500/50 transition-all font-mono"
-                >
-                  <option value="unspecified">Unspecified</option>
-                  <option value="Facebook">Facebook</option>
-                  <option value="Telegram">Telegram</option>
-                  <option value="WhatsApp">WhatsApp</option>
-                  <option value="Line">Line</option>
-                  <option value="WeChat">WeChat</option>
-                  <option value="TikTok">TikTok</option>
-                  <option value="LinkedIn">LinkedIn</option>
-                  <option value="Craigslist">Craigslist</option>
-                  <option value="Other">Other</option>
-                </select>
-              </div>
-
-              {/* Ingestion Method */}
-              <div className="space-y-1.5">
-                <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider">
-                  Ingestion Method
-                </label>
-                <select
-                  value={ingestionMethod}
-                  onChange={(e) => setIngestionMethod(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-sm text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-amber-500/50 transition-all font-mono"
-                >
-                  <option value="Analyst Upload">Analyst Upload</option>
-                  <option value="Web Scraper">Web Scraper</option>
-                  <option value="API Feed">API Feed</option>
-                  <option value="Community Tip Line">Community Tip Line</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Source URL */}
-            <div className="space-y-1.5">
-              <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider">
-                Source URL Link
-              </label>
-              <input
-                type="text"
-                value={sourceUrl === 'unspecified' ? '' : sourceUrl}
-                onChange={(e) => setSourceUrl(e.target.value || 'unspecified')}
-                placeholder="Unspecified URL"
-                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-sm text-xs text-slate-350 focus:outline-none focus:ring-1 focus:ring-amber-500/50 transition-all font-mono"
-              />
-            </div>
-
-            {/* Post Date */}
-            <div className="space-y-1.5">
-              <label className="block text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider">
-                Post Date
-              </label>
-              <input
-                type="text"
-                value={postDate === 'unspecified' ? '' : postDate}
-                onChange={(e) => setPostDate(e.target.value || 'unspecified')}
-                placeholder="Unspecified Date (e.g. YYYY-MM-DD)"
-                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-sm text-xs text-slate-350 focus:outline-none focus:ring-1 focus:ring-amber-500/50 transition-all font-mono"
-              />
-            </div>
-          </div>
-        )}
-      </div>
 
       {/* Extracted Data Form */}
-      <div className="rounded overflow-hidden border border-slate-800/80" style={{background:'#111318'}}>
+      <div id="section-details" data-nav-section className="scroll-mt-32 rounded overflow-hidden border border-slate-800/80" style={{background:'#111318'}}>
         <div className="p-4 border-b border-slate-800">
            <h3 className="font-bold text-slate-200 text-sm">Extracted Details</h3>
-           <p className="text-xs text-slate-600 mt-1">Tap fields to correct any inaccuracies.</p>
+           <p className="text-xs text-slate-500 mt-1">Tap fields to correct any inaccuracies.</p>
         </div>
         <div className="p-4 space-y-4">
            {Object.keys(formData)
@@ -2719,62 +1897,13 @@ export default function ReviewScan() {
           </div>
         </div>
 
-      {/* Risk Flags Override */}
-      <div className="rounded overflow-hidden border border-slate-800/80 mb-6" style={{background:'#111318'}}>
-        <button
-          type="button"
-          onClick={() => setIsIndicatorsExpanded(prev => !prev)}
-          className="w-full p-4 flex items-center justify-between text-left hover:bg-slate-800/30 transition-colors"
-        >
-          <div className="flex items-center gap-2">
-            <ShieldAlert className="w-4 h-4 text-amber-500" />
-            <div>
-              <h3 className="font-bold text-slate-200 text-sm">Risk Indicators</h3>
-              <p className="text-xs text-slate-600 mt-0.5">Check triggers you've discovered to recalculate the score.</p>
-            </div>
-          </div>
-          {isIndicatorsExpanded ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
-        </button>
-        {isIndicatorsExpanded && (
-          <div className="p-2 border-t border-slate-800 divide-y divide-slate-850/30">
-             {Object.keys(RISK_FLAGS).map(flag => (
-               <label key={flag} className="flex items-center justify-between p-2.5 cursor-pointer hover:bg-slate-900/50 rounded-none transition-colors border-b border-slate-850/30 last:border-0">
-                 <span className="text-sm font-medium text-slate-300">{flag}</span>
-                 <input
-                   type="checkbox"
-                   checked={activeFlags.includes(flag)}
-                   onChange={() => handleFlagToggle(flag)}
-                   className="w-4 h-4 rounded-sm border-slate-800 text-amber-600 focus:ring-amber-500/40 bg-slate-950 cursor-pointer"
-                 />
-               </label>
-             ))}
-          </div>
-        )}
-      </div>
+      <IndicatorChecklist
+        activeFlags={activeFlags}
+        handleFlagToggle={handleFlagToggle}
+        isIndicatorsExpanded={isIndicatorsExpanded}
+        setIsIndicatorsExpanded={setIsIndicatorsExpanded}
+      />
 
-      {/* Raw OCR Text */}
-      {ocrText && (
-        <div className="rounded overflow-hidden border border-slate-800/80 mb-6" style={{background:'#111318'}}>
-          <button
-            type="button"
-            onClick={() => setIsOcrExpanded(prev => !prev)}
-            className="w-full p-4 border-b border-slate-800 flex items-center justify-between text-left hover:bg-slate-850/20 transition-colors"
-          >
-            <div>
-              <h3 className="font-bold text-slate-200 text-sm">Image OCR Output</h3>
-              <p className="text-xs text-slate-500 mt-1">Full text extracted from the image by the AI.</p>
-            </div>
-            {isOcrExpanded ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
-          </button>
-          {isOcrExpanded && (
-            <div className="p-4 bg-[#0a0c12] border-t border-slate-900">
-               <div className="text-sm font-mono text-slate-300 whitespace-pre-wrap select-text">
-                 {ocrText}
-               </div>
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Save action completed via sticky header console */}
 

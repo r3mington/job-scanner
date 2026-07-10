@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, DoorOpen, Phone, Info, X, Globe2, ShieldCheck, Eye, Sparkles } from 'lucide-react';
 import { translateInterviewLines } from '../services/geminiService';

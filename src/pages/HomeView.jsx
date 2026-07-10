@@ -87,36 +87,42 @@ export default function HomeView() {
   useEffect(() => {
     async function loadStats() {
       try {
-        const { data, error } = await supabase
-          .from('scans')
-          .select('id, timestamp, job_title, employer, risk_score, risk_level, location_country, source_platform, extracted_data, original_image_url');
+        const [statsRes, recentRes] = await Promise.all([
+          supabase
+            .from('scans')
+            .select('id, risk_score, contact_method:extracted_data->>contact_method'),
+          supabase
+            .from('scans')
+            .select('id, timestamp, job_title, employer, risk_score, risk_level, location_country, original_image_url')
+            .order('timestamp', { ascending: false })
+            .limit(3)
+        ]);
 
-        if (error) throw error;
+        if (statsRes.error) throw statsRes.error;
+        if (recentRes.error) throw recentRes.error;
 
-        if (data) {
-          const mapped = data.map(mapDbToRecord);
-          const contactSet = new Set();
-          mapped.forEach(s => {
-            let ext = s.extractedData;
-            if (typeof ext === 'string') {
-              try { ext = JSON.parse(ext); } catch { ext = null; }
-            }
-            const method = ext?.contact_method || ext?.contactMethod;
-            if (method && typeof method === 'string' && method.trim()) {
-              contactSet.add(method.trim().toLowerCase());
-            }
-          });
+        const statsData = statsRes.data || [];
+        const contactSet = new Set();
+        let highRiskCount = 0;
+        
+        statsData.forEach(row => {
+          if ((row.risk_score || 0) >= HIGH_RISK_THRESHOLD) {
+            highRiskCount++;
+          }
+          const method = row.contact_method;
+          if (method && typeof method === 'string' && method.trim()) {
+            contactSet.add(method.trim().toLowerCase());
+          }
+        });
 
-          setStats({
-            totalScans: mapped.length,
-            highRiskScans: mapped.filter(s => (s.riskScore || 0) >= HIGH_RISK_THRESHOLD).length,
-            totalHubs: contactSet.size
-          });
+        setStats({
+          totalScans: statsData.length,
+          highRiskScans: highRiskCount,
+          totalHubs: contactSet.size
+        });
 
-          const sorted = [...mapped].sort(
-            (a, b) => (new Date(b.timestamp).getTime() || 0) - (new Date(a.timestamp).getTime() || 0)
-          );
-          setRecentScans(sorted.slice(0, 3));
+        if (recentRes.data) {
+          setRecentScans(recentRes.data.map(mapDbToRecord));
         }
       } catch (err) {
         console.warn('Could not fetch scan stats:', err);

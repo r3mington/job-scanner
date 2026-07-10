@@ -70,10 +70,10 @@ class MockSupabaseClient {
     
     this.storage = {
       from: () => ({
-        upload: async (fileName, blob) => {
+        upload: async (fileName) => {
           return { data: { path: fileName }, error: null };
         },
-        getPublicUrl: (fileName) => {
+        getPublicUrl: () => {
           return { data: { publicUrl: 'https://images.unsplash.com/photo-1521737711867-e3b904737d88?w=500' } };
         }
       })
@@ -82,7 +82,7 @@ class MockSupabaseClient {
 
   from(tableName) {
     return {
-      select: (cols) => {
+      select: () => {
         const data = JSON.parse(localStorage.getItem(`mock_db_${tableName}`) || '[]');
         return {
           order: (col, opts) => {
@@ -103,6 +103,23 @@ class MockSupabaseClient {
               single: async () => {
                 return { data: filtered[0] || null, error: null };
               },
+              ilike: (icol, pattern) => {
+                // Supports the JSON-path form 'extracted_data->>key' and plain columns
+                const jsonMatch = icol.match(/^(\w+)->>(\w+)$/);
+                const needle = String(pattern).replace(/\\([\\%_])/g, '$1').replace(/%/g, '').toLowerCase();
+                const rows = filtered.filter(d => {
+                  const v = jsonMatch ? d[jsonMatch[1]]?.[jsonMatch[2]] : d[icol];
+                  return typeof v === 'string' && v.toLowerCase().includes(needle);
+                });
+                return { then: (resolve) => resolve({ data: rows, error: null }) };
+              },
+              then: (resolve) => resolve({ data: filtered, error: null })
+            };
+          },
+          in: (col, vals) => {
+            const set = new Set(vals);
+            const filtered = data.filter(d => set.has(d[col]));
+            return {
               then: (resolve) => resolve({ data: filtered, error: null })
             };
           },
@@ -169,6 +186,16 @@ export const supabase = isConfigured
 
 // True when a real Supabase backend is configured; false in local sandbox mode
 export const isSupabaseConfigured = !!isConfigured;
+
+// Every detail column EXCEPT original_image_url. The image can be a multi-MB
+// base64 data-URI on legacy rows, so we keep it out of the critical-path fetch
+// and load it lazily/separately. Single source of truth for detail selects.
+export const SCAN_DETAIL_COLUMNS =
+  'id, timestamp, job_title, employer, risk_score, risk_level, extracted_data, ' +
+  'active_flags, original_text, ocr_text, ai_review, parsed_salary_usd, ' +
+  'location_country, detected_language, is_translated, translated_text, ' +
+  'batch_id, batch_name, user_id, normalized_text, notes, source_platform, ' +
+  'source_url, ingestion_method, post_date';
 
 // Map frontend camelCase record to Supabase snake_case schema
 export function mapRecordToDb(record) {
@@ -259,7 +286,7 @@ export async function uploadBase64Image(base64Data) {
   const blob = new Blob([bytes], { type: contentType });
   const fileName = `${Date.now()}_scan.${contentType.split('/')[1] || 'jpg'}`;
   
-  const { data, error } = await supabase.storage
+  const { error } = await supabase.storage
     .from(bucketName)
     .upload(fileName, blob, { contentType });
     

@@ -13,11 +13,8 @@ import {
   FileText, 
   Lock, 
   Globe, 
-  MapPin, 
-  TrendingUp, 
   UserCheck, 
   MessageSquare,
-  ChevronRight,
   ClipboardList,
   ChevronDown,
   ChevronUp
@@ -90,13 +87,7 @@ export default function DecoyContactView() {
     }
   }, [scanData, navigate]);
 
-  if (!scanData) {
-    return (
-      <div className="flex-1 flex items-center justify-center bg-[#0a0f18] text-slate-400 font-mono text-sm">
-        No scan parameters provided. Redirecting...
-      </div>
-    );
-  }
+
 
   // --- Checkpoints State ---
   const [checkpoints, setCheckpoints] = useState({
@@ -119,7 +110,7 @@ export default function DecoyContactView() {
     if (isExisting) {
       const fetchScanCheckpoints = async () => {
         try {
-          const { data, error } = await supabase
+          const { data } = await supabase
             .from('scans')
             .select('extracted_data')
             .eq('id', scanId)
@@ -458,12 +449,20 @@ export default function DecoyContactView() {
     doc.save(`${persona.name.toLowerCase()}_cv.pdf`);
   };
 
-  const calculatedScore = calculateRiskScore(scanData.activeFlags || [], {
+  const calculatedScore = scanData ? calculateRiskScore(scanData.activeFlags || [], {
     parsedSalaryUsd: scanData.parsedSalaryUsd,
     locationCountry: scanData.locationCountry,
     detectedLanguage: scanData.detectedLanguage,
     contactMethod: scanData.contactMethod
-  }).score;
+  }).score : 0;
+
+  if (!scanData) {
+    return (
+      <div className="flex-1 flex items-center justify-center bg-[#0a0f18] text-slate-400 font-mono text-sm">
+        No scan parameters provided. Redirecting...
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col flex-1 p-4 max-w-screen-md w-full mx-auto space-y-6 select-text text-slate-355 bg-[#0d1117] min-h-screen">

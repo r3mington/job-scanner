@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BookOpen, ChevronDown, ChevronUp, CheckCircle2, Circle, Heart, AlertTriangle, Shield, Users, Globe, FileText, BarChart3, Upload, Network, Scale, Leaf, ArrowRight, HelpCircle, Award, Download } from 'lucide-react';
+import { ChevronDown, ChevronUp, CheckCircle2, Circle, Heart, AlertTriangle, Shield, Users, Globe, FileText, BarChart3, Upload, Network, Scale, Leaf, HelpCircle, Award, Download } from 'lucide-react';
 
 const WELLBEING_KEY = 'sentinel_learn_wellbeing_acknowledged';
 const PROGRESS_KEY = 'sentinel_learn_progress';

@@ -1,11 +1,27 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase, mapDbToRecord } from '../utils/supabaseClient';
-import { Search, ChevronRight, ChevronDown, ChevronUp, AlertTriangle, Briefcase, MapPin, Folder, Trash2, Globe, DollarSign, Languages, FileText, ShieldAlert, List, Network, Radio } from 'lucide-react';
+import { Search, ChevronRight, ChevronDown, ChevronUp, Briefcase, MapPin, Folder, Trash2, Globe, DollarSign, FileText, List, Network, Radio } from 'lucide-react';
 import { format } from 'date-fns';
-import { useNavigate } from 'react-router-dom';
-import { getCleanContactValue } from './DashboardView';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { getCleanContactValue } from '../utils/caseHelpers';
 import NetworkGraphView from '../components/NetworkGraphView';
 import { prepareSimilarity, similarityFromPrepared } from '../utils/similarity';
+
+const getStatusSortValue = (status) => {
+  const s = status || 'pending';
+  if (s === 'waiting_action') return 3;
+  if (s === 'pending') return 2;
+  if (s === 'reviewed') return 1;
+  return 0;
+};
+
+const getGroupStatusVal = (group) => {
+  if (group.isBatch) {
+    const vals = group.items.map(item => getStatusSortValue(item.extractedData?.audit_status));
+    return Math.max(...vals, 0);
+  }
+  return getStatusSortValue(group.scan.extractedData?.audit_status);
+};
 
 // Session cache: registry paints instantly on revisit, then refreshes in the
 // background. Module-scoped so it survives route changes but not reloads.
@@ -22,7 +38,7 @@ const formatSalary = (val) => {
   }).format(num);
 };
 
-const getSeverityColors = (score) => {
+const getSeverityColors = () => {
   return {
     border: 'border-slate-800/80',
     hoverBorder: 'hover:border-slate-700/80',
@@ -48,21 +64,31 @@ const renderStatusBadge = (status) => {
 
 export default function HistoryView() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedBatches, setExpandedBatches] = useState([]);
-  const [viewType, setViewType] = useState('list'); // 'list', 'graph'
+  // Open directly into the graph when navigated in to inspect a recruiter cluster.
+  const [viewType, setViewType] = useState(location.state?.viewType === 'graph' ? 'graph' : 'list'); // 'list', 'graph'
+  const [focusContact, setFocusContact] = useState(location.state?.focusContact || null);
   const [sortBy, setSortBy] = useState('date'); // 'date', 'status', 'risk'
   const [sourceFilter, setSourceFilter] = useState('all'); // 'all', 'manual', 'feed'
   const [scans, setScans] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [showBriefing, setShowBriefing] = useState(() => {
     const saved = localStorage.getItem('sentinel_show_history_briefing');
     return saved === 'true';
   });
 
+  // Consume the one-shot navigation state so a refresh or back-nav doesn't
+  // re-trigger the graph focus.
+  useEffect(() => {
+    if (location.state?.viewType || location.state?.focusContact) {
+      navigate(location.pathname, { replace: true, state: null });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const fetchScans = async () => {
     try {
-      if (!scansCache) setLoading(true);
       // Select only list-level fields. extracted_data is a multi-KB JSONB blob
       // per row; the list only needs two of its subfields, so pull just those.
       const { data, error } = await supabase
@@ -84,16 +110,13 @@ export default function HistoryView() {
       scansCache = mapped;
       setScans(mapped);
     } catch (err) {
-      console.error("Error fetching scans:", err);
-    } finally {
-      setLoading(false);
+      console.error("Error fetching scans:", err?.message || err);
     }
   };
 
   useEffect(() => {
     if (scansCache) {
       setScans(scansCache);
-      setLoading(false);
     }
     fetchScans();
   }, []);
@@ -224,21 +247,7 @@ export default function HistoryView() {
     });
   };
 
-  const getStatusSortValue = (status) => {
-    const s = status || 'pending';
-    if (s === 'waiting_action') return 3;
-    if (s === 'pending') return 2;
-    if (s === 'reviewed') return 1;
-    return 0;
-  };
 
-  const getGroupStatusVal = (group) => {
-    if (group.isBatch) {
-      const vals = group.items.map(item => getStatusSortValue(item.extractedData?.audit_status));
-      return Math.max(...vals, 0);
-    }
-    return getStatusSortValue(group.scan.extractedData?.audit_status);
-  };
 
   // Group scans by batchId
   const groupedScans = useMemo(() => {
@@ -385,7 +394,7 @@ export default function HistoryView() {
         <div className="flex items-center justify-between mt-3 text-[10px] font-mono uppercase tracking-wider gap-3">
           <div className="flex bg-[#0a0c12] border border-slate-800 p-0.5 rounded flex-1">
             <button
-              onClick={() => setViewType('list')}
+              onClick={() => { setViewType('list'); setFocusContact(null); }}
               className={`flex items-center justify-center gap-1.5 flex-1 py-1.5 rounded transition-all duration-200 ${viewType === 'list' ? 'bg-slate-800 text-amber-500 font-bold border border-slate-700 shadow-md' : 'text-slate-400 hover:text-white font-medium'}`}
             >
               <List className="w-3.5 h-3.5" />
@@ -758,7 +767,7 @@ export default function HistoryView() {
           )}
         </div>
       ) : (
-        <NetworkGraphView scans={filteredScans || []} />
+        <NetworkGraphView scans={filteredScans || []} focusContact={focusContact} />
       )}
     </div>
   );

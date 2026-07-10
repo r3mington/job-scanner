@@ -127,8 +127,6 @@ export default function WarningPosterModal({
     setPosterError('');
   };
 
-  const HIGH_RISK_THRESHOLD = 60;
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-fade-in">
       <div className="bg-[#111318] w-full max-w-5xl h-[85vh] rounded border border-slate-800 shadow-2xl flex flex-col overflow-hidden animate-scale-in">

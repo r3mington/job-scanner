@@ -2,28 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase, mapDbToRecord } from '../utils/supabaseClient';
 import { BarChart3, AlertTriangle, ShieldAlert, CheckCircle2, TrendingUp, Users, MapPin, PhoneCall, Loader2, Award, ChevronUp, ChevronDown } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-
-export const getCleanContactValue = (val) => {
-  if (!val) return null;
-  const str = val.trim();
-  
-  // Telegram usernames
-  const tgUserMatch = str.match(/(?:t\.me\/|tg:\/\/resolve\?domain=)([a-zA-Z0-9_]{5,32})/i);
-  const tgRawUser = str.match(/@([a-zA-Z0-9_]{5,32})/);
-  if (tgUserMatch) return `Telegram: @${tgUserMatch[1]}`;
-  if (tgRawUser) return `Telegram: @${tgRawUser[1]}`;
-  
-  // WhatsApp numbers
-  const waMatch = str.match(/(?:wa\.me\/|api\.whatsapp\.com\/send\?phone=)([0-9]+)/i);
-  if (waMatch) return `WhatsApp: +${waMatch[1]}`;
-  
-  // Emails
-  const emailMatch = str.match(/([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9_-]+)/);
-  if (emailMatch) return `Email: ${emailMatch[1]}`;
-
-  if (str.length > 0) return str;
-  return null;
-};
+import { getCleanContactValue } from '../utils/caseHelpers';
 
 export default function DashboardView() {
   const navigate = useNavigate();
@@ -85,9 +64,6 @@ export default function DashboardView() {
   const avgRisk = Math.round(scans.reduce((sum, s) => sum + s.riskScore, 0) / totalScans);
   const highRiskCount = scans.filter(s => s.riskScore >= 60).length;
   const highRiskPercent = Math.round((highRiskCount / totalScans) * 100);
-  
-  const medRiskCount = scans.filter(s => s.riskScore >= 30 && s.riskScore < 60).length;
-  const lowRiskCount = scans.filter(s => s.riskScore < 30).length;
 
   // Red Flags distribution
   const flagCounts = {};

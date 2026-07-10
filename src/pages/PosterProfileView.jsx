@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase, mapDbToRecord } from '../utils/supabaseClient';
-import { getCleanContactValue } from './DashboardView';
+import { getCleanContactValue } from '../utils/caseHelpers';
 import { generatePosterSummary } from '../services/geminiService';
 import { useAuth } from '../context/AuthContext';
 import { getActiveApiKey } from '../utils/apiKey';
-import { ArrowLeft, Loader2, PhoneCall, AlertTriangle, ShieldAlert, Award, FileText, Globe, ExternalLink, RefreshCw, Save, MapPin, ChevronUp, ChevronDown } from 'lucide-react';
+import { ArrowLeft, Loader2, ShieldAlert, FileText, Globe, ExternalLink, RefreshCw, Save, MapPin, ChevronUp, ChevronDown } from 'lucide-react';
 
 const COUNTRY_COORDINATES = {
   'Thailand': { x: 74, y: 55 },
@@ -31,7 +31,7 @@ const COUNTRY_COORDINATES = {
 export default function PosterProfileView() {
   const { contactId } = useParams();
   const navigate = useNavigate();
-  const { profile: authProfile } = useAuth();
+  const { user, profile: authProfile } = useAuth();
   
   const [scans, setScans] = useState([]);
   const [posterProfile, setPosterProfile] = useState({ id: contactId, notes: '', ai_summary: '' });
@@ -46,12 +46,17 @@ export default function PosterProfileView() {
   const [pendingLink, setPendingLink] = useState(null);
 
   useEffect(() => {
+    if (!user) return;
+
     const loadData = async () => {
       try {
         setLoading(true);
         
-        // 1. Fetch all scans
-        const { data: scansData, error: scansErr } = await supabase.from('scans').select('*');
+        // 1. Fetch only current user's scans with limited columns
+        const { data: scansData, error: scansErr } = await supabase
+          .from('scans')
+          .select('id, timestamp, job_title, employer, extracted_data, location_country, risk_score')
+          .eq('user_id', user.id);
         if (scansErr) throw scansErr;
         
         const mappedScans = (scansData || []).map(mapDbToRecord);
@@ -75,18 +80,18 @@ export default function PosterProfileView() {
         let profData = null;
         try {
           const { data, error: profErr } = await supabase
-            .from('poster_profiles')
+            .from('trafficker_profiles')
             .select('*')
             .eq('id', contactId)
             .maybeSingle();
             
           if (profErr && profErr.code !== 'PGRST116') {
-            console.warn("Supabase poster_profiles table query failed, utilizing localStorage fallback:", profErr);
+            console.warn("Supabase trafficker_profiles table query failed, utilizing localStorage fallback:", profErr);
           } else {
             profData = data;
           }
         } catch (dbErr) {
-          console.warn("Exception querying Supabase poster_profiles, utilizing localStorage fallback:", dbErr);
+          console.warn("Exception querying Supabase trafficker_profiles, utilizing localStorage fallback:", dbErr);
         }
  
         if (profData) {
@@ -103,7 +108,7 @@ export default function PosterProfileView() {
       }
     };
     loadData();
-  }, [contactId]);
+  }, [contactId, user]);
 
   const handleSaveNotes = async () => {
     try {
@@ -116,7 +121,7 @@ export default function PosterProfileView() {
 
     try {
       const { error } = await supabase
-        .from('poster_profiles')
+        .from('trafficker_profiles')
         .upsert({
           id: contactId,
           notes: notesText,
@@ -160,7 +165,7 @@ export default function PosterProfileView() {
 
     try {
       const { error } = await supabase
-        .from('poster_profiles')
+        .from('trafficker_profiles')
         .upsert({
           id: contactId,
           ai_summary: summary,

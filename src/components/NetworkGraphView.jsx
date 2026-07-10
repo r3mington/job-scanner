@@ -2,15 +2,65 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Network } from 'vis-network';
 import { DataSet } from 'vis-data';
 import { useNavigate } from 'react-router-dom';
-import { ZoomIn, RotateCcw, AlertTriangle, ArrowRight, ShieldAlert, CheckCircle2, AlertCircle, Play, Pause, Eye, EyeOff, Briefcase, FileSearch } from 'lucide-react';
-import { getCleanContactValue } from '../pages/DashboardView';
+import { RotateCcw, AlertTriangle, ArrowRight, ShieldAlert, CheckCircle2, AlertCircle, Play, Pause, Eye, EyeOff, Briefcase, FileSearch } from 'lucide-react';
+import { getCleanContactValue } from '../utils/caseHelpers';
 
 const truncateLabel = (s, max) => {
   if (!s) return s;
   return s.length > max ? s.substring(0, max - 1) + '…' : s;
 };
 
-export default function NetworkGraphView({ scans }) {
+const inviteLinkUrl = (code) => `https://t.me/+${code}`;
+
+// Parse contact method to extract clean identifier and type
+const parseContacts = (contactStr) => {
+  if (!contactStr) return [];
+  const str = contactStr.trim();
+  const contacts = [];
+
+  // Telegram username / links
+  const tgUserMatch = str.match(/(?:t\.me\/|tg:\/\/resolve\?domain=)([a-zA-Z0-9_]{5,32})/i);
+  const tgInviteMatch = str.match(/(?:t\.me\/\+|tg:\/\/join\?invite=)([a-zA-Z0-9_-]+)/i);
+  const tgRawUser = str.match(/@([a-zA-Z0-9_]{5,32})/);
+
+  if (tgUserMatch) {
+    contacts.push({ id: `tg_${tgUserMatch[1].toLowerCase()}`, label: `✈️ @${tgUserMatch[1]}`, type: 'Telegram', value: tgUserMatch[1] });
+  } else if (tgInviteMatch) {
+    contacts.push({ id: `tg_invite_${tgInviteMatch[1]}`, label: `✈️ Telegram Invite`, type: 'Telegram', value: inviteLinkUrl(tgInviteMatch[1]) });
+  } else if (tgRawUser) {
+    contacts.push({ id: `tg_${tgRawUser[1].toLowerCase()}`, label: `✈️ @${tgRawUser[1]}`, type: 'Telegram', value: tgRawUser[1] });
+  }
+
+  // WhatsApp links/numbers
+  const waMatch = str.match(/(?:wa\.me\/|api\.whatsapp\.com\/send\?phone=)([0-9]+)/i);
+  const isWhatsAppText = str.toLowerCase().includes('whatsapp');
+  
+  if (waMatch) {
+    contacts.push({ id: `wa_${waMatch[1]}`, label: `💬 WhatsApp (+${waMatch[1]})`, type: 'WhatsApp', value: waMatch[1] });
+  } else if (isWhatsAppText) {
+    const numMatch = str.match(/\+?[0-9]{8,15}/);
+    if (numMatch) {
+      const cleanNum = numMatch[0].replace(/[^0-9]/g, '');
+      contacts.push({ id: `wa_${cleanNum}`, label: `💬 WhatsApp (+${cleanNum})`, type: 'WhatsApp', value: cleanNum });
+    }
+  }
+
+  // Emails
+  const emailMatch = str.match(/([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9_-]+)/);
+  if (emailMatch) {
+    contacts.push({ id: `email_${emailMatch[1].toLowerCase()}`, label: `✉️ ${emailMatch[1]}`, type: 'Email', value: emailMatch[1] });
+  }
+
+  // Fallback if none matched but there is content
+  if (contacts.length === 0 && str.length > 0) {
+    const truncated = str.length > 25 ? str.substring(0, 22) + '...' : str;
+    contacts.push({ id: `generic_${encodeURIComponent(str)}`, label: `📞 ${truncated}`, type: 'Contact', value: str });
+  }
+
+  return contacts;
+};
+
+export default function NetworkGraphView({ scans, focusContact = null }) {
   const containerRef = useRef(null);
   const networkRef = useRef(null);
   const navigate = useNavigate();
@@ -18,7 +68,9 @@ export default function NetworkGraphView({ scans }) {
   const [physicsEnabled, setPhysicsEnabled] = useState(true);
   const [showContacts, setShowContacts] = useState(true);
   const [showCompanies, setShowCompanies] = useState(true);
-  const [minConnections, setMinConnections] = useState(3);
+  // When arriving to inspect a specific recruiter cluster, drop the hub
+  // threshold so even a 2-ad cluster is visible.
+  const [minConnections, setMinConnections] = useState(focusContact ? 1 : 3);
   const [graphStats, setGraphStats] = useState({ nodes: 0, edges: 0, hubs: 0 });
 
   // Reset selected node if it gets filtered out
@@ -31,57 +83,6 @@ export default function NetworkGraphView({ scans }) {
       }
     }
   }, [showCompanies, showContacts, selectedNode]);
-
-  // Parse contact method to extract clean identifier and type
-  const parseContacts = (contactStr) => {
-    if (!contactStr) return [];
-    const str = contactStr.trim();
-    const contacts = [];
-
-    // Telegram username / links
-    const tgUserMatch = str.match(/(?:t\.me\/|tg:\/\/resolve\?domain=)([a-zA-Z0-9_]{5,32})/i);
-    const tgInviteMatch = str.match(/(?:t\.me\/\+|tg:\/\/join\?invite=)([a-zA-Z0-9_-]+)/i);
-    const tgRawUser = str.match(/@([a-zA-Z0-9_]{5,32})/);
-    const isTelegramText = str.toLowerCase().includes('telegram');
-
-    if (tgUserMatch) {
-      contacts.push({ id: `tg_${tgUserMatch[1].toLowerCase()}`, label: `✈️ @${tgUserMatch[1]}`, type: 'Telegram', value: tgUserMatch[1] });
-    } else if (tgInviteMatch) {
-      contacts.push({ id: `tg_invite_${tgInviteMatch[1]}`, label: `✈️ Telegram Invite`, type: 'Telegram', value: inviteLinkUrl(tgInviteMatch[1]) });
-    } else if (tgRawUser) {
-      contacts.push({ id: `tg_${tgRawUser[1].toLowerCase()}`, label: `✈️ @${tgRawUser[1]}`, type: 'Telegram', value: tgRawUser[1] });
-    }
-
-    // WhatsApp links/numbers
-    const waMatch = str.match(/(?:wa\.me\/|api\.whatsapp\.com\/send\?phone=)([0-9]+)/i);
-    const isWhatsAppText = str.toLowerCase().includes('whatsapp');
-    
-    if (waMatch) {
-      contacts.push({ id: `wa_${waMatch[1]}`, label: `💬 WhatsApp (+${waMatch[1]})`, type: 'WhatsApp', value: waMatch[1] });
-    } else if (isWhatsAppText) {
-      const numMatch = str.match(/\+?[0-9]{8,15}/);
-      if (numMatch) {
-        const cleanNum = numMatch[0].replace(/[^0-9]/g, '');
-        contacts.push({ id: `wa_${cleanNum}`, label: `💬 WhatsApp (+${cleanNum})`, type: 'WhatsApp', value: cleanNum });
-      }
-    }
-
-    // Emails
-    const emailMatch = str.match(/([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9_-]+)/);
-    if (emailMatch) {
-      contacts.push({ id: `email_${emailMatch[1].toLowerCase()}`, label: `✉️ ${emailMatch[1]}`, type: 'Email', value: emailMatch[1] });
-    }
-
-    // Fallback if none matched but there is content
-    if (contacts.length === 0 && str.length > 0) {
-      const truncated = str.length > 25 ? str.substring(0, 22) + '...' : str;
-      contacts.push({ id: `generic_${encodeURIComponent(str)}`, label: `📞 ${truncated}`, type: 'Contact', value: str });
-    }
-
-    return contacts;
-  };
-
-  const inviteLinkUrl = (code) => `https://t.me/+${code}`;
 
   useEffect(() => {
     if (!containerRef.current || !scans) return;
@@ -376,12 +377,39 @@ export default function NetworkGraphView({ scans }) {
       }
     });
 
+    // Auto-focus a recruiter cluster when navigated in from a case review.
+    if (focusContact) {
+      const norm = String(focusContact).toLowerCase().replace(/^@/, '').trim();
+      const target = nodes.find(n =>
+        n.type === 'contact' && (
+          String(n.value ?? '').toLowerCase().replace(/^@/, '').trim() === norm ||
+          n.id === `tg_${norm}` ||
+          String(n.label ?? '').toLowerCase().includes(norm)
+        )
+      );
+      if (target) {
+        network.once('stabilizationIterationsDone', () => {
+          spotlight(target.id);
+          network.selectNodes([target.id]);
+          network.focus(target.id, { scale: 1.05, animation: { duration: 900, easingFunction: 'easeInOutQuad' } });
+          let connectedScans = [];
+          filteredEdgesList.forEach(edge => {
+            if (edge.to === target.id && edge.from.startsWith('scan_')) {
+              const scanNode = filteredNodesMap.get(edge.from);
+              if (scanNode) connectedScans.push(scanNode.data);
+            }
+          });
+          setSelectedNode({ ...target, connectedScans });
+        });
+      }
+    }
+
     return () => {
       if (networkRef.current) {
         networkRef.current.destroy();
       }
     };
-  }, [scans, physicsEnabled, showContacts, showCompanies, minConnections]);
+  }, [scans, physicsEnabled, showContacts, showCompanies, minConnections, focusContact]);
 
   const fitGraph = () => {
     if (networkRef.current) {

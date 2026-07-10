@@ -1,6 +1,6 @@
-import React, { useState, useEffect, lazy, Suspense } from 'react';
+import React, { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
-import { Shield, Database, Settings, BarChart3, LogOut, Loader2, HelpCircle, Home, BookOpen, MessageSquare, Scale, Frame } from 'lucide-react';
+import { Shield, Database, BarChart3, LogOut, Loader2, HelpCircle, Home, BookOpen, MessageSquare, Frame } from 'lucide-react';
 import ScannerView from './pages/ScannerView';
 import FaqView from './pages/FaqView';
 import logoImg from './assets/logo.png';
@@ -135,7 +135,7 @@ function Layout({ children }) {
         </div>
       </aside>
 
-      <div className="flex-1 flex flex-col min-h-screen overflow-x-hidden">
+      <div className="flex-1 flex flex-col min-h-screen overflow-x-clip">
         {/* Mobile Header (visible only on mobile) */}
         <header className="md:hidden bg-[#111318] border-b border-slate-800 sticky top-0 z-10 p-4 flex items-center justify-between shadow-sm">
           <Link to="/" className="block">

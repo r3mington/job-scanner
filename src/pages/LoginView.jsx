@@ -1,20 +1,9 @@
 import React, { useState } from 'react';
 import { supabase } from '../utils/supabaseClient';
-import { Shield, Mail, Lock, Loader2, AlertCircle, LogIn, UserPlus, Database } from 'lucide-react';
+import { Shield, Mail, Lock, Loader2, AlertCircle, LogIn, UserPlus } from 'lucide-react';
 import Logo from '../components/Logo';
 
 export default function LoginView() {
-  const activeUrl = import.meta.env.VITE_SUPABASE_URL || '';
-  const activeAnon = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
-  const isSupabaseConfigured = 
-    activeUrl && 
-    activeUrl.trim() && 
-    !activeUrl.includes('placeholder-url') && 
-    !activeUrl.includes('your-project') &&
-    activeAnon && 
-    activeAnon.trim() && 
-    !activeAnon.includes('placeholder-key') &&
-    !activeAnon.includes('your-anon-key');
 
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
