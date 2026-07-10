@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase, mapDbToRecord } from '../utils/supabaseClient';
-import { getCleanContactValue } from '../utils/caseHelpers';
+import { getCleanContactValue, dayKeyOf } from '../utils/caseHelpers';
 import { generatePosterSummary } from '../services/geminiService';
 import { useAuth } from '../context/AuthContext';
 import { getActiveApiKey } from '../utils/apiKey';
+import PosterActivityTimeline from '../components/PosterActivityTimeline';
 import { ArrowLeft, Loader2, ShieldAlert, FileText, Globe, ExternalLink, RefreshCw, Save, MapPin, ChevronUp, ChevronDown } from 'lucide-react';
 
 const COUNTRY_COORDINATES = {
@@ -44,6 +45,8 @@ export default function PosterProfileView() {
     return saved === 'true';
   });
   const [pendingLink, setPendingLink] = useState(null);
+  const [selectedDay, setSelectedDay] = useState(null);
+  const [summaryTime, setSummaryTime] = useState(null);
 
   useEffect(() => {
     if (!user) return;
@@ -55,7 +58,7 @@ export default function PosterProfileView() {
         // 1. Fetch only current user's scans with limited columns
         const { data: scansData, error: scansErr } = await supabase
           .from('scans')
-          .select('id, timestamp, job_title, employer, extracted_data, location_country, risk_score')
+          .select('id, timestamp, job_title, employer, extracted_data, location_country, risk_score, active_flags, normalized_text')
           .eq('user_id', user.id);
         if (scansErr) throw scansErr;
         
@@ -75,6 +78,8 @@ export default function PosterProfileView() {
         // Load local backups first
         const localNotes = localStorage.getItem(`sentinel_poster_notes_${contactId}`) || '';
         const localSummary = localStorage.getItem(`sentinel_poster_summary_${contactId}`) || '';
+        const localSummaryTime = localStorage.getItem(`sentinel_poster_summary_time_${contactId}`);
+        setSummaryTime(localSummaryTime ? Number(localSummaryTime) : null);
 
         // 2. Fetch or initialize poster profile notes & summaries from database
         let profData = null;
@@ -155,6 +160,9 @@ export default function PosterProfileView() {
       });
 
       localStorage.setItem(`sentinel_poster_summary_${contactId}`, summary);
+      const generatedAt = Date.now();
+      localStorage.setItem(`sentinel_poster_summary_time_${contactId}`, String(generatedAt));
+      setSummaryTime(generatedAt);
       setPosterProfile(prev => ({ ...prev, ai_summary: summary }));
     } catch (err) {
       console.error("Failed to generate AI intelligence profile:", err);
@@ -199,6 +207,9 @@ export default function PosterProfileView() {
   // Spotted Timelines
   const firstSpotted = totalAds > 0 ? new Date(scans[scans.length - 1].timestamp).toLocaleDateString() : 'N/A';
   const lastSpotted = totalAds > 0 ? new Date(scans[0].timestamp).toLocaleDateString() : 'N/A';
+  const activeDays = totalAds > 0
+    ? Math.round((scans[0].timestamp - scans[scans.length - 1].timestamp) / 86400000) + 1
+    : 0;
 
   // Risk Classification
   const riskClass = avgRisk >= 80 
@@ -207,15 +218,49 @@ export default function PosterProfileView() {
     ? { label: 'MODERATE TO HIGH RISK', color: 'text-amber-500 bg-amber-500/10 border-amber-500/30' }
     : { label: 'SUSPECTED / LOW RISK', color: 'text-[#3fb950] bg-[#3fb950]/10 border-[#3fb950]/30' };
 
-  // Heat map for locations
+  // Heat map for locations (count + per-jurisdiction average risk)
   const countryMap = {};
   scans.forEach(s => {
     const c = s.locationCountry || 'Unknown / Remote';
-    countryMap[c] = (countryMap[c] || 0) + 1;
+    if (!countryMap[c]) countryMap[c] = { count: 0, riskSum: 0 };
+    countryMap[c].count += 1;
+    countryMap[c].riskSum += s.riskScore;
   });
   const locationsSorted = Object.entries(countryMap)
-    .map(([name, count]) => ({ name, count, percent: Math.round((count / totalAds) * 100) }))
+    .map(([name, { count, riskSum }]) => ({
+      name,
+      count,
+      percent: Math.round((count / totalAds) * 100),
+      avgRisk: Math.round(riskSum / count)
+    }))
     .sort((a, b) => b.count - a.count);
+  const maxCountryCount = locationsSorted[0]?.count || 1;
+
+  // Reused ad templates (identical normalized text posted multiple times)
+  const templateCounts = {};
+  scans.forEach(s => {
+    const key = (s.normalizedText || '').trim().toLowerCase();
+    if (key.length > 20) templateCounts[key] = (templateCounts[key] || 0) + 1;
+  });
+  const templateCountOf = (scan) => {
+    const key = (scan.normalizedText || '').trim().toLowerCase();
+    return key.length > 20 ? templateCounts[key] : 0;
+  };
+
+  // Evidence log filtered by the timeline day selection, grouped by day
+  const filteredScans = selectedDay ? scans.filter(s => dayKeyOf(s.timestamp) === selectedDay) : scans;
+  const groupedEvidence = [];
+  filteredScans.forEach(scan => {
+    const label = new Date(scan.timestamp).toLocaleDateString();
+    const lastGroup = groupedEvidence[groupedEvidence.length - 1];
+    if (lastGroup && lastGroup.label === label) lastGroup.scans.push(scan);
+    else groupedEvidence.push({ label, scans: [scan] });
+  });
+
+  // AI summary freshness
+  const summaryIsStale = Boolean(
+    posterProfile.ai_summary && summaryTime && totalAds > 0 && scans[0].timestamp > summaryTime
+  );
 
   // OSINT links helper
   const cleanHandle = contactId.replace('Telegram: @', '').replace('WhatsApp: ', '').replace('Email: ', '');
@@ -223,7 +268,7 @@ export default function PosterProfileView() {
   const osintTelegram = contactId.includes('Telegram') ? `https://telegram.dog/${cleanHandle}` : null;
 
   return (
-    <div className="flex flex-col flex-1 h-full mt-4 max-w-screen-md w-full mx-auto space-y-6 pb-20">
+    <div className="flex flex-col flex-1 h-full mt-4 max-w-screen-lg w-full mx-auto space-y-6 pb-20">
       
       {/* Header and Back navigation */}
       <div className="flex items-center justify-between border-b border-slate-800 pb-4">
@@ -328,39 +373,43 @@ export default function PosterProfileView() {
         )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        
-        {/* Left Side: Stats and OSINT Search */}
-        <div className="md:col-span-1 space-y-6">
-          
-          {/* Risk Card */}
-          <div className="bg-[#111318] border border-slate-800 rounded p-4 space-y-4">
-            <div className={`p-2.5 rounded border text-center font-mono text-[10px] font-bold uppercase tracking-wider ${riskClass.color}`}>
-              {riskClass.label}
-            </div>
-            
-            <div className="grid grid-cols-2 gap-4 pt-2 border-t border-slate-800 font-mono">
-              <div className="text-center">
-                <span className="text-[10px] text-slate-500 block">Avg Risk</span>
-                <span className="text-xl font-bold text-slate-100">{avgRisk}%</span>
-              </div>
-              <div className="text-center">
-                <span className="text-[10px] text-slate-500 block">Linked Ads</span>
-                <span className="text-xl font-bold text-slate-100">{totalAds}</span>
-              </div>
-            </div>
-
-            <div className="space-y-1.5 pt-3 border-t border-slate-800 font-mono text-[10px] text-slate-450">
-              <div className="flex justify-between">
-                <span>First Spotted:</span>
-                <span className="font-semibold text-slate-300">{firstSpotted}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Last Activity:</span>
-                <span className="font-semibold text-slate-300">{lastSpotted}</span>
-              </div>
-            </div>
+      {/* Dossier Masthead: risk classification + headline stats */}
+      <div className="bg-[#111318] border border-slate-800 rounded p-4 flex flex-col lg:flex-row lg:items-stretch gap-4">
+        <div className={`px-4 py-3 rounded border flex items-center justify-center text-center font-mono text-[10px] font-bold uppercase tracking-wider lg:w-52 flex-shrink-0 ${riskClass.color}`}>
+          {riskClass.label}
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 flex-1 font-mono">
+          <div className="flex flex-col justify-center px-3 py-2 bg-[#0a0c12] border border-slate-800 rounded">
+            <span className="text-[9px] text-slate-500 uppercase tracking-wider">Avg Risk</span>
+            <span className={`text-xl font-bold ${avgRisk >= 60 ? 'text-red-400' : avgRisk >= 30 ? 'text-amber-400' : 'text-[#3fb950]'}`}>{avgRisk}%</span>
           </div>
+          <div className="flex flex-col justify-center px-3 py-2 bg-[#0a0c12] border border-slate-800 rounded">
+            <span className="text-[9px] text-slate-500 uppercase tracking-wider">Linked Ads</span>
+            <span className="text-xl font-bold text-slate-100">{totalAds}</span>
+          </div>
+          <div className="flex flex-col justify-center px-3 py-2 bg-[#0a0c12] border border-slate-800 rounded">
+            <span className="text-[9px] text-slate-500 uppercase tracking-wider">Active Window</span>
+            <span className="text-xs font-bold text-slate-100 leading-tight">{firstSpotted} – {lastSpotted}</span>
+            <span className="text-[9px] text-slate-500">{activeDays} day{activeDays !== 1 ? 's' : ''}</span>
+          </div>
+          <div className="flex flex-col justify-center px-3 py-2 bg-[#0a0c12] border border-slate-800 rounded">
+            <span className="text-[9px] text-slate-500 uppercase tracking-wider">Jurisdictions</span>
+            <span className="text-xl font-bold text-slate-100">{locationsSorted.length}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Posting Activity Timeline */}
+      <PosterActivityTimeline
+        scans={scans}
+        selectedDay={selectedDay}
+        onSelectDay={setSelectedDay}
+      />
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+
+        {/* Left Side: OSINT Search and Jurisdictions */}
+        <div className="md:col-span-1 space-y-6">
 
           {/* OSINT Quick Links */}
           <div className="bg-[#111318] border border-slate-800 rounded p-4 space-y-3">
@@ -394,14 +443,14 @@ export default function PosterProfileView() {
             </h3>
             <div className="space-y-2.5">
               {locationsSorted.map(loc => (
-                <div key={loc.name} className="space-y-1 font-mono text-[10px]">
+                <div key={loc.name} className="space-y-1 font-mono text-[10px]" title={`Avg risk in ${loc.name}: ${loc.avgRisk}%`}>
                   <div className="flex justify-between">
                     <span className="font-bold text-slate-400">{loc.name}</span>
                     <span className="text-slate-500">{loc.count} ({loc.percent}%)</span>
                   </div>
                   <div className="w-full bg-[#0a0c12] border border-slate-800 h-2 rounded overflow-hidden">
-                    <div 
-                      className="bg-amber-500 h-full rounded-sm"
+                    <div
+                      className={`h-full rounded-sm ${loc.avgRisk >= 60 ? 'bg-red-500' : loc.avgRisk >= 30 ? 'bg-amber-500' : 'bg-[#3fb950]'}`}
                       style={{ width: `${loc.percent}%` }}
                     />
                   </div>
@@ -441,8 +490,18 @@ export default function PosterProfileView() {
             </div>
             
             {posterProfile.ai_summary ? (
-              <div className="p-3.5 bg-[#0a0c12] border border-slate-800 rounded font-mono text-[11.5px] leading-relaxed text-slate-300">
-                {posterProfile.ai_summary}
+              <div className="space-y-2">
+                <div className="p-3.5 bg-[#0a0c12] border border-slate-800 rounded font-mono text-[11.5px] leading-relaxed text-slate-300">
+                  {posterProfile.ai_summary}
+                </div>
+                <div className="flex items-center gap-2 font-mono text-[9px] text-slate-500">
+                  {summaryTime && <span>Generated {new Date(summaryTime).toLocaleString()}</span>}
+                  {summaryIsStale && (
+                    <span className="px-1.5 py-0.5 rounded border border-amber-500/40 bg-amber-500/10 text-amber-400 font-bold uppercase tracking-wider">
+                      Stale — new evidence ingested since generation
+                    </span>
+                  )}
+                </div>
               </div>
             ) : (
               <div className="p-6 border border-dashed border-slate-800 rounded text-center">
@@ -478,40 +537,90 @@ export default function PosterProfileView() {
 
           {/* Evidence Lock (Scans History) */}
           <div className="bg-[#111318] border border-slate-800 rounded p-5 space-y-3">
-            <h3 className="font-mono text-xs font-bold text-slate-500 uppercase tracking-wider">
-              Ingested Evidence Log
-            </h3>
-            
-            <div className="divide-y divide-slate-800 max-h-96 overflow-y-auto pr-1">
-              {scans.map(scan => (
-                <div key={scan.id} className="py-3 flex items-center justify-between gap-4">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs font-bold text-slate-200 truncate font-mono">
-                      {scan.jobTitle}
-                    </p>
-                    <p className="text-[10px] text-slate-500 font-mono mt-0.5">
-                      {new Date(scan.timestamp).toLocaleDateString()} • {scan.employer} • {scan.locationCountry || 'Remote'}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <span className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold ${
-                      scan.riskScore >= 60 
-                        ? 'bg-red-500/10 text-red-400' 
-                        : scan.riskScore >= 30 
-                        ? 'bg-amber-500/10 text-amber-400' 
-                        : 'bg-[#3fb950]/10 text-[#3fb950]'
-                    }`}>
-                      {scan.riskScore}%
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="font-mono text-xs font-bold text-slate-500 uppercase tracking-wider">
+                Ingested Evidence Log
+              </h3>
+              <span className="font-mono text-[9px] text-slate-500">
+                {selectedDay
+                  ? `${filteredScans.length} of ${totalAds} ads (day filter active)`
+                  : `${totalAds} ads`}
+              </span>
+            </div>
+
+            <div className="max-h-96 overflow-y-auto pr-1">
+              {groupedEvidence.map(group => (
+                <div key={group.label}>
+                  <div className="sticky top-0 bg-[#111318] pt-2 pb-1 flex items-center gap-2">
+                    <span className="font-mono text-[9px] font-bold uppercase tracking-wider text-slate-500">
+                      {group.label}
                     </span>
-                    <button 
-                      onClick={() => navigate('/review', { state: { scanId: scan.id, isExistingScan: true } })}
-                      className="px-2 py-1 border border-slate-800 hover:bg-[#1b2230]/40 text-slate-400 hover:text-slate-205 rounded text-[10px] font-mono font-bold uppercase transition-colors"
-                    >
-                      Review
-                    </button>
+                    <span className="font-mono text-[9px] text-slate-600">
+                      {group.scans.length} ad{group.scans.length !== 1 ? 's' : ''}
+                    </span>
+                    <div className="flex-1 border-t border-slate-800" />
+                  </div>
+                  <div className="divide-y divide-slate-800/60">
+                    {group.scans.map(scan => {
+                      const templateHits = templateCountOf(scan);
+                      const flags = scan.activeFlags || [];
+                      return (
+                        <div key={scan.id} className="py-3 flex items-start justify-between gap-4">
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-bold text-slate-200 truncate font-mono">
+                              {scan.jobTitle}
+                            </p>
+                            <p className="text-[10px] text-slate-500 font-mono mt-0.5">
+                              {scan.employer} • {scan.locationCountry || 'Remote'}
+                            </p>
+                            {(flags.length > 0 || templateHits > 1) && (
+                              <div className="flex flex-wrap gap-1 mt-1.5">
+                                {templateHits > 1 && (
+                                  <span className="px-1.5 py-0.5 rounded border border-amber-500/40 bg-amber-500/10 text-amber-400 font-mono text-[9px] font-bold">
+                                    Template ×{templateHits}
+                                  </span>
+                                )}
+                                {flags.slice(0, 3).map(flag => (
+                                  <span key={flag} className="px-1.5 py-0.5 rounded border border-slate-800 bg-[#1b2230] text-slate-400 font-mono text-[9px]">
+                                    {flag}
+                                  </span>
+                                ))}
+                                {flags.length > 3 && (
+                                  <span className="px-1.5 py-0.5 rounded border border-slate-800 text-slate-500 font-mono text-[9px]" title={flags.slice(3).join(', ')}>
+                                    +{flags.length - 3}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <span className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold ${
+                              scan.riskScore >= 60
+                                ? 'bg-red-500/10 text-red-400'
+                                : scan.riskScore >= 30
+                                ? 'bg-amber-500/10 text-amber-400'
+                                : 'bg-[#3fb950]/10 text-[#3fb950]'
+                            }`}>
+                              {scan.riskScore}%
+                            </span>
+                            <button
+                              onClick={() => navigate('/review', { state: { scanId: scan.id, isExistingScan: true } })}
+                              className="px-2 py-1 border border-slate-800 hover:bg-[#1b2230]/40 text-slate-400 hover:text-slate-205 rounded text-[10px] font-mono font-bold uppercase transition-colors"
+                            >
+                              Review
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               ))}
+              {filteredScans.length === 0 && (
+                <p className="py-6 text-center text-xs text-slate-500 font-mono italic">
+                  No ads match the selected day.
+                </p>
+              )}
             </div>
           </div>
 
@@ -565,24 +674,28 @@ export default function PosterProfileView() {
           {/* Active targeting markers */}
           {locationsSorted.map(loc => {
             const coords = COUNTRY_COORDINATES[loc.name] || COUNTRY_COORDINATES['Unknown / Remote'];
-            const isHighRisk = avgRisk >= 60;
-            
+            const isHighRisk = loc.avgRisk >= 60;
+            const markerSize = 10 + (loc.count / maxCountryCount) * 8;
+
             return (
-              <div 
+              <div
                 key={loc.name}
                 style={{ left: `${coords.x}%`, top: `${coords.y}%` }}
                 className="absolute -translate-x-1/2 -translate-y-1/2 group z-10"
               >
                 {/* Concentric pulsing rings */}
-                <span className="absolute inline-flex h-6 w-6 -translate-x-1/2 -translate-y-1/2 rounded-full bg-red-500/20 opacity-75 animate-ping duration-1500" />
-                
-                {/* Center Core Dot */}
-                <div className={`w-3.5 h-3.5 rounded-full border-2 border-[#0a0c12] shadow-md ${isHighRisk ? 'bg-red-500' : 'bg-amber-500'}`} />
-                
-                {/* Tooltip Label */}
-                <div className="absolute left-5 top-1/2 -translate-y-1/2 bg-slate-950/95 border border-slate-800 px-2 py-1 rounded text-[9px] font-mono text-slate-200 opacity-90 group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-xl z-20">
+                <span className={`absolute inline-flex h-6 w-6 -translate-x-1/2 -translate-y-1/2 rounded-full opacity-75 animate-ping duration-1500 ${isHighRisk ? 'bg-red-500/20' : 'bg-amber-500/20'}`} />
+
+                {/* Center Core Dot — sized by scan count, colored by jurisdiction avg risk */}
+                <div
+                  style={{ width: `${markerSize}px`, height: `${markerSize}px` }}
+                  className={`rounded-full border-2 border-[#0a0c12] shadow-md ${isHighRisk ? 'bg-red-500' : 'bg-amber-500'}`}
+                />
+
+                {/* Tooltip Label (hover only, to keep clustered regions readable) */}
+                <div className="absolute left-5 top-1/2 -translate-y-1/2 bg-slate-950/95 border border-slate-800 px-2 py-1 rounded text-[9px] font-mono text-slate-200 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-xl z-20 pointer-events-none">
                   <span className="font-bold text-slate-100">{loc.name}</span>
-                  <span className="text-[8px] text-slate-450 block mt-0.5">{loc.count} Active Scan{loc.count !== 1 ? 's' : ''}</span>
+                  <span className="text-[8px] text-slate-450 block mt-0.5">{loc.count} Active Scan{loc.count !== 1 ? 's' : ''} • Avg Risk {loc.avgRisk}%</span>
                 </div>
               </div>
             );
@@ -591,10 +704,13 @@ export default function PosterProfileView() {
         
         <div className="flex flex-wrap gap-x-4 gap-y-1 font-mono text-[9px] text-slate-500">
           <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-red-500" /> High-Danger Jurisdiction (Avg Risk &gt;= 60%)
+            <span className="w-2.5 h-2.5 rounded-full bg-red-500" /> High-Danger Jurisdiction (Jurisdiction Avg Risk &gt;= 60%)
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-amber-500" /> Suspicious Jurisdiction (Avg Risk &lt; 60%)
+            <span className="w-2.5 h-2.5 rounded-full bg-amber-500" /> Suspicious Jurisdiction (Jurisdiction Avg Risk &lt; 60%)
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-full border border-slate-600" /> Marker size = scan volume
           </div>
         </div>
       </div>

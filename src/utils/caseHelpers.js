@@ -167,3 +167,9 @@ export const getCleanContactValue = (val) => {
   if (str.length > 0) return str;
   return null;
 };
+
+// Local-timezone day bucket key, shared by the poster activity timeline and evidence log filter
+export const dayKeyOf = (ts) => {
+  const d = new Date(ts);
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+};
