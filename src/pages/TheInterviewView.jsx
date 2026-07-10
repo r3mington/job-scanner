@@ -201,9 +201,10 @@ export default function TheInterviewView() {
 
   // ── Live translation on mount (falls back silently to curated set) ──────────
   useEffect(() => {
+    // Client key optional — translateInterviewLines routes through the
+    // gemini-proxy edge function; on any failure it falls back to CURATED.
     const apiKey = getActiveApiKey();
     const modelName = localStorage.getItem('gemini_model');
-    if (!apiKey) return;
     let cancelled = false;
     (async () => {
       try {

@@ -329,10 +329,6 @@ export default function ReviewScan() {
       const apiKey = getActiveApiKey();
       const modelName = profile?.gemini_model || localStorage.getItem('gemini_model');
 
-      if (!apiKey) {
-        throw new Error('Gemini API Key is not configured. Please set the VITE_GEMINI_API_KEY environment variable.');
-      }
-
       const response = await analyzeCrop(apiKey, modelName, { imageBase64: croppedDataUrl });
       setCropAnalysisResult(response);
       
@@ -436,10 +432,6 @@ export default function ReviewScan() {
 
       const apiKey = getActiveApiKey();
       const modelName = profile?.gemini_model || localStorage.getItem('gemini_model');
-
-      if (!apiKey) {
-        throw new Error('Gemini API Key is not configured. Please set the VITE_GEMINI_API_KEY environment variable.');
-      }
 
       const response = await analyzeLanguageDialect(apiKey, modelName, { text: rawText });
       setHeuristicsResult(response);
@@ -820,10 +812,6 @@ export default function ReviewScan() {
       const startTime = Date.now();
       const apiKey = getActiveApiKey();
       const modelName = profile?.gemini_model || localStorage.getItem('gemini_model');
-      
-      if (!apiKey) {
-        throw new Error('Gemini API Key is not configured. Please set the VITE_GEMINI_API_KEY environment variable.');
-      }
 
       // Check for duplicate in database before calling Gemini API
       if (scanInput.text && user) {

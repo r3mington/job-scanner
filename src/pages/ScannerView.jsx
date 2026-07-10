@@ -217,12 +217,10 @@ export default function ScannerView() {
   const startBatchProcess = async () => {
     if (batchRows.length === 0) return;
 
+    // Client key optional — analyzeJobPosting routes through the gemini-proxy
+    // edge function (server-held GEMINI_API_KEY) when no client key is present.
     const apiKey = getActiveApiKey();
     const modelName = profile?.gemini_model || localStorage.getItem('gemini_model');
-    if (!apiKey) {
-      alert('Gemini API Key is not configured. Please set the VITE_GEMINI_API_KEY environment variable.');
-      return;
-    }
 
     setIsProcessingBatch(true);
     setIsBatchDone(false);

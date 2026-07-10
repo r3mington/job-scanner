@@ -119,8 +119,9 @@ export default function useTelegramFeed({ user, profile }) {
 
   // ── Scan one post through the standard pipeline ─────────────────────────────
   const scanPost = useCallback(async (channel, post) => {
+    // Client key optional — the analyzer routes through the gemini-proxy edge
+    // function (server-held GEMINI_API_KEY) when no client key is present.
     const apiKey = getActiveApiKey();
-    if (!apiKey) throw Object.assign(new Error('Gemini API key missing — configure it before monitoring.'), { fatal: true });
     const modelName = profile?.gemini_model || localStorage.getItem('gemini_model');
 
     // Same duplicate guard as the CSV batch: never pay twice for one ad.
