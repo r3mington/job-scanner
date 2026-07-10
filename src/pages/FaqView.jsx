@@ -18,12 +18,12 @@ export default function FaqView() {
       title: 'Model Provider & Data Privacy Disclosure',
       summary: 'Data protection policies, model providers, and how API keys are secured.',
       details: (
-        <div className="space-y-3 leading-relaxed text-slate-355 text-slate-300">
+        <div className="space-y-3 leading-relaxed text-slate-300">
           <p>
-            Sentinel AI processes job listings and uploaded graphics using Google’s enterprise-tier developer API endpoints (specifically <strong>Gemini 2.5 Flash</strong> and <strong>Gemini 1.5 Pro</strong>).
+            Sentinel AI processes job listings and uploaded graphics using Google’s enterprise-tier developer API endpoints (specifically <strong>Gemini 2.5 Flash</strong> and <strong>Gemini 2.5 Pro</strong>).
           </p>
           <ul className="list-disc pl-5 space-y-2">
-            <li><strong>Data Retention Policy:</strong> To align with UN Do No Harm guidelines, all API calls are made directly from the analyst's browser to the official Google API endpoint. No text, image metadata, or document bytes are stored on intermediary servers.</li>
+            <li><strong>Data Retention Policy:</strong> To align with UN Do No Harm guidelines, API calls are made either through a secure, non-logging Supabase Edge Function proxy (<code>gemini-proxy</code>) or directly from the analyst's browser to the official Google API endpoint. In either case, no text, image metadata, or document bytes are stored on intermediary servers or cached outside of your local browser session.</li>
             <li><strong>Training Data Exclusion:</strong> According to Google Cloud’s standard developer API terms, data transmitted via commercial API keys is not used to train Google’s public foundation models.</li>
             <li><strong>Local Credential Security:</strong> Your Gemini API keys are stored solely in the local browser session cache (SessionStorage / Settings), are cleared immediately when you close the tab, and are never transmitted to any third-party databases.</li>
           </ul>
@@ -42,7 +42,7 @@ export default function FaqView() {
           </p>
           <div className="p-3 bg-[#0a0c12] border border-slate-800 rounded font-mono text-[11px] text-slate-400 space-y-1.5">
             <div><strong className="text-slate-300">Frontend Layer:</strong> React 18 SPA rendering interactive dashboards, real-time telemetry consoles, and network visualization graphs.</div>
-            <div><strong className="text-slate-300">Storage Layer:</strong> Supabase PostgreSQL instances storing scans, analyzed metadata, burner profiles, and audit log history.</div>
+            <div><strong className="text-slate-300">Storage Layer:</strong> Supabase PostgreSQL instances storing scans, analyzed metadata, trafficker profiles (notes & AI summaries), and audit log history.</div>
             <div><strong className="text-slate-300">Local Caching:</strong> IndexedDB managed through Dexie.js, caching ongoing scans to prevent data loss during network disruptions.</div>
             <div><strong className="text-slate-300">Cognitive Services:</strong> Direct HTTPS REST endpoints communicating with Google Gemini API gateways using JSON structured outputs.</div>
           </div>
@@ -86,15 +86,15 @@ export default function FaqView() {
           <div className="p-3 bg-[#0a0c12] border border-slate-800 rounded font-mono text-[11px] text-slate-400 space-y-3">
             <div>
               <strong className="text-slate-300">1. Base Risk Weights (Additive):</strong>
-              <div className="text-slate-500 mt-0.5">Every detected indicator has a pre-defined severity weight. For example, "Passport/ID Control" adds +40, "Labor Abuse & Restrictions" adds +25, and "Excessive Enticements" adds +15.</div>
+              <div className="text-slate-500 mt-0.5">Every detected indicator has a pre-defined severity weight. For example, "Passport/ID Control" adds +40, "Labor Abuse / High Pressure" adds +25, and "Excessive Enticements" adds +15.</div>
             </div>
             <div>
               <strong className="text-slate-300">2. Co-occurrence Combo Multipliers (Synergy):</strong>
-              <div className="text-slate-500 mt-0.5">When multiple critical flags appear together, they suggest an active risk campaign. If flags like "Passport Control" and "High Pressure / Restrictions" are present simultaneously, the base score is scaled by a combo multiplier (e.g., 1.25×), adding a compounding risk bonus.</div>
+              <div className="text-slate-500 mt-0.5">When multiple critical flags appear together, they suggest an active risk campaign. If flags like "Passport/ID Control", "Housing Compound Isolation", and "Immediate Travel Pressure" are present simultaneously, the base score is scaled by a danger combo multiplier (e.g., 1.4×), adding a compounding risk bonus.</div>
             </div>
             <div>
               <strong className="text-slate-300">3. Contextual Anomalies (Adjustments):</strong>
-              <div className="text-slate-500 mt-0.5">Calculates dynamic indicators like Local Salary Anomalies (+30 if the offered wage is &gt;150% above the country's median salary, or +15 if &gt;50%), suspicious messaging handles (+10 for Telegram/WhatsApp links), and employer anonymity (+5 for unverified companies).</div>
+              <div className="text-slate-500 mt-0.5">Calculates dynamic indicators like Local Salary Anomalies (+30 if the offered wage is &gt;150% above the country's median salary, or +15 if &gt;50%), suspicious messaging handles (+10 for Telegram handles, +20 for Telegram invite links, or +5 for WhatsApp numbers), and employer opacity (+5 to +8 depending on vagueness, shortness, or generic name terms).</div>
             </div>
           </div>
           <p>
@@ -107,20 +107,22 @@ export default function FaqView() {
       id: 'similarity',
       icon: <Fingerprint className="w-4 h-4 text-amber-500" />,
       title: 'Ad Similarities Calculation',
-      summary: 'Identifying duplicate recruitment campaigns using character n-gram similarities.',
+      summary: 'Identifying duplicate recruitment campaigns using a blended Jaccard & entity comparison.',
       details: (
         <div className="space-y-3 leading-relaxed text-slate-350">
           <p>
             Recruitment networks frequently reuse exact job templates, flyers, and descriptions across hundreds of messaging channels (such as different Telegram chatrooms or WhatsApp groups). Sentinel AI identifies these interconnected networks by running real-time similarity audits.
           </p>
           <p>
-            The system employs a **character n-gram Jaccard similarity algorithm**. When a job ad is parsed, the text is normalized (stripped of whitespace, punctuation, and capitalization) and broken down into overlapping character sequences of length N (n-grams). The similarity score represents the ratio of shared n-grams (intersection) to the total unique n-grams (union) between two postings.
+            The system employs a <strong>blended 3-signal similarity engine</strong> that combines character-level patterns, semantic vocabulary, and unique identifiers. When a job ad is parsed, it is compared against existing records based on:
           </p>
-          <div className="p-3 bg-[#0a0c12] border border-slate-800 rounded font-mono text-[11px] text-slate-400">
-            Formula: Similarity(A, B) = |n-grams(A) ∩ n-grams(B)| / |n-grams(A) ∪ n-grams(B)|
-          </div>
+          <ul className="list-disc pl-5 space-y-1.5 text-[11px] text-slate-400">
+            <li><strong>Dice Coefficient Bigrams (20%):</strong> Compares character-level structures of length 2 (bigrams) to find textual structural similarity.</li>
+            <li><strong>Word Jaccard Index (40%):</strong> Compares the intersection of normalized words, filtering out common stopwords and generic job advertisement vocabulary to avoid matching generic text.</li>
+            <li><strong>Key Entity Matching Bonus (up to 40%):</strong> Adds significant matching weights for identical high-value identifiers such as Telegram handles (+35%) and phone numbers (+30%).</li>
+          </ul>
           <p>
-            If the similarity between the current ad and a historical record exceeds **40%**, the system marks them as connected. The dashboard and connections graph automatically link these records, allowing analysts to trace burner phone handles or syndicate recruiters operating under multiple aliases.
+            If the blended similarity between the current ad and a historical record exceeds **40%**, the system marks them as connected. The dashboard and connections graph automatically link these records, allowing analysts to trace burner phone handles or syndicate recruiters operating under multiple aliases.
           </p>
         </div>
       )

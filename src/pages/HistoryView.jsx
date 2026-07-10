@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase, mapDbToRecord } from '../utils/supabaseClient';
-import { Search, ChevronRight, ChevronDown, ChevronUp, Briefcase, MapPin, Folder, Trash2, Globe, DollarSign, FileText, List, Network, Radio } from 'lucide-react';
+import { Search, ChevronRight, ChevronDown, ChevronUp, Briefcase, MapPin, Folder, Trash2, Globe, DollarSign, FileText, List, Network, Radio, X, Users } from 'lucide-react';
 import { format } from 'date-fns';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { getCleanContactValue } from '../utils/caseHelpers';
@@ -49,18 +49,72 @@ const getSeverityColors = () => {
   };
 };
 
-const renderStatusBadge = (status) => {
-  const s = status || 'pending';
-  let text = 'Pending';
-  if (s === 'reviewed') text = 'Reviewed';
-  if (s === 'waiting_action') text = 'Action Req';
+// Risk (content severity) — chip + bar colors keyed to the same thresholds as
+// the review page, so the two surfaces read the same.
+const riskChipClasses = (score) =>
+  score >= 60 ? 'text-red-400 bg-red-500/10 border-red-500/30'
+    : score >= 30 ? 'text-amber-400 bg-amber-500/10 border-amber-500/30'
+      : 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30';
 
+const riskBarColor = (score) =>
+  score >= 60 ? 'bg-red-500' : score >= 30 ? 'bg-amber-500' : 'bg-[#3fb950]';
+
+const getRiskBand = (score) =>
+  score >= 60 ? { key: 'high', label: 'High risk' }
+    : score >= 30 ? { key: 'medium', label: 'Medium risk' }
+      : { key: 'low', label: 'Low risk' };
+
+// Status (review workflow) — distinct color channel from risk.
+const getStatusMeta = (status) => {
+  const s = status || 'pending';
+  if (s === 'waiting_action') return { key: 'waiting_action', label: 'Action Req', badge: 'text-red-400 bg-red-500/10 border-red-500/30', bar: 'bg-red-500' };
+  if (s === 'reviewed') return { key: 'reviewed', label: 'Reviewed', badge: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30', bar: 'bg-emerald-500' };
+  return { key: 'pending', label: 'Pending', badge: 'text-amber-400 bg-amber-500/10 border-amber-500/30', bar: 'bg-amber-500' };
+};
+
+const renderStatusBadge = (status) => {
+  const m = getStatusMeta(status);
   return (
-    <span className="flex-shrink-0 px-1.5 py-0.5 bg-slate-900/40 border border-slate-800/80 text-slate-400 font-mono font-semibold rounded text-[8px] uppercase tracking-wider">
-      {text}
+    <span className={`flex-shrink-0 px-1.5 py-0.5 border font-mono font-semibold rounded text-[8px] uppercase tracking-wider ${m.badge}`}>
+      {m.label}
     </span>
   );
 };
+
+const startOfDay = (ts) => { const d = new Date(ts); d.setHours(0, 0, 0, 0); return d.getTime(); };
+
+const getTimeBucket = (ts) => {
+  const diffDays = Math.round((startOfDay(Date.now()) - startOfDay(ts)) / 86400000);
+  if (diffDays <= 0) return { key: 'today', label: 'Today' };
+  if (diffDays === 1) return { key: 'yesterday', label: 'Yesterday' };
+  if (diffDays < 7) return { key: 'week', label: 'Earlier this week' };
+  if (diffDays < 30) return { key: 'month', label: 'Earlier this month' };
+  return { key: 'older', label: 'Older' };
+};
+
+const relTime = (ts) => {
+  if (!ts) return '—';
+  const s = Math.floor((Date.now() - ts) / 1000);
+  if (s < 60) return 'just now';
+  const m = Math.floor(s / 60); if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60); if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24); return `${d}d ago`;
+};
+
+function Stat({ label, value, accent, active, onClick, title, small }) {
+  const accentText = accent === 'red' ? 'text-red-400' : accent === 'amber' ? 'text-amber-400' : accent === 'purple' ? 'text-purple-300' : 'text-slate-200';
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      className={`text-left px-3 py-2 rounded border transition-colors ${onClick ? 'cursor-pointer' : 'cursor-default'} ${active ? 'border-amber-500/50 bg-amber-500/[0.07]' : 'border-slate-800 bg-[#111318] hover:border-slate-700'}`}
+    >
+      <div className={`font-mono font-black ${small ? 'text-sm' : 'text-lg'} ${accentText}`}>{value}</div>
+      <div className="text-[9px] font-mono uppercase tracking-wider text-slate-500 mt-0.5 truncate">{label}</div>
+    </button>
+  );
+}
 
 export default function HistoryView() {
   const navigate = useNavigate();
@@ -72,7 +126,9 @@ export default function HistoryView() {
   const [focusContact, setFocusContact] = useState(location.state?.focusContact || null);
   const [sortBy, setSortBy] = useState('date'); // 'date', 'status', 'risk'
   const [sourceFilter, setSourceFilter] = useState('all'); // 'all', 'manual', 'feed'
+  const [quickFilter, setQuickFilter] = useState('all'); // 'all', 'high', 'pending'
   const [scans, setScans] = useState(null);
+  const [showLegend, setShowLegend] = useState(() => localStorage.getItem('sentinel_hide_history_legend') !== 'true');
   const [showBriefing, setShowBriefing] = useState(() => {
     const saved = localStorage.getItem('sentinel_show_history_briefing');
     return saved === 'true';
@@ -122,14 +178,50 @@ export default function HistoryView() {
   }, []);
 
   const isLiveFeed = (scan) => scan.ingestionMethod === 'Telegram Live Feed';
+  const isUnreviewed = (scan) => {
+    const st = scan.extractedData?.audit_status || 'pending';
+    return st === 'pending' || st === 'waiting_action';
+  };
+
+  // Orientation stats over the whole registry (unfiltered) — the numbers teach
+  // the mental model and double as one-click filters.
+  const stats = useMemo(() => {
+    const list = scans || [];
+    const handleCounts = new Map();
+    let lastIngest = 0;
+    list.forEach(s => {
+      const c = getCleanContactValue(s.extractedData?.contact_method);
+      if (c) handleCounts.set(c, (handleCounts.get(c) || 0) + 1);
+      if (s.timestamp > lastIngest) lastIngest = s.timestamp;
+    });
+    return {
+      total: list.length,
+      high: list.filter(s => s.riskScore >= 60).length,
+      pending: list.filter(isUnreviewed).length,
+      hubs: [...handleCounts.values()].filter(n => n >= 2).length,
+      lastIngest
+    };
+  }, [scans]);
+
+  const sourceCounts = useMemo(() => {
+    const list = scans || [];
+    const feed = list.filter(isLiveFeed).length;
+    return { all: list.length, feed, manual: list.length - feed };
+  }, [scans]);
 
   const filteredScans = scans?.filter(scan => {
     if (sourceFilter === 'feed' && !isLiveFeed(scan)) return false;
     if (sourceFilter === 'manual' && isLiveFeed(scan)) return false;
+    if (quickFilter === 'high' && scan.riskScore < 60) return false;
+    if (quickFilter === 'pending' && !isUnreviewed(scan)) return false;
+    const q = searchQuery.toLowerCase();
+    if (!q) return true;
+    const handle = (getCleanContactValue(scan.extractedData?.contact_method) || scan.extractedData?.contact_method || '').toLowerCase();
     return (
-      (scan.jobTitle?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
-      (scan.employer?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
-      (scan.batchName?.toLowerCase() || '').includes(searchQuery.toLowerCase())
+      (scan.jobTitle?.toLowerCase() || '').includes(q) ||
+      (scan.employer?.toLowerCase() || '').includes(q) ||
+      (scan.batchName?.toLowerCase() || '').includes(q) ||
+      handle.includes(q)
     );
   });
 
