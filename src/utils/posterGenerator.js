@@ -15,7 +15,6 @@ export function buildPosterPrintHtml({
   detectedLanguage,
   suspiciousSpans,
   predictedPlaybook,
-  heuristicsResult,
   sourcePlatform,
   ingestionMethod,
   scanInput
@@ -31,7 +30,6 @@ export function buildPosterPrintHtml({
     contactMethod: formData.contact_method,
     suspiciousSpans,
     predictedPlaybook,
-    obfuscationLevel: heuristicsResult?.obfuscationLevel ?? null,
     sourcePlatform,
     employer: formData.employer_identity
   });

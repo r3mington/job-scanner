@@ -170,7 +170,7 @@ export default function DecoyContactView() {
     name: "Somyot",
     age: 24,
     hometown: "Chiang Mai, Thailand",
-    backstory: "Former hotel clerk. Lost job due to compound closures. Has credit card debt of $1,500. Willing to work long shifts for high wage.",
+    backstory: "Hotel industry background. Seeking a transition to office-based work. Has experience with customer service and basic administration.",
     handle: "@somyot_c9"
   });
 
@@ -204,7 +204,7 @@ export default function DecoyContactView() {
     {
       id: 'outreach_casual',
       label: 'Casual Inquiry (Urgent)',
-      text: `Hi, I saw your job post about the high-paying customer service role. Is it still open? I am looking to start immediately, I need a job soon to support my family. Let me know what details you need.`
+      text: `Hi, I saw your job post about the customer service role. Is it still open, and are you still hiring? I am available to start soon — happy to send whatever details you need.`
     },
     {
       id: 'outreach_relocator',
@@ -214,12 +214,12 @@ export default function DecoyContactView() {
     {
       id: 'outreach_salary_type',
       label: 'Compensation & Currency Inquiry',
-      text: `Regarding the salary, is it paid in local currency or USD/USDT? I want to make sure I can send the money back home to my family easily. Do you help set up a bank account?`
+      text: `Regarding the salary, is it paid in local currency or USD/USDT? I want to understand how and when salary is paid before I commit. Do you help set up a bank account?`
     },
     {
       id: 'outreach_group',
       label: 'Group Referral Inquiry',
-      text: `I have two friends who also lost their jobs. Do you have multiple spots open? We can travel together next week if you can sponsor all of us.`
+      text: `I have two friends who are also looking for work. Do you have multiple spots open? We could start around the same time next week if you can sponsor all of us.`
     }
   ];
 
@@ -531,7 +531,7 @@ export default function DecoyContactView() {
         {isOpSecExpanded && (
           <div className="px-5 pb-5 pt-1 border-t border-slate-800/40 space-y-3">
             <p className="text-xs text-slate-450 leading-relaxed font-mono">
-              Engaging directly with trafficking syndicates poses active physical and digital retaliation risks. Before sending any message, you must certify compliance with the following security standards:
+              Engaging directly with recruitment operators carries physical and digital retaliation risk. Before sending any message, you must certify compliance with the following security standards:
             </p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs font-mono">
               <div className="p-3 rounded bg-[#0a0c12] border border-slate-800 flex items-start gap-2.5">

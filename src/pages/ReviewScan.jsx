@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { supabase, mapDbToRecord, mapRecordToDb, uploadBase64Image, SCAN_DETAIL_COLUMNS } from '../utils/supabaseClient';
 import { calculateRiskScore, getRiskLevel } from '../utils/scoring';
-import { ShieldAlert, AlertTriangle, Save, ArrowLeft, Loader2, MapPin, Columns, X, ChevronDown, ChevronUp, Image as ImageIcon, ExternalLink, TrendingUp, HelpCircle, BrainCircuit, MessageSquare, FileText, Send, Phone, Mail, Users, UserX } from 'lucide-react';
-import { analyzeJobPosting, analyzeCrop, analyzeLanguageDialect } from '../services/geminiService';
+import { ShieldAlert, AlertTriangle, Save, ArrowLeft, Loader2, MapPin, Columns, X, ChevronDown, ChevronUp, Image as ImageIcon, ExternalLink, TrendingUp, HelpCircle, BrainCircuit, MessageSquare, Send, Phone, Mail, Users, UserX } from 'lucide-react';
+import { analyzeJobPosting } from '../services/geminiService';
 import { getTakedownDetails, buildCaseSummary, getCleanContactValue } from '../utils/caseHelpers';
 import { useAuth } from '../context/AuthContext';
 import { getActiveApiKey } from '../utils/apiKey';
@@ -21,7 +21,8 @@ import SimilarAds from '../components/SimilarAds';
 import IndicatorChecklist from '../components/IndicatorChecklist';
 import WarningPosterModal from '../components/WarningPosterModal';
 import STIXExportModal from '../components/STIXExportModal';
-import RiskGauge from '../components/RiskGauge';
+import ReverseImageOsintModal from '../components/ReverseImageOsintModal';
+import ExifForensicsModal from '../components/ExifForensicsModal';
 
 const LOADING_STEPS = [
   "Acquiring and registering flyer media...",
@@ -136,25 +137,11 @@ export default function ReviewScan() {
     body: ''
   });
 
-  // Image OSINT States
+  // Image OSINT States (crop/analysis state lives inside ReverseImageOsintModal)
   const [isOsintModalOpen, setIsOsintModalOpen] = useState(false);
-  const [cropBox, setCropBox] = useState({ x: 25, y: 25, w: 50, h: 50 }); // percentages
-  const [croppedDataUrl, setCroppedDataUrl] = useState(null);
-  const [isAnalyzingCrop, setIsAnalyzingCrop] = useState(false);
-  const [cropAnalysisResult, setCropAnalysisResult] = useState(null);
-  const [osintError, setOsintError] = useState('');
 
-  // File Forensics States
+  // File Forensics States (parsing state lives inside ExifForensicsModal)
   const [isFileForensicsModalOpen, setIsFileForensicsModalOpen] = useState(false);
-  const [parsedMetadata, setParsedMetadata] = useState(null);
-  const [isParsingMetadata, setIsParsingMetadata] = useState(false);
-  const [metadataError, setMetadataError] = useState('');
-
-  // Language OSINT States
-  const [isLanguageOsintModalOpen, setIsLanguageOsintModalOpen] = useState(false);
-  const [heuristicsResult, setHeuristicsResult] = useState(null);
-  const [isAnalyzingHeuristics, setIsAnalyzingHeuristics] = useState(false);
-  const [heuristicsError, setHeuristicsError] = useState('');
 
   // STIX Export States
   const [isStixModalOpen, setIsStixModalOpen] = useState(false);
@@ -265,39 +252,6 @@ export default function ReviewScan() {
     }, 80);
   };
 
-  const generateCropSlice = useCallback((imageUrl) => {
-    if (!imageUrl) return;
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      
-      const realX = (cropBox.x / 100) * img.width;
-      const realY = (cropBox.y / 100) * img.height;
-      const realW = (cropBox.w / 100) * img.width;
-      const realH = (cropBox.h / 100) * img.height;
-
-      canvas.width = realW;
-      canvas.height = realH;
-      ctx.drawImage(img, realX, realY, realW, realH, 0, 0, realW, realH);
-      
-      try {
-        const dataUrl = canvas.toDataURL('image/png');
-        setCroppedDataUrl(dataUrl);
-      } catch (err) {
-        console.error("Failed to extract canvas crop", err);
-      }
-    };
-    img.src = imageUrl;
-  }, [cropBox]);
-
-  useEffect(() => {
-    if (isOsintModalOpen && flyerImageUrl) {
-      generateCropSlice(flyerImageUrl);
-    }
-  }, [isOsintModalOpen, cropBox, generateCropSlice, flyerImageUrl]);
-
   const getStixBundlePayload = () => {
     return generateStixBundle({
       stixOptions,
@@ -310,222 +264,12 @@ export default function ReviewScan() {
       detectedLanguage,
       suspiciousSpans,
       predictedPlaybook,
-      heuristicsResult,
       sourcePlatform,
       sourceUrl,
       ocrText,
       translatedText,
       aiReview
     });
-  };
-
-  const handleAnalyzeCrop = async () => {
-    if (!croppedDataUrl) return;
-    try {
-      setIsAnalyzingCrop(true);
-      setOsintError('');
-      setCropAnalysisResult(null);
-
-      const apiKey = getActiveApiKey();
-      const modelName = profile?.gemini_model || localStorage.getItem('gemini_model');
-
-      const response = await analyzeCrop(apiKey, modelName, { imageBase64: croppedDataUrl });
-      setCropAnalysisResult(response);
-      
-      const logMessage = `[${new Date().toLocaleString()}] SYSTEM LOG: Reverse Image OSINT analysis triggered for cropped logo/graphic region.\n`;
-      setNotes(prev => prev ? `${prev}\n${logMessage}` : logMessage);
-      setIsNotesExpanded(true);
-    } catch (err) {
-      console.error(err);
-      setOsintError(err.message || 'Failed to analyze cropped image.');
-    } finally {
-      setIsAnalyzingCrop(false);
-    }
-  };
-
-  const handleParseMetadata = () => {
-    const flyerUrl = flyerImageUrl;
-    if (!flyerUrl) {
-      setMetadataError('No reference image attached to this case.');
-      return;
-    }
-
-    setIsParsingMetadata(true);
-    setMetadataError('');
-
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => {
-      const approxBytes = flyerUrl.startsWith('data:') 
-        ? Math.round((flyerUrl.length * 3) / 4) 
-        : 450 * 1024;
-      
-      const fileKb = Math.round(approxBytes / 1024);
-      const mime = flyerUrl.startsWith('data:') 
-        ? flyerUrl.split(';')[0].split(':')[1] 
-        : 'image/jpeg';
-
-      let lat = null;
-      let lng = null;
-      let locLabel = null;
-      const lowerLoc = (formData.location || '').toLowerCase();
-      const lowerCountry = (locationCountry || '').toLowerCase();
-
-      if (lowerLoc.includes('sihanoukville') || lowerCountry.includes('cambodia')) {
-        lat = 10.627 + (Math.random() - 0.5) * 0.05;
-        lng = 103.522 + (Math.random() - 0.5) * 0.05;
-        locLabel = 'Preah Sihanouk Special Economic Zone, Cambodia';
-      } else if (lowerLoc.includes('myawaddy') || lowerLoc.includes('kk park') || lowerCountry.includes('myanmar') || lowerCountry.includes('burma')) {
-        lat = 16.452 + (Math.random() - 0.5) * 0.02;
-        lng = 98.618 + (Math.random() - 0.5) * 0.02;
-        locLabel = 'Myawaddy District (KK Park Zone), Myanmar';
-      } else if (lowerLoc.includes('golden triangle') || lowerCountry.includes('lao')) {
-        lat = 20.354 + (Math.random() - 0.5) * 0.03;
-        lng = 100.081 + (Math.random() - 0.5) * 0.03;
-        locLabel = 'Golden Triangle SEZ, Lao PDR';
-      }
-
-      const devices = [
-        { make: 'Apple', model: 'iPhone 14 Pro', software: 'iOS 16.5.1' },
-        { make: 'Samsung', model: 'Galaxy S23 Ultra', software: 'Android 13' },
-        { make: 'Xiaomi', model: 'Redmi Note 12', software: 'Android 12' }
-      ];
-      const camera = devices[Math.floor(Math.random() * devices.length)];
-
-      const metadataObj = {
-        resolution: `${img.width} x ${img.height} pixels`,
-        mimeType: mime,
-        fileSize: `${fileKb} KB`,
-        softwareTrace: img.width > 1200 ? 'Canva graphic export' : 'Mobile screenshot compression',
-        captureTime: new Date(Date.now() - 3600000 * 24 * (3 + Math.random() * 5)).toISOString(),
-        device: camera,
-        gps: lat ? { latitude: lat, longitude: lng, description: locLabel } : null
-      };
-
-      setParsedMetadata(metadataObj);
-      setIsParsingMetadata(false);
-      
-      const logMessage = `[${new Date().toLocaleString()}] SYSTEM LOG: File binary EXIF parsing executed successfully. ${lat ? 'GPS geolocation vectors extracted.' : 'No GPS segments identified.'}\n`;
-      setNotes(prev => prev ? `${prev}\n${logMessage}` : logMessage);
-      setIsNotesExpanded(true);
-    };
-
-    img.onerror = () => {
-      setMetadataError('Failed to load flyer image binary array.');
-      setIsParsingMetadata(false);
-    };
-
-    img.src = flyerUrl;
-  };
-
-  const handleAnalyzeHeuristics = async () => {
-    const rawText = ocrText || formData.job_title || '';
-    if (!rawText || rawText.trim() === '') {
-      setHeuristicsError('No job advertisement text found to perform dialect heuristics.');
-      return;
-    }
-
-    try {
-      setIsAnalyzingHeuristics(true);
-      setHeuristicsError('');
-      setHeuristicsResult(null);
-
-      const apiKey = getActiveApiKey();
-      const modelName = profile?.gemini_model || localStorage.getItem('gemini_model');
-
-      const response = await analyzeLanguageDialect(apiKey, modelName, { text: rawText });
-      setHeuristicsResult(response);
-
-      const logMessage = `[${new Date().toLocaleString()}] SYSTEM LOG: Dialect & Language heuristics profile compiled. Estimated native origin: ${response.estimatedNativeLanguage}.\n`;
-      setNotes(prev => prev ? `${prev}\n${logMessage}` : logMessage);
-      setIsNotesExpanded(true);
-    } catch (err) {
-      console.error(err);
-      setHeuristicsError(err.message || 'Failed to analyze text dialect.');
-    } finally {
-      setIsAnalyzingHeuristics(false);
-    }
-  };
-
-  useEffect(() => {
-    if (isFileForensicsModalOpen) {
-      handleParseMetadata();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isFileForensicsModalOpen]);
-
-  useEffect(() => {
-    if (isLanguageOsintModalOpen) {
-      handleAnalyzeHeuristics();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLanguageOsintModalOpen]);
-
-  const handleStartInteraction = (e, mode) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    const container = imageContainerRef.current;
-    if (!container) return;
-    const rect = container.getBoundingClientRect();
-
-    const startX = e.clientX;
-    const startY = e.clientY;
-    const startBox = { ...cropBox };
-
-    const handleMove = (moveEvent) => {
-      const deltaX = ((moveEvent.clientX - startX) / rect.width) * 100;
-      const deltaY = ((moveEvent.clientY - startY) / rect.height) * 100;
-
-      if (mode === 'drag') {
-        const newX = Math.max(0, Math.min(100 - startBox.w, startBox.x + deltaX));
-        const newY = Math.max(0, Math.min(100 - startBox.h, startBox.y + deltaY));
-        setCropBox(prev => ({ ...prev, x: Math.round(newX), y: Math.round(newY) }));
-      } else if (mode === 'resize-br') {
-        const newW = Math.max(10, Math.min(100 - startBox.x, startBox.w + deltaX));
-        const newH = Math.max(10, Math.min(100 - startBox.y, startBox.h + deltaY));
-        setCropBox(prev => ({ ...prev, w: Math.round(newW), h: Math.round(newH) }));
-      } else if (mode === 'resize-tl') {
-        const newX = Math.max(0, Math.min(startBox.x + startBox.w - 10, startBox.x + deltaX));
-        const newW = startBox.w - (newX - startBox.x);
-        const newY = Math.max(0, Math.min(startBox.y + startBox.h - 10, startBox.y + deltaY));
-        const newH = startBox.h - (newY - startBox.y);
-        setCropBox({
-          x: Math.round(newX),
-          y: Math.round(newY),
-          w: Math.round(newW),
-          h: Math.round(newH)
-        });
-      } else if (mode === 'resize-tr') {
-        const newW = Math.max(10, Math.min(100 - startBox.x, startBox.w + deltaX));
-        const newY = Math.max(0, Math.min(startBox.y + startBox.h - 10, startBox.y + deltaY));
-        const newH = startBox.h - (newY - startBox.y);
-        setCropBox({
-          x: startBox.x,
-          y: Math.round(newY),
-          w: Math.round(newW),
-          h: Math.round(newH)
-        });
-      } else if (mode === 'resize-bl') {
-        const newX = Math.max(0, Math.min(startBox.x + startBox.w - 10, startBox.x + deltaX));
-        const newW = startBox.w - (newX - startBox.x);
-        const newH = Math.max(10, Math.min(100 - startBox.y, startBox.h + deltaY));
-        setCropBox({
-          x: Math.round(newX),
-          y: startBox.y,
-          w: Math.round(newW),
-          h: Math.round(newH)
-        });
-      }
-    };
-
-    const handleEnd = () => {
-      window.removeEventListener('mousemove', handleMove);
-      window.removeEventListener('mouseup', handleEnd);
-    };
-
-    window.addEventListener('mousemove', handleMove);
-    window.addEventListener('mouseup', handleEnd);
   };
 
   const handleTakeAction = (actionId) => {
@@ -563,19 +307,6 @@ export default function ReviewScan() {
           description: 'No valid recruiter contact method (Telegram, WhatsApp, Email) found in this ad to view a dossier.'
         });
       }
-    } else if (actionId === 'related') {
-      if (similarScans.length > 0) {
-        document.getElementById('similar-postings-section')?.scrollIntoView({ behavior: 'smooth' });
-        setActiveActionToast({
-          title: 'Find Matches',
-          description: `Scrolling to ${similarScans.length} similar ad postings found in history.`
-        });
-      } else {
-        setActiveActionToast({
-          title: 'Find Matches',
-          description: 'No other ads with similar text, advertiser ID, or contact details were found in history.'
-        });
-      }
     } else if (actionId === 'takedown') {
       const details = getTakedownDetails(formData.contact_method, formData.source_url);
       setTakedownDetails(details);
@@ -585,8 +316,6 @@ export default function ReviewScan() {
     } else if (actionId === 'image_osint') {
       if (flyerImageUrl) {
         setIsOsintModalOpen(true);
-        setOsintError('');
-        setCropAnalysisResult(null);
       } else {
         setActiveActionToast({
           title: 'Reverse Image OSINT',
@@ -602,19 +331,8 @@ export default function ReviewScan() {
           description: 'No physical flyer reference image associated with this scan to perform file analysis.'
         });
       }
-    } else if (actionId === 'language_osint') {
-      const rawText = ocrText || formData.job_title || '';
-      if (rawText && rawText.trim() !== '') {
-        setIsLanguageOsintModalOpen(true);
-      } else {
-        setActiveActionToast({
-          title: 'Dialect & Language Heuristics',
-          description: 'No job advertisement text found to perform dialect analysis.'
-        });
-      }
     }
   };
-  const imageContainerRef = useRef(null);
 
   useEffect(() => {
     if (!loading) return;
@@ -825,7 +543,28 @@ export default function ReviewScan() {
 
           if (dupData && dupData.length > 0) {
             const dupScan = dupData[0];
-            
+
+            // A re-import can carry a flyer image the stored duplicate lacks
+            // (e.g. the record was first ingested text-only from the live
+            // feed). Backfill it so the image isn't silently dropped and the
+            // image-based tools (OSINT, forensics) work on this case.
+            if (scanInput.image && !dupScan.original_image_url) {
+              try {
+                const backfilledUrl = scanInput.image.startsWith('data:image/')
+                  ? await uploadBase64Image(scanInput.image)
+                  : scanInput.image;
+                const { error: backfillErr } = await supabase
+                  .from('scans')
+                  .update({ original_image_url: backfilledUrl })
+                  .eq('id', dupScan.id);
+                if (backfillErr) throw backfillErr;
+                dupScan.original_image_url = backfilledUrl;
+              } catch (imgErr) {
+                console.warn('Failed to backfill flyer image onto duplicate record:', imgErr?.message || imgErr);
+              }
+            }
+            if (dupScan.original_image_url) setFlyerImageUrl(dupScan.original_image_url);
+
             // Enforce minimum 20s scan time even for cached duplicate results
             const elapsed = Date.now() - startTime;
             if (elapsed < 20000) {
@@ -907,7 +646,6 @@ export default function ReviewScan() {
           contactMethod: result.contact_method,
           suspiciousSpans: result.suspicious_spans || [],
           predictedPlaybook: result.predicted_playbook || [],
-          obfuscationLevel: null,
           sourcePlatform: scanInput?.sourcePlatform || 'unspecified',
           employer: result.employer_identity
         });
@@ -1007,7 +745,6 @@ export default function ReviewScan() {
       contactMethod: formData.contact_method,
       suspiciousSpans,
       predictedPlaybook,
-      obfuscationLevel: heuristicsResult?.obfuscationLevel ?? null,
       sourcePlatform,
       employer: formData.employer_identity
     };
@@ -1037,8 +774,7 @@ export default function ReviewScan() {
         contactMethod: formData.contact_method,
         suspiciousSpans,
         predictedPlaybook,
-        obfuscationLevel: heuristicsResult?.obfuscationLevel ?? null,
-        sourcePlatform,
+          sourcePlatform,
         employer: formData.employer_identity
       });
       const score = scoreResult.score;
@@ -1186,9 +922,9 @@ export default function ReviewScan() {
           <div className="p-6 flex flex-col md:flex-row gap-6 items-center">
             {/* Left: Scanning Document Box */}
             <div className="relative w-44 h-56 bg-slate-950/80 border border-slate-800 rounded-lg overflow-hidden flex-shrink-0 flex items-center justify-center shadow-inner">
-              {scanInput?.image || scanInput?.originalImage ? (
+              {flyerImageUrl ? (
                 <img
-                  src={scanInput.image || scanInput.originalImage}
+                  src={flyerImageUrl}
                   alt="Scanning Target"
                   className="w-full h-full object-cover opacity-30 blur-[0.5px]"
                 />
@@ -1314,7 +1050,6 @@ export default function ReviewScan() {
     contactMethod: formData.contact_method,
     suspiciousSpans,
     predictedPlaybook,
-    obfuscationLevel: heuristicsResult?.obfuscationLevel ?? null,
     sourcePlatform,
     employer: formData.employer_identity
   });
@@ -2201,7 +1936,6 @@ export default function ReviewScan() {
             detectedLanguage={detectedLanguage}
             suspiciousSpans={suspiciousSpans}
             predictedPlaybook={predictedPlaybook}
-            heuristicsResult={heuristicsResult}
             sourcePlatform={sourcePlatform}
             ingestionMethod={ingestionMethod}
             ocrText={ocrText}
@@ -2364,624 +2098,29 @@ export default function ReviewScan() {
       />
 
       {/* Reverse Image OSINT Modal */}
-      {isOsintModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-fade-in">
-          <div className="bg-[#111318] w-full max-w-6xl h-[85vh] rounded border border-slate-800 shadow-2xl flex flex-col overflow-hidden animate-scale-in">
-            {/* Modal Header */}
-            <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-[#0c0f16]">
-              <div className="flex items-center gap-2">
-                <ImageIcon className="w-5 h-5 text-amber-500" />
-                <div>
-                  <h3 className="font-mono text-xs uppercase tracking-widest text-slate-200">Reverse Image OSINT (Template Tracker)</h3>
-                  <p className="text-xs text-slate-500 mt-0.5 font-mono">Calibrate flyer crops to identify background layout and graphic template duplication.</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsOsintModalOpen(false)}
-                className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-slate-200 rounded transition-colors"
-              >
-                <X className="w-6 h-6" />
-              </button>
-            </div>
-
-            {/* Modal Content */}
-            <div className="flex-1 overflow-hidden flex flex-col lg:flex-row">
-              {/* Left Column: Crop Controls & Gemini Analysis */}
-              <div className="w-full lg:w-[380px] border-r border-slate-800 p-5 flex flex-col justify-between overflow-y-auto bg-[#0d1117]">
-                <div className="space-y-6">
-                  {/* Calibrator Board */}
-                  <div className="space-y-4">
-                    <span className="text-[10px] font-mono font-bold text-slate-500 block uppercase tracking-wider">Crop Calibration Board</span>
-                    
-                    {/* Presets */}
-                    <div className="space-y-1.5">
-                      <label className="block text-[9px] font-mono text-slate-400 uppercase">Target Presets</label>
-                      <div className="grid grid-cols-3 gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => setCropBox({ x: 35, y: 35, w: 30, h: 30 })}
-                          className="px-2 py-1.5 bg-slate-900 border border-slate-800 hover:border-amber-500/40 text-slate-300 font-mono text-[9px] rounded uppercase transition-colors"
-                        >
-                          Logo (1:1)
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setCropBox({ x: 35, y: 30, w: 30, h: 40 })}
-                          className="px-2 py-1.5 bg-slate-900 border border-slate-800 hover:border-amber-500/40 text-slate-300 font-mono text-[9px] rounded uppercase transition-colors"
-                        >
-                          Photo (3:4)
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setCropBox({ x: 20, y: 33, w: 60, h: 34 })}
-                          className="px-2 py-1.5 bg-slate-900 border border-slate-800 hover:border-amber-500/40 text-slate-300 font-mono text-[9px] rounded uppercase transition-colors"
-                        >
-                          Banner (16:9)
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Download Crop */}
-                    {croppedDataUrl && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const a = document.createElement('a');
-                          a.href = croppedDataUrl;
-                          a.download = `sentinel_crop_${(scanInput?.id || 'new').substring(0,8)}.png`;
-                          document.body.appendChild(a);
-                          a.click();
-                          document.body.removeChild(a);
-                        }}
-                        className="w-full py-2 bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-slate-100 font-mono text-[10px] rounded uppercase transition-colors flex items-center justify-center gap-1.5"
-                      >
-                        <ImageIcon className="w-3.5 h-3.5" /> Download Crop Image
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Gemini Trigger Button */}
-                  <div className="space-y-3 pt-4 border-t border-slate-800/80">
-                    <button
-                      type="button"
-                      onClick={handleAnalyzeCrop}
-                      disabled={isAnalyzingCrop || !croppedDataUrl}
-                      className="w-full py-3 bg-amber-600 hover:bg-amber-700 disabled:bg-slate-850 disabled:text-slate-600 text-slate-900 font-mono text-xs uppercase tracking-wider font-bold rounded transition-all shadow-md flex items-center justify-center gap-2"
-                    >
-                      {isAnalyzingCrop ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          Analyzing Graphic...
-                        </>
-                      ) : (
-                        <>
-                          <BrainCircuit className="w-4 h-4" />
-                          Analyze via Gemini Vision
-                        </>
-                      )}
-                    </button>
-                  </div>
-
-                  {/* Gemini Vision Results Panel */}
-                  {cropAnalysisResult && (
-                    <div className="p-4 bg-amber-500/5 border border-amber-500/15 rounded space-y-3 animate-fade-in">
-                      <div className="flex items-center gap-1.5">
-                        <BrainCircuit className="w-4 h-4 text-amber-500" />
-                        <span className="text-xs font-mono font-bold text-slate-200 uppercase">Gemini Forensic Analysis</span>
-                      </div>
-                      <div className="space-y-3 select-text">
-                        <div>
-                          <span className="text-[9px] font-mono text-slate-450 uppercase">Visual Element Description</span>
-                          <p className="text-xs text-slate-300 leading-relaxed font-sans mt-0.5">{cropAnalysisResult.description}</p>
-                        </div>
-                        <div>
-                          <span className="text-[9px] font-mono text-slate-450 uppercase">Suggested Search Keywords</span>
-                          <div className="flex flex-wrap gap-1 mt-1">
-                            {cropAnalysisResult.searchKeywords?.map((kw, i) => (
-                              <span
-                                key={i}
-                                onClick={() => {
-                                  navigator.clipboard.writeText(kw);
-                                  setActiveActionToast({
-                                    title: 'Keyword Copied',
-                                    description: `"${kw}" has been copied to your clipboard for search engine entry.`
-                                  });
-                                }}
-                                className="text-[10px] font-mono font-semibold px-2 py-0.5 bg-slate-950 hover:bg-slate-900 text-amber-400/90 hover:text-amber-350 border border-slate-850 hover:border-amber-500/30 rounded cursor-pointer transition-all active:scale-95"
-                              >
-                                {kw}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Error Banner */}
-                {osintError && (
-                  <div className="p-3 rounded bg-red-950/20 border border-red-900/30 text-[10px] text-red-400 font-mono leading-normal mt-4">
-                    Error: {osintError}
-                  </div>
-                )}
-              </div>
-
-              {/* Center: Image Board with Overlay Bounding Box */}
-              <div className="flex-1 bg-slate-950 p-5 flex flex-col justify-center items-center border-r border-slate-800 min-h-[300px]">
-                <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider mb-2 self-start">Interactive Target Board</span>
-                <div ref={imageContainerRef} className="relative border border-slate-800 rounded overflow-hidden max-h-[55vh] max-w-full flex items-center justify-center bg-[#0a0c12]">
-                  {/* Raw Flyer Reference */}
-                  <img
-                    src={scanInput?.image || scanInput?.originalImage}
-                    alt="Flyer Reference"
-                    className="max-h-[52vh] max-w-full object-contain opacity-75 select-none pointer-events-none"
-                  />
-                  {/* Crop Target Bounding Overlay Box */}
-                  <div
-                    onMouseDown={(e) => handleStartInteraction(e, 'drag')}
-                    className="absolute border-2 border-dashed border-amber-500 bg-amber-500/10 shadow-[0_0_15px_rgba(245,158,11,0.25)] pointer-events-auto cursor-move select-none"
-                    style={{
-                      left: `${cropBox.x}%`,
-                      top: `${cropBox.y}%`,
-                      width: `${cropBox.w}%`,
-                      height: `${cropBox.h}%`
-                    }}
-                  >
-                    {/* Bounding box corner handle triggers */}
-                    <div 
-                      onMouseDown={(e) => handleStartInteraction(e, 'resize-tl')}
-                      className="absolute top-0 left-0 w-2.5 h-2.5 border border-amber-400 bg-amber-600 -mt-1 -ml-1 cursor-nwse-resize pointer-events-auto" 
-                    />
-                    <div 
-                      onMouseDown={(e) => handleStartInteraction(e, 'resize-tr')}
-                      className="absolute top-0 right-0 w-2.5 h-2.5 border border-amber-400 bg-amber-600 -mt-1 -mr-1 cursor-nesw-resize pointer-events-auto" 
-                    />
-                    <div 
-                      onMouseDown={(e) => handleStartInteraction(e, 'resize-bl')}
-                      className="absolute bottom-0 left-0 w-2.5 h-2.5 border border-amber-400 bg-amber-600 -mb-1 -ml-1 cursor-nesw-resize pointer-events-auto" 
-                    />
-                    <div 
-                      onMouseDown={(e) => handleStartInteraction(e, 'resize-br')}
-                      className="absolute bottom-0 right-0 w-2.5 h-2.5 border border-amber-400 bg-amber-600 -mb-1 -mr-1 cursor-nwse-resize pointer-events-auto" 
-                    />
-                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                      <span className="text-[8px] font-mono text-amber-400/60 bg-slate-950/80 px-1 py-0.5 rounded border border-amber-900/30">CROP CALIBRATION TARGET</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Right Column: Search Dispatchers & Options */}
-              <div className="w-full lg:w-[380px] p-5 overflow-y-auto flex flex-col justify-between bg-[#0d1117]">
-                <div className="space-y-6">
-                  {/* Option 1: External Search dispatchers */}
-                  <div className="space-y-3">
-                    <span className="text-[10px] font-mono font-bold text-slate-500 block uppercase tracking-wider">Option 1: Global Search Engines</span>
-                    <p className="text-[10px] text-slate-400 leading-relaxed font-sans">
-                      Due to cross-origin limitations, direct upload can be initiated by copying or downloading the crop segment above and launching the engines below:
-                    </p>
-                    <div className="space-y-2">
-                      {/* Google Lens */}
-                      <a
-                        href="https://lens.google.com"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="p-3 bg-slate-950 hover:bg-[#1b2230]/40 border border-slate-850 hover:border-slate-700 rounded flex items-center justify-between transition-colors group"
-                      >
-                        <div>
-                          <span className="text-xs font-bold text-slate-200 group-hover:text-amber-400 transition-colors">Google Lens Search Portal</span>
-                          <p className="text-[9px] text-slate-500 mt-0.5">Drag-and-drop the downloaded segment to find matching websites.</p>
-                        </div>
-                        <ExternalLink className="w-4 h-4 text-slate-500 group-hover:text-amber-500 transition-colors" />
-                      </a>
-
-                      {/* Yandex Images */}
-                      <a
-                        href="https://yandex.com/images/"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="p-3 bg-slate-950 hover:bg-[#1b2230]/40 border border-slate-850 hover:border-slate-700 rounded flex items-center justify-between transition-colors group"
-                      >
-                        <div>
-                          <span className="text-xs font-bold text-slate-200 group-hover:text-amber-400 transition-colors">Yandex Image OSINT Desk</span>
-                          <p className="text-[9px] text-slate-500 mt-0.5">Extremely powerful for tracking localized campaign syndicates in Asia.</p>
-                        </div>
-                        <ExternalLink className="w-4 h-4 text-slate-500 group-hover:text-amber-500 transition-colors" />
-                      </a>
-
-                      {/* TinEye */}
-                      <a
-                        href="https://tineye.com"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="p-3 bg-slate-950 hover:bg-[#1b2230]/40 border border-slate-850 hover:border-slate-700 rounded flex items-center justify-between transition-colors group"
-                      >
-                        <div>
-                          <span className="text-xs font-bold text-slate-200 group-hover:text-amber-400 transition-colors">TinEye Duplicate Detector</span>
-                          <p className="text-[9px] text-slate-500 mt-0.5">Scans for modified duplicates of exact flyers/stock photography assets.</p>
-                        </div>
-                        <ExternalLink className="w-4 h-4 text-slate-500 group-hover:text-amber-500 transition-colors" />
-                      </a>
-                    </div>
-                  </div>
-
-                  {/* Option 2 Placeholder (Database Cross-Reference) */}
-                  <div className="p-4 bg-slate-950/20 border border-dashed border-slate-850 rounded relative group select-none">
-                    <div className="absolute top-2 right-2 bg-slate-950 text-slate-550 border border-slate-850 text-[8px] font-bold font-mono px-1.5 py-0.5 rounded tracking-wider">
-                      FUTURE RELEASE
-                    </div>
-                    <span className="text-[10px] font-mono font-bold text-slate-500 block uppercase tracking-wider">Option 2: Database Matcher</span>
-                    <span className="text-xs font-bold text-slate-400 mt-2 block">Perceptual Hash Duplicate Audit</span>
-                    <p className="text-[10px] text-slate-550 mt-1 leading-normal font-sans">
-                      This future feature will compute visual signature average hashes (aHash/pHash) of the cropped segment and search the local Supabase database to identify duplicate logos, icons, and backgrounds used in other ingestion campaigns.
-                    </p>
-                  </div>
-                </div>
-
-                {/* Info Text */}
-                <div className="text-[9px] font-mono text-slate-550 leading-relaxed pt-4 border-t border-slate-900 mt-6 select-text">
-                  Sentinel OSINT Suite · Visual Template Audits · Rev: 2.1
-                </div>
-              </div>
-            </div>
-
-            {/* Modal Footer */}
-            <div className="p-4 border-t border-slate-800 bg-[#0c0f16] flex items-center justify-end">
-              <button
-                type="button"
-                onClick={() => setIsOsintModalOpen(false)}
-                className="px-5 py-2.5 bg-slate-850 hover:bg-slate-800 text-slate-200 text-xs font-mono font-bold rounded shadow-sm transition-colors border border-slate-700"
-              >
-                Close Modal
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ReverseImageOsintModal
+        isOpen={isOsintModalOpen}
+        onClose={() => setIsOsintModalOpen(false)}
+        flyerImageUrl={flyerImageUrl}
+        scanId={scanInput?.id}
+        onLog={(message) => {
+          setNotes(prev => prev ? `${prev}\n${message}` : message);
+          setIsNotesExpanded(true);
+        }}
+        onToast={setActiveActionToast}
+      />
 
       {/* EXIF & Metadata Forensics Modal */}
-      {isFileForensicsModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-fade-in">
-          <div className="bg-[#111318] w-full max-w-6xl h-[80vh] rounded border border-slate-800 shadow-2xl flex flex-col overflow-hidden animate-scale-in">
-            {/* Header */}
-            <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-[#0c0f16]">
-              <div className="flex items-center gap-2">
-                <FileText className="w-5 h-5 text-amber-500" />
-                <div>
-                  <h3 className="font-mono text-xs uppercase tracking-widest text-slate-200">EXIF & Metadata Forensics</h3>
-                  <p className="text-xs text-slate-500 mt-0.5 font-mono">Scan flyer image binary segment profiles to extract hardware, software, and geolocation tags.</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsFileForensicsModalOpen(false)}
-                className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-slate-202 rounded transition-colors"
-              >
-                <X className="w-6 h-6" />
-              </button>
-            </div>
+      <ExifForensicsModal
+        isOpen={isFileForensicsModalOpen}
+        onClose={() => setIsFileForensicsModalOpen(false)}
+        flyerImageUrl={flyerImageUrl}
+        onLog={(message) => {
+          setNotes(prev => prev ? `${prev}\n${message}` : message);
+          setIsNotesExpanded(true);
+        }}
+      />
 
-            {/* Content */}
-            <div className="flex-1 overflow-hidden flex flex-col lg:flex-row">
-              {isParsingMetadata ? (
-                <div className="flex-1 flex flex-col items-center justify-center bg-[#0a0c12] text-slate-400 font-mono text-xs gap-3">
-                  <Loader2 className="w-8 h-8 text-amber-500 animate-spin" />
-                  <span>Parsing Image Binary Header Segments...</span>
-                </div>
-              ) : metadataError ? (
-                <div className="flex-1 flex flex-col items-center justify-center bg-[#0a0c12] text-red-400 font-mono text-xs p-6 text-center">
-                  <AlertTriangle className="w-10 h-10 text-red-500 mb-3" />
-                  <span>Error parsing metadata: {metadataError}</span>
-                </div>
-              ) : parsedMetadata ? (
-                <>
-                  {/* Left Column: Diagnostics Summary */}
-                  <div className="w-full lg:w-[350px] border-r border-slate-800 p-5 flex flex-col justify-between overflow-y-auto bg-[#0d1117] font-mono text-[11px] text-slate-400">
-                    <div className="space-y-5">
-                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Ingestion Blueprint</span>
-                      
-                      <div className="space-y-3">
-                        <div className="flex justify-between border-b border-slate-850 pb-1">
-                          <span>Resolution:</span>
-                          <span className="text-slate-200 font-bold">{parsedMetadata.resolution}</span>
-                        </div>
-                        <div className="flex justify-between border-b border-slate-850 pb-1">
-                          <span>MIME Type:</span>
-                          <span className="text-slate-200 font-bold">{parsedMetadata.mimeType}</span>
-                        </div>
-                        <div className="flex justify-between border-b border-slate-850 pb-1">
-                          <span>File Size:</span>
-                          <span className="text-slate-200 font-bold">{parsedMetadata.fileSize}</span>
-                        </div>
-                        <div className="flex justify-between border-b border-slate-850 pb-1">
-                          <span>Software Trace:</span>
-                          <span className="text-slate-200 font-bold">{parsedMetadata.softwareTrace}</span>
-                        </div>
-                      </div>
-
-                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block pt-2">Camera Profile</span>
-                      <div className="space-y-3">
-                        <div className="flex justify-between border-b border-slate-850 pb-1">
-                          <span>Device Make:</span>
-                          <span className="text-slate-200 font-bold">{parsedMetadata.device.make}</span>
-                        </div>
-                        <div className="flex justify-between border-b border-slate-850 pb-1">
-                          <span>Device Model:</span>
-                          <span className="text-slate-200 font-bold">{parsedMetadata.device.model}</span>
-                        </div>
-                        <div className="flex justify-between border-b border-slate-850 pb-1">
-                          <span>Software:</span>
-                          <span className="text-slate-200 font-bold">{parsedMetadata.device.software}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Capture Time:</span>
-                          <span className="text-slate-200 font-bold text-[9px]">{new Date(parsedMetadata.captureTime).toLocaleString()}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="pt-4 border-t border-slate-900 mt-6 text-[10px] text-slate-555 leading-relaxed">
-                      EXIF data shows capture profile. Screenshot traces indicate file was compiled and re-saved via mobile device.
-                    </div>
-                  </div>
-
-                  {/* Center Column: Geolocation Radar Telemetry */}
-                  <div className="flex-1 bg-slate-950 p-6 flex flex-col justify-center items-center border-r border-slate-800 min-h-[300px] relative">
-                    <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider mb-2 self-start absolute top-5 left-5">Geographic Telemetry</span>
-                    
-                    {parsedMetadata.gps ? (
-                      <div className="w-full flex flex-col items-center justify-center space-y-4">
-                        {/* Styled SVG radar map grid */}
-                        <div className="w-56 h-56 rounded-full border border-amber-500/20 relative flex items-center justify-center bg-[#090b10] overflow-hidden shadow-[0_0_30px_rgba(245,158,11,0.05)]">
-                          <div className="absolute w-44 h-44 rounded-full border border-amber-500/10 animate-pulse" />
-                          <div className="absolute w-32 h-32 rounded-full border border-amber-500/10" />
-                          <div className="absolute w-20 h-20 rounded-full border border-amber-500/10" />
-                          <div className="absolute h-full w-[1px] bg-amber-500/10" />
-                          <div className="absolute w-full h-[1px] bg-amber-500/10" />
-                          
-                          <div className="absolute w-28 h-28 border-t-2 border-r-2 border-amber-500/30 rounded-tr-full top-0 right-0 origin-bottom-left animate-[spin_5s_linear_infinite]" />
-                          
-                          <div className="absolute w-3 h-3 bg-red-500 rounded-full border-2 border-white shadow-[0_0_10px_rgba(239,68,68,0.8)] animate-ping" />
-                          <div className="absolute w-2 h-2 bg-red-500 rounded-full border border-white" />
-                        </div>
-                        <div className="text-center space-y-1 bg-slate-950/60 p-3 border border-slate-850 rounded max-w-sm">
-                          <span className="text-[10px] font-mono text-slate-500 block uppercase">Extracted GPS Vectors</span>
-                          <span className="text-xs font-bold text-slate-200 block">{parsedMetadata.gps.description}</span>
-                          <span className="text-[10px] font-mono text-amber-500 font-semibold block mt-0.5">
-                            LAT: {parsedMetadata.gps.latitude.toFixed(5)} · LNG: {parsedMetadata.gps.longitude.toFixed(5)}
-                          </span>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="text-center p-6 space-y-3 max-w-sm">
-                        <MapPin className="w-12 h-12 text-slate-700 mx-auto" />
-                        <span className="text-xs font-mono text-slate-455 block uppercase">No Location Metadata Found</span>
-                        <p className="text-[11px] text-slate-550 leading-relaxed font-sans">
-                          Image does not contain EXIF GPS tags. This occurs frequently when images are compiled on web tools (Canva) or sent via chat systems that strip binary markers.
-                        </p>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Right Column: Raw Header JSON */}
-                  <div className="w-full lg:w-[350px] p-5 flex flex-col overflow-hidden bg-[#0d1117]">
-                    <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider mb-2 block">Raw EXIF Registry</span>
-                    <pre className="flex-1 overflow-auto bg-[#0a0c12] border border-slate-850 rounded p-4 font-mono text-[9px] text-amber-500/80 leading-relaxed whitespace-pre select-all">
-                      {JSON.stringify({
-                        exifHeaders: {
-                          Make: parsedMetadata.device.make,
-                          Model: parsedMetadata.device.model,
-                          Software: parsedMetadata.device.software,
-                          DateTime: parsedMetadata.captureTime,
-                          ExifVersion: "0230",
-                          ColorSpace: 1,
-                          PixelXDimension: parseInt(parsedMetadata.resolution.split(' ')[0]),
-                          PixelYDimension: parseInt(parsedMetadata.resolution.split(' ')[2]),
-                          Compression: 6,
-                          GPSInfo: parsedMetadata.gps ? {
-                            GPSLatitudeRef: parsedMetadata.gps.latitude >= 0 ? "N" : "S",
-                            GPSLatitude: [Math.abs(Math.floor(parsedMetadata.gps.latitude)), 37, 30],
-                            GPSLongitudeRef: parsedMetadata.gps.longitude >= 0 ? "E" : "W",
-                            GPSLongitude: [Math.abs(Math.floor(parsedMetadata.gps.longitude)), 31, 15]
-                          } : "Null"
-                        }
-                      }, null, 2)}
-                    </pre>
-                  </div>
-                </>
-              ) : null}
-            </div>
-
-            {/* Footer */}
-            <div className="p-4 border-t border-slate-800 bg-[#0c0f16] flex items-center justify-end">
-              <button
-                type="button"
-                onClick={() => setIsFileForensicsModalOpen(false)}
-                className="px-5 py-2.5 bg-slate-855 hover:bg-slate-800 text-slate-200 text-xs font-mono font-bold rounded shadow-sm transition-colors border border-slate-700"
-              >
-                Close Modal
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Dialect & Language Heuristics Modal */}
-      {isLanguageOsintModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-fade-in">
-          <div className="bg-[#111318] w-full max-w-6xl h-[80vh] rounded border border-slate-800 shadow-2xl flex flex-col overflow-hidden animate-scale-in">
-            {/* Header */}
-            <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-[#0c0f16]">
-              <div className="flex items-center gap-2">
-                <MessageSquare className="w-5 h-5 text-amber-500" />
-                <div>
-                  <h3 className="font-mono text-xs uppercase tracking-widest text-slate-200">Dialect & Language Heuristics</h3>
-                  <p className="text-xs text-slate-500 mt-0.5 font-mono">Evaluate translation structures, obfuscation anomalies, and regional jargon signatures.</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsLanguageOsintModalOpen(false)}
-                className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-slate-200 rounded transition-colors"
-              >
-                <X className="w-6 h-6" />
-              </button>
-            </div>
-
-            {/* Content */}
-            <div className="flex-1 overflow-hidden flex flex-col lg:flex-row">
-              {isAnalyzingHeuristics ? (
-                <div className="flex-1 flex flex-col items-center justify-center bg-[#0a0c12] text-slate-400 font-mono text-xs gap-3">
-                  <Loader2 className="w-8 h-8 text-amber-500 animate-spin" />
-                  <span>Compiling NLP Forensic Dialect Profile...</span>
-                </div>
-              ) : heuristicsError ? (
-                <div className="flex-1 flex flex-col items-center justify-center bg-[#0a0c12] text-red-400 font-mono text-xs p-6 text-center">
-                  <AlertTriangle className="w-10 h-10 text-red-500 mb-3" />
-                  <span>Analysis failed: {heuristicsError}</span>
-                </div>
-              ) : heuristicsResult ? (
-                <>
-                  {/* Left Column: Confidence Gauges */}
-                  <div className="w-full lg:w-[350px] border-r border-slate-800 p-5 flex flex-col justify-between overflow-y-auto bg-[#0d1117] font-mono text-[11px] text-slate-400">
-                    <div className="space-y-6">
-                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Dialect Confidence</span>
-                      
-                      {/* Gauge 1 */}
-                      <div className="flex flex-col items-center justify-center py-4 bg-slate-950/60 border border-slate-850 rounded">
-                        <RiskGauge score={heuristicsResult.nativeDialectConfidence || 50} size={112} strokeWidth={6} />
-                        <span className="text-slate-300 font-bold mt-3 text-xs uppercase">{heuristicsResult.estimatedNativeLanguage}</span>
-                        <span className="text-[9px] text-slate-505 block uppercase mt-0.5">Estimated Native Tongue</span>
-                      </div>
-
-                      {/* Gauge 2 */}
-                      <div className="space-y-2">
-                        <div className="flex justify-between text-[10px] uppercase font-bold">
-                          <span>Obfuscation bypass level:</span>
-                          <span className="text-amber-500">{heuristicsResult.obfuscationLevel}%</span>
-                        </div>
-                        <div className="w-full bg-slate-950 h-2 rounded border border-slate-850 overflow-hidden">
-                          <div 
-                            className="bg-amber-500 h-full rounded-sm shadow-[0_0_8px_rgba(245,158,11,0.5)]" 
-                            style={{ width: `${heuristicsResult.obfuscationLevel || 0}%` }}
-                          />
-                        </div>
-                        <span className="text-[9px] text-slate-550 leading-relaxed block">
-                          Measures letters substituted with symbols or spaces to bypass safety filters (e.g. "@", "$").
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="pt-4 border-t border-slate-900 mt-6 text-[10px] text-slate-555 leading-relaxed">
-                      Forensic NLP Audits highlight translation structures, detecting signature transfers that expose syndicate profiles.
-                    </div>
-                  </div>
-
-                  {/* Center Column: Text Transcript Highlighting */}
-                  <div className="flex-1 bg-slate-950 p-5 flex flex-col overflow-hidden border-r border-slate-800">
-                    <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider mb-2 block">Linguistic Highlight Board</span>
-                    <div className="flex-1 overflow-y-auto bg-[#0a0c12] border border-slate-850 rounded p-4 font-mono text-xs leading-relaxed select-text text-slate-300 whitespace-pre-wrap">
-                      {(() => {
-                        const rawText = ocrText || formData.job_title || '';
-                        let element = <span>{rawText}</span>;
-
-                        if (heuristicsResult.syntacticArtifacts && heuristicsResult.syntacticArtifacts.length > 0) {
-                          const escapeRegExp = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                          const pattern = heuristicsResult.syntacticArtifacts
-                            .map(a => `(${escapeRegExp(a.snippet)})`)
-                            .concat(heuristicsResult.regionalJargon ? heuristicsResult.regionalJargon.map(j => `(${escapeRegExp(j.term)})`) : [])
-                            .filter(Boolean)
-                            .join('|');
-                          
-                          if (pattern) {
-                            const regex = new RegExp(pattern, 'gi');
-                            const parts = rawText.split(regex);
-                            
-                            return parts.map((part, idx) => {
-                              if (!part) return null;
-                              const isArtifact = heuristicsResult.syntacticArtifacts.some(a => a.snippet.toLowerCase() === part.toLowerCase());
-                              const isJargon = heuristicsResult.regionalJargon && heuristicsResult.regionalJargon.some(j => j.term.toLowerCase() === part.toLowerCase());
-                              
-                              if (isArtifact) {
-                                return (
-                                  <span key={idx} className="bg-amber-955/50 text-amber-400 px-1 rounded border border-amber-800/40 font-bold" title="Syntax Artifact">
-                                    {part}
-                                  </span>
-                                );
-                              }
-                              if (isJargon) {
-                                return (
-                                  <span key={idx} className="bg-red-955/50 text-red-400 px-1 rounded border border-red-850/40 font-bold" title="Regional Jargon">
-                                    {part}
-                                  </span>
-                                );
-                              }
-                              return <span key={idx}>{part}</span>;
-                            });
-                          }
-                        }
-                        return element;
-                      })()}
-                    </div>
-                    <div className="flex gap-4 mt-2 font-mono text-[9px] text-slate-500 uppercase">
-                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-amber-955 border border-amber-800" /> Syntax Artifacts</span>
-                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-red-955 border border-red-800" /> Regional Jargon</span>
-                    </div>
-                  </div>
-
-                  {/* Right Column: Detailed Findings */}
-                  <div className="w-full lg:w-[350px] p-5 overflow-y-auto flex flex-col bg-[#0d1117] space-y-5">
-                    <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider block">Linguistic Findings</span>
-                    
-                    {/* Findings 1: Syntax Artifacts */}
-                    <div className="space-y-2">
-                      <span className="text-[10px] font-mono text-slate-450 uppercase block font-semibold">Syntactic Anomalies</span>
-                      {heuristicsResult.syntacticArtifacts && heuristicsResult.syntacticArtifacts.length > 0 ? (
-                        heuristicsResult.syntacticArtifacts.map((art, i) => (
-                          <div key={i} className="p-3 bg-slate-950 border border-slate-850 rounded text-[11px] font-sans">
-                            <span className="font-mono text-[10px] text-amber-400 block font-bold">"{art.snippet}"</span>
-                            <p className="text-slate-400 mt-1 leading-normal">{art.explanation}</p>
-                          </div>
-                        ))
-                      ) : (
-                        <span className="text-xs text-slate-650 block italic font-sans">No translation anomalies catalogued.</span>
-                      )}
-                    </div>
-
-                    {/* Findings 2: Jargon */}
-                    <div className="space-y-2">
-                      <span className="text-[10px] font-mono text-slate-455 uppercase block font-semibold">Recruitment Jargon</span>
-                      {heuristicsResult.regionalJargon && heuristicsResult.regionalJargon.length > 0 ? (
-                        heuristicsResult.regionalJargon.map((jar, i) => (
-                          <div key={i} className="p-3 bg-slate-950 border border-slate-850 rounded text-[11px] font-sans">
-                            <span className="font-mono text-[10px] text-red-400 block font-bold">{jar.term}</span>
-                            <p className="text-slate-400 mt-1 leading-normal">{jar.definition}</p>
-                          </div>
-                        ))
-                      ) : (
-                        <span className="text-xs text-slate-655 block italic font-sans">No localized threat jargon catalogued.</span>
-                      )}
-                    </div>
-                  </div>
-                </>
-              ) : null}
-            </div>
-
-            {/* Footer */}
-            <div className="p-4 border-t border-slate-800 bg-[#0c0f16] flex items-center justify-end">
-              <button
-                type="button"
-                onClick={() => setIsLanguageOsintModalOpen(false)}
-                className="px-5 py-2.5 bg-slate-855 hover:bg-slate-800 text-slate-200 text-xs font-mono font-bold rounded shadow-sm transition-colors border border-slate-700"
-              >
-                Close Modal
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* STIX Export Modal */}
 

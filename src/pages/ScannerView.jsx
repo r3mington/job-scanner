@@ -286,7 +286,6 @@ export default function ScannerView() {
           contactMethod: result.contact_method,
           suspiciousSpans: result.suspicious_spans || [],
           predictedPlaybook: result.predicted_playbook || [],
-          obfuscationLevel: null, // Obfuscation level is analyzed interactively, keep as null for base import
           sourcePlatform: sourcePlatform || 'unspecified',
           employer: result.employer_identity
         });
@@ -899,9 +898,6 @@ export default function ScannerView() {
               >
                 Ingestion Channel Offline
               </button>
-              <p className="text-[10px] font-mono text-red-400 text-center uppercase tracking-wider max-w-xs leading-normal">
-                This integration is not functional yet
-              </p>
             </>
           ) : (
             <>

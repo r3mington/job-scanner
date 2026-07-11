@@ -14,7 +14,7 @@ export default function TelegramFeedPanel() {
   const { user, profile } = useAuth();
   const feed = useTelegramFeed({ user, profile });
   const {
-    channels, running, logs, stats, lastPollAt, usingSnapshot, latestPost,
+    channels, running, logs, stats, lastPollAt, usingSnapshot, latestPost, progress,
     start, stop, addChannel, toggleChannel, removeChannel, resetCursors,
   } = feed;
 
@@ -186,6 +186,13 @@ export default function TelegramFeedPanel() {
         <div className="px-3 py-2 border-b border-slate-800 flex items-center gap-2">
           <Send className="w-3 h-3 text-cyan-400" />
           <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400 font-bold">Ingestion Stream</span>
+          {progress && (
+            <span className="ml-auto flex items-center gap-1.5 text-[9px] font-mono text-cyan-400/90">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              <span className="text-slate-500">@{progress.channel}</span>
+              <span>{progress.index}/{progress.total}</span>
+            </span>
+          )}
         </div>
         <div ref={logRef} className="h-48 overflow-y-auto p-2.5 font-mono text-[10px] space-y-1">
           {logs.length === 0 ? (

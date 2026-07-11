@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
-  Copy, ChevronUp, ChevronDown, ChevronRight, ExternalLink,
-  FileText, PhoneCall, Layers, Users, ShieldAlert, Globe, Image as ImageIcon, MessageSquare
+  Copy, ChevronRight, ExternalLink,
+  FileText, PhoneCall, Users, ShieldAlert, Globe, Image as ImageIcon
 } from 'lucide-react';
 
 const TAKE_ACTIONS = [
@@ -20,14 +20,6 @@ const TAKE_ACTIONS = [
     icon: PhoneCall,
     badge: 'EVIDENCE',
     ctaText: 'Initiate Contact',
-  },
-  {
-    id: 'related',
-    title: 'View Related Ads from Same Poster',
-    description: 'Scan historical ads matching this advertiser ID, layout style, or contact details to track campaign scale and networks.',
-    icon: Layers,
-    badge: 'CROSS-INTEL',
-    ctaText: 'Find Matches',
   },
   {
     id: 'dossier',
@@ -68,24 +60,13 @@ const TAKE_ACTIONS = [
     icon: FileText,
     badge: 'FILE FORENSICS',
     ctaText: 'Scan Metadata',
-  },
-  {
-    id: 'language_osint',
-    title: 'Dialect & Language Heuristics',
-    description: 'Analyze syntax structure, literal translation artifacts, and filter-evading text obfuscation to trace template origins.',
-    icon: MessageSquare,
-    badge: 'LANGUAGE OSINT',
-    ctaText: 'Audit Dialect',
   }
 ];
 
 const HERO_ACTION = TAKE_ACTIONS.find(a => a.id === 'poster');
-const SECONDARY_ACTIONS = TAKE_ACTIONS.filter(a => ['takedown', 'related'].includes(a.id));
-const ADVANCED_ACTIONS = TAKE_ACTIONS.filter(a => !['poster', 'takedown', 'related'].includes(a.id));
+const TOOL_ACTIONS = TAKE_ACTIONS.filter(a => a.id !== 'poster');
 
 export default function ActionGrid({ handleCopySummary, handleTakeAction }) {
-  const [showAdvancedTools, setShowAdvancedTools] = useState(false);
-
   return (
     <div id="section-actions" data-nav-section className="scroll-mt-32 rounded overflow-hidden border border-slate-800/80 p-5" style={{ background: '#111318' }}>
       <div className="border-b border-slate-800 pb-3 mb-5 flex items-start justify-between gap-3">
@@ -134,15 +115,16 @@ export default function ActionGrid({ handleCopySummary, handleTakeAction }) {
         );
       })()}
 
-      {/* Secondary key actions */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-        {SECONDARY_ACTIONS.map(action => {
+      {/* All operational tools — always visible, no unfolding */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {TOOL_ACTIONS.map(action => {
           const Icon = action.icon;
           return (
             <button
               key={action.id}
               type="button"
               onClick={() => handleTakeAction(action.id)}
+              title={action.description}
               className="group text-left bg-[#0f121d] border border-slate-800 hover:border-amber-500/40 rounded-lg p-3.5 flex items-center gap-3 transition-all duration-200"
             >
               <div className="p-2 bg-slate-900 border border-slate-700/60 rounded-md text-amber-400 flex-shrink-0 group-hover:bg-amber-500/10 transition-colors">
@@ -150,55 +132,12 @@ export default function ActionGrid({ handleCopySummary, handleTakeAction }) {
               </div>
               <div className="flex-1 min-w-0">
                 <h4 className="text-xs font-bold text-slate-200 leading-snug">{action.title}</h4>
-                <p className="text-[11px] text-slate-500 mt-0.5 truncate">{action.ctaText}</p>
+                <span className="text-[9px] font-mono text-slate-500 uppercase tracking-wide">{action.badge}</span>
               </div>
               <ChevronRight className="w-4 h-4 text-slate-600 group-hover:text-amber-400 transition-colors flex-shrink-0" />
             </button>
           );
         })}
-      </div>
-
-      {/* Advanced Tools — compact tertiary tile grid */}
-      <div className="border border-slate-800/60 rounded bg-[#0a0b0e] overflow-hidden">
-        <button
-          type="button"
-          onClick={() => setShowAdvancedTools(prev => !prev)}
-          className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-slate-900/50 transition-colors"
-        >
-          <div className="flex items-center gap-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
-            <span className="text-xs font-mono font-bold uppercase tracking-wider text-slate-400">Advanced Operational Tools</span>
-            <span className="text-[10px] bg-slate-900 border border-slate-800 text-slate-450 px-2 py-0.5 rounded font-mono font-bold">
-              {ADVANCED_ACTIONS.length} tools
-            </span>
-          </div>
-          {showAdvancedTools ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
-        </button>
-
-        {showAdvancedTools && (
-          <div className="p-3 border-t border-slate-900 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 bg-[#0a0c12]/50">
-            {ADVANCED_ACTIONS.map(action => {
-              const Icon = action.icon;
-              return (
-                <button
-                  key={action.id}
-                  type="button"
-                  onClick={() => handleTakeAction(action.id)}
-                  title={action.description}
-                  className="group text-left bg-[#0b0c10] border border-slate-850 rounded p-3 flex items-center gap-2.5 hover:border-slate-700 hover:bg-slate-900/40 transition-colors duration-200"
-                >
-                  <div className="p-1.5 bg-slate-950 border border-slate-850 rounded text-slate-450 group-hover:text-amber-400 transition-colors flex-shrink-0">
-                    <Icon className="w-4 h-4" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h5 className="text-xs font-bold text-slate-300 leading-tight truncate">{action.title}</h5>
-                    <span className="text-[9px] font-mono text-slate-600 uppercase tracking-wide">{action.badge}</span>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        )}
       </div>
     </div>
   );

@@ -18,7 +18,6 @@ export function generateStixBundle({
   detectedLanguage,
   suspiciousSpans,
   predictedPlaybook,
-  heuristicsResult,
   sourcePlatform,
   sourceUrl,
   ocrText,
@@ -72,7 +71,6 @@ export function generateStixBundle({
     contactMethod: formData.contact_method,
     suspiciousSpans,
     predictedPlaybook,
-    obfuscationLevel: heuristicsResult?.obfuscationLevel ?? null,
     sourcePlatform,
     employer: formData.employer_identity
   });

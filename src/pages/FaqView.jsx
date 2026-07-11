@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { HelpCircle, ChevronDown, ChevronUp, Cpu, Key, BarChart3, Fingerprint, MessageSquare, Image, Eye, Languages, ShieldAlert } from 'lucide-react';
+import { HelpCircle, ChevronDown, ChevronUp, Cpu, Key, BarChart3, Fingerprint, MessageSquare, Image, Eye, ShieldAlert } from 'lucide-react';
 
 export default function FaqView() {
   const [openSections, setOpenSections] = useState({});
@@ -60,7 +60,7 @@ export default function FaqView() {
       details: (
         <div className="space-y-3 leading-relaxed text-slate-350">
           <p>
-            Sentinel AI harnesses Google's state-of-the-art Gemini Large Language Models (LLMs) to perform high-precision Optical Character Recognition (OCR), entity extraction, and dialect analysis. To keep scans reliable and cost-effective, the app is optimized to handle rate limits (Resource Exhausted errors) and quota boundaries transparently.
+            Sentinel AI harnesses Google's state-of-the-art Gemini Large Language Models (LLMs) to perform high-precision Optical Character Recognition (OCR) and entity extraction. To keep scans reliable and cost-effective, the app is optimized to handle rate limits (Resource Exhausted errors) and quota boundaries transparently.
           </p>
           <ul className="list-disc pl-5 space-y-2">
             <li><strong>Model Tiering & Selection:</strong> The system defaults to <code>gemini-2.5-flash</code> for primary analyses due to its low latency and superior performance in structured JSON extraction. If more complex reasoning is required (e.g. detailed forensic analysis), the app supports manual or automatic escalation to high-reasoning models like <code>gemini-2.5-pro</code>.</li>
@@ -187,28 +187,6 @@ export default function FaqView() {
           </ul>
           <p>
             This forensic evidence is displayed in a dedicated panel on the review screen, providing key location leads to help trace recruiter networks.
-          </p>
-        </div>
-      )
-    },
-    {
-      id: 'heuristics',
-      icon: <Languages className="w-4 h-4 text-amber-500" />,
-      title: 'Dialect & Language Heuristics',
-      summary: 'Analyzing language syntax anomalies to determine recruiter origin.',
-      details: (
-        <div className="space-y-3 leading-relaxed text-slate-350">
-          <p>
-            Many recruitment ads target specific regional demographics but are written by foreign handlers. These handlers often rely on machine translation (such as Google Translate or DeepL) or have varying levels of local language fluency, which introduces unique dialect errors.
-          </p>
-          <p>
-            The **Language OSINT Dialect Analyzer** uses Gemini models to analyze the grammatical syntax, vocabulary choices, spelling errors, and idioms in the advertisement text.
-          </p>
-          <p>
-            The analyzer checks for literal word-for-word translations, unusual character choices (e.g. mixing Simplified Chinese symbols into regional scripts), or incorrect syntax. The system then outputs a probability profile highlighting the writer's native language origin.
-          </p>
-          <p>
-            This analysis is logged to the investigation notes to help identify the location of the recruiting syndicate's operators.
           </p>
         </div>
       )

@@ -15,7 +15,6 @@ export default function WarningPosterModal({
   detectedLanguage,
   suspiciousSpans,
   predictedPlaybook,
-  heuristicsResult,
   sourcePlatform,
   ingestionMethod,
   ocrText,
@@ -54,7 +53,6 @@ export default function WarningPosterModal({
         contactMethod: formData.contact_method,
         suspiciousSpans,
         predictedPlaybook,
-        obfuscationLevel: heuristicsResult?.obfuscationLevel ?? null,
         sourcePlatform,
         employer: formData.employer_identity
       });
@@ -109,7 +107,6 @@ export default function WarningPosterModal({
       detectedLanguage,
       suspiciousSpans,
       predictedPlaybook,
-      heuristicsResult,
       sourcePlatform,
       ingestionMethod,
       scanInput
