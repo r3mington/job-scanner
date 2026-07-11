@@ -20,6 +20,7 @@ export function generateStixBundle({
   predictedPlaybook,
   sourcePlatform,
   sourceUrl,
+  ingestionMethod,
   ocrText,
   translatedText,
   aiReview
@@ -149,6 +150,29 @@ export function generateStixBundle({
     source_ref: indicatorId,
     target_ref: identityId,
     description: `Indicator observed and reported by analyst identity.`
+  });
+
+  // 6. Provenance note — data-source transparency for downstream consumers
+  const provenanceParts = [
+    `Ingestion method: ${ingestionMethod || 'Analyst Upload'}.`,
+    `Source platform: ${sourcePlatform || 'Unspecified'}.`,
+  ];
+  if (sourceUrl && sourceUrl !== 'unspecified') {
+    provenanceParts.push(`Source URL: ${sourceUrl}.`);
+  }
+  provenanceParts.push(
+    'All Sentinel AI intelligence derives exclusively from publicly available content (public channel web previews or analyst-supplied material) or synthetic exemplar data. Collection is read-only: no credentialed access, no account interaction, and no live engagement with suspected recruiters or their networks.'
+  );
+  objects.push({
+    type: "note",
+    spec_version: "2.1",
+    id: `note--${generateUUID()}`,
+    created: new Date().toISOString(),
+    modified: new Date().toISOString(),
+    abstract: "Data Sources & Provenance",
+    content: provenanceParts.join(' '),
+    authors: [analystName],
+    object_refs: [indicatorId]
   });
 
   return JSON.stringify({

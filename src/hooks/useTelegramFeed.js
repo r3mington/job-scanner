@@ -125,7 +125,10 @@ export default function useTelegramFeed({ user, profile }) {
   }, [persistChannels]);
 
   // ── Scan one post through the standard pipeline ─────────────────────────────
-  const scanPost = useCallback(async (channel, post, onStatusUpdate = null) => {
+  // `live` distinguishes provenance in the registry: posts fetched from the
+  // t.me/s/ preview in real time vs. replayed from the bundled public-archive
+  // snapshot when the edge function is unreachable.
+  const scanPost = useCallback(async (channel, post, onStatusUpdate = null, live = true) => {
     // Client key optional — the analyzer routes through the gemini-proxy edge
     // function (server-held GEMINI_API_KEY) when no client key is present.
     const apiKey = getActiveApiKey();
@@ -193,12 +196,12 @@ export default function useTelegramFeed({ user, profile }) {
       isTranslated: result.is_translated || false,
       translatedText: result.translated_text || null,
       batchId: `tgfeed_${channel}`,
-      batchName: `📡 @${channel} — Live Feed`,
+      batchName: live ? `📡 @${channel} — Live Feed` : `📼 @${channel} — Public Archive Snapshot`,
       userId: user?.id || null,
       normalizedText: result.normalized_text || '',
       sourcePlatform: 'Telegram',
       sourceUrl: post.link,
-      ingestionMethod: 'Telegram Live Feed',
+      ingestionMethod: live ? 'Telegram Live Feed' : 'Telegram Snapshot (public archive)',
       postDate: post.date || 'unspecified',
     };
 
@@ -252,7 +255,7 @@ export default function useTelegramFeed({ user, profile }) {
               if (evt && evt.type === 'warning') {
                 addLog('error', `   ↳ @${ch.username}/#${post.id}: ${evt.message}`);
               }
-            });
+            }, fetched.live);
             const currentCursor = getCursor(ch.username);
             if (post.id > currentCursor) {
               setCursor(ch.username, post.id);

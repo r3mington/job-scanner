@@ -393,8 +393,8 @@ export default function HomeView() {
             },
             {
               icon: CheckCircle2,
-              title: '100% synthetic decoy data',
-              text: 'Generated CVs use random regional names and stories — never real survivor identities.'
+              title: 'Public or synthetic data only',
+              text: 'Ingestion reads only public Telegram channel previews (read-only, no accounts); decoy CVs and demo exemplars are 100% synthetic — never real survivor identities, never live engagement.'
             },
             {
               icon: Activity,

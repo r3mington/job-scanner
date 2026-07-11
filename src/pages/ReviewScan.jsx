@@ -266,6 +266,7 @@ export default function ReviewScan() {
       predictedPlaybook,
       sourcePlatform,
       sourceUrl,
+      ingestionMethod,
       ocrText,
       translatedText,
       aiReview
