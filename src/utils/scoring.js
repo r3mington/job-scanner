@@ -171,7 +171,6 @@ export function calculateRiskScore(activeFlags = [], contextInfo = null) {
       contactMethod,
       suspiciousSpans,
       predictedPlaybook,
-      obfuscationLevel,
       sourcePlatform,
       employer
     } = contextInfo;
@@ -272,22 +271,7 @@ export function calculateRiskScore(activeFlags = [], contextInfo = null) {
       });
     }
 
-    // ── 8. Obfuscation level (from dialect analyzer) ──────────────────────
-    if (typeof obfuscationLevel === 'number' && obfuscationLevel > 0) {
-      let obfBonus = 0;
-      if (obfuscationLevel >= 7) obfBonus = 20;
-      else if (obfuscationLevel >= 4) obfBonus = 10;
-      if (obfBonus > 0) {
-        details.push({
-          name: `Ad Obfuscation Detected (level ${obfuscationLevel}/10)`,
-          weight: obfBonus,
-          isObfuscation: true,
-          isContextual: true
-        });
-      }
-    }
-
-    // ── 9. Predicted playbook depth ───────────────────────────────────────
+    // ── 8. Predicted playbook depth ───────────────────────────────────────
     if (Array.isArray(predictedPlaybook)) {
       let playbookBonus = 0;
       if (predictedPlaybook.length >= 4) playbookBonus = 10;
@@ -302,7 +286,7 @@ export function calculateRiskScore(activeFlags = [], contextInfo = null) {
       }
     }
 
-    // ── 10. Employer opacity ──────────────────────────────────────────────
+    // ── 9. Employer opacity ───────────────────────────────────────────────
     const employerRisk = scoreEmployerOpacity(employer);
     if (employerRisk.score > 0) {
       details.push({

@@ -2,6 +2,8 @@
 
 Welcome to the **Sentinel AI** workspace! This guide is designed to help hackathon judges and technical reviewers explore the core features and architectural decisions implemented in the platform.
 
+> **Data provenance:** Everything you will see in this walkthrough is either **synthetic** (decoy personas, generated CVs, curated demo exemplars) or ingested **read-only from publicly available Telegram channel web previews** (`t.me/s/…` — no accounts, no interaction with recruiters). See the *Data Sources & Provenance* section of the README for details.
+
 ---
 
 ## 🚀 Recommended Evaluation Path

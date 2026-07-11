@@ -73,6 +73,18 @@ Sentinel AI combines client-side processing with edge and developer APIs:
 
 ---
 
+## 📦 Data Sources & Provenance
+
+Every piece of data in Sentinel AI is **either synthetic or drawn from publicly available sources** — no live operations, no engagement with active networks:
+
+1. **Public Telegram Channel Previews Only**: The live feed reads the *public web preview* of Telegram channels (`https://t.me/s/<channel>`) — the same pages Telegram serves to any logged-out browser. No accounts, no bots, no credentials, no joining of groups, and strictly read-only: the platform never posts, replies, or otherwise interacts with recruiters or channels.
+2. **Fully Synthetic Exemplars & Decoys**: All demo content — the Gallery's curated exhibit pieces, decoy candidate personas, and generated CVs — is synthetic. Names, handles, phone numbers, and backstories are fictional composites of documented recruitment patterns; they do not correspond to any real person, organization, or contact point.
+3. **Offline Demo Snapshot**: For resilience when the live edge function is unreachable, the app bundles a build-time snapshot of the same public channel previews (capture date noted in `src/data/telegramSnapshot.js`). It contains only what Telegram already publishes to the open web, and registry records ingested from it are tagged as snapshot-sourced.
+
+This design complies with the hackathon's ethical & safety rules ("use publicly available, synthetic, or simulated data — do not engage with live networks").
+
+---
+
 ## 🛡️ Ethics, Trauma-Informed Design & Do-No-Harm
 
 In compliance with the **UN Do No Harm Guidelines** and humanitarian standards, Sentinel AI has undergone a rigorous ethical audit:

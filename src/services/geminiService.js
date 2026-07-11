@@ -8,7 +8,7 @@ Be extremely sensitive and thorough when auditing:
 3. Excessive Enticements: Flag promises of free private rooms, accommodation, visa/flight ticket sponsor, free meals, or high commissions for easy work.
 4. Suspect Location Hub: Flag border areas, Special Economic Zones (SEZs), border towns, or known hubs (e.g., Sihanoukville, Cambodia, Mae Sot, Thailand, Poipet, Myawaddy, Golden Triangle).
 5. Minimal Qualifications: Flag ads offering huge salaries ($3000-$15000+) for zero experience, basic typing, or simple qualifications.
-Do not hold back. Any snippet matching these risk factors must be added to 'suspicious_spans'. Each span should be a distinct, meaningful phrase from the ad that directly shows a potential threat indicator.
+Do not hold back. Any snippet matching these risk factors must be added to 'suspicious_spans'. Each span should be a distinct, meaningful phrase from the ad that directly shows a potential threat indicator. If more than 10 candidate spans exist, include only the 10 most significant — never pad with near-duplicates of the same phrase.
 
 If the language of the input text or image is not English, you must translate all extracted fields into English, and also provide a full English translation of the entire job advertisement in the "translated_text" field.
 You must output ONLY valid JSON matching this schema:
@@ -26,7 +26,13 @@ You must output ONLY valid JSON matching this schema:
   "detected_language": "string (The name of the language used originally in the input text/image, e.g. 'English', 'Khmer', 'Chinese', 'Spanish', etc.)",
   "is_translated": "boolean (Set to true if the original language is NOT English and you translated the text into English, false otherwise)",
   "translated_text": "string or null (The full English translation of the raw_ocr_text or original input text if the input is not in English. Set to null if the input is already in English)",
-  "normalized_text": "string (Provide a clean, normalized lowercase version of the job ad text in English. Strip all emojis, decorative symbols, and weird punctuation. Un-obfuscate any intentionally spaced-out words or letters like 'C o m p a n y' to 'company' and decode any leet-speak/characters used to bypass filters like 'Cu$tomer', 'Paki$tan', or 'T3l3gram' to 'customer', 'pakistan', and 'telegram'. Ensure actual numeric values like salaries, years, and dates remain as digits and are NOT converted to letters)",
+  "deobfuscation_map": [
+    "array (ONLY the tokens in the ad that are intentionally obfuscated to bypass filters — spaced-out words like 'C o m p a n y' or leet-speak like 'Cu$tomer', 'Paki$tan', 'T3l3gram'. Empty array if none. Do NOT list ordinary words.)",
+    {
+      "from": "string (the exact obfuscated token as written in the ad, matching its casing and spacing)",
+      "to": "string (the plain decoded form, e.g. 'company', 'customer', 'pakistan', 'telegram')"
+    }
+  ],
   "detected_red_flags": [
     "array of exact strings from this list: ['Upfront Fees', 'Passport/ID Control', 'Immediate Travel Pressure', 'Housing Compound Isolation', 'Employer Anonymity', 'Wage Disparity', 'Encrypted Apps Migration', 'Vague Description', 'Urgent Timeline', 'Suspicious Messaging', 'Demographic Targeting', 'Labor Abuse / High Pressure', 'Excessive Enticements', 'Suspect Location Hub', 'Minimal Qualifications']"
   ],
@@ -49,6 +55,7 @@ You must output ONLY valid JSON matching this schema:
 }`;
 
 import { supabase } from '../utils/supabaseClient';
+import { buildNormalizedText } from '../utils/normalizeText';
 
 export function getEndpointForModel(model, path = 'generateContent') {
   // Use v1beta for all models because systemInstruction and responseMimeType JSON schema settings
@@ -146,6 +153,22 @@ function classifyError(status, message = '') {
   return 'skip';
 }
 
+// Thinking is ON by default for the 2.5 Flash family and its thinking tokens
+// bill as output — the most expensive tokens we buy — while adding nothing to
+// rigid schema-extraction tasks. Disable it where the API allows: 2.5 Pro
+// can't turn thinking off (min budget 128) and 2.0 Flash rejects the field,
+// so the zero budget is injected per-model here, not in caller payloads.
+function tunePayloadForModel(model, payload) {
+  if (!model.startsWith('gemini-2.5-flash')) return payload;
+  return {
+    ...payload,
+    generationConfig: {
+      thinkingConfig: { thinkingBudget: 0 },
+      ...(payload.generationConfig || {}),
+    },
+  };
+}
+
 export async function postToGeminiWithFallback(apiKey, requestedModel, payload, onStatusUpdate = null, path = 'generateContent') {
   const modelChain = Array.from(new Set([requestedModel, ...FALLBACK_CHAIN].filter(Boolean)))
     .filter(m => !deadModels.has(m));
@@ -160,6 +183,7 @@ export async function postToGeminiWithFallback(apiKey, requestedModel, payload, 
   // Returns the Gemini response on success. Throws an Error with `.status` set,
   // or `.isEdgeUnavailable` when the Edge Function itself is not deployed.
   async function callModel(transport, model) {
+    const tunedPayload = tunePayloadForModel(model, payload);
     if (transport === 'edge') {
       if (!supabase || !supabase.functions) {
         const e = new Error('Supabase client not initialized');
@@ -167,7 +191,7 @@ export async function postToGeminiWithFallback(apiKey, requestedModel, payload, 
         throw e;
       }
       const { data, error: funcErr } = await supabase.functions.invoke('gemini-proxy', {
-        body: { model, path, payload },
+        body: { model, path, payload: tunedPayload },
         headers: apiKey ? { 'x-goog-api-key': apiKey } : {}
       });
       if (funcErr) {
@@ -200,7 +224,7 @@ export async function postToGeminiWithFallback(apiKey, requestedModel, payload, 
     const response = await fetch(getEndpointForModel(model, path), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey || '' },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(tunedPayload)
     });
     if (response.ok) return response.json();
     let errorMsg = `HTTP error ${response.status}`;
@@ -277,6 +301,51 @@ export async function postToGeminiWithFallback(apiKey, requestedModel, payload, 
   throw new Error(`All methods in the fallback chain failed:\n${failureDetail}`);
 }
 
+// ─── Stage-1 triage for high-volume feeds ─────────────────────────────────────
+// The live Telegram feed pushes every new post through the full forensic
+// analysis (~3-4k tokens each) even though most posts clear at low risk. This
+// rapid filter runs on flash-lite (~6x cheaper output) with a 3-field schema
+// (~150 output tokens) so only plausible threats pay for the full pipeline.
+// Tuned to over-escalate: a missed threat costs far more than a wasted scan.
+
+const TRIAGE_MODEL = 'gemini-2.5-flash-lite';
+
+const TRIAGE_SYSTEM_INSTRUCTION = `You are a rapid triage filter in a screening pipeline for recruitment ads that may indicate human trafficking, forced labor, or scam-compound recruiting.
+Estimate the exploitation risk of the given job ad. Strong risk signals include: demographic/nationality targeting, excessive enticements (free housing/flights/meals, huge commissions), suspect hub locations (Sihanoukville, Myawaddy, Mae Sot, Poipet, Golden Triangle, border SEZs), unrealistic salaries for minimal qualifications, pressure to move to encrypted apps, urgency to travel, passport/document control.
+Err on the side of escalation: when in doubt, set worth_full_scan to true. Set it to false ONLY for clearly benign, ordinary job postings with none of these signals.`;
+
+export async function triageJobPosting(apiKey, { text, onStatusUpdate }) {
+  const payload = {
+    systemInstruction: { parts: [{ text: TRIAGE_SYSTEM_INSTRUCTION }] },
+    contents: [{ parts: [{ text }] }],
+    generationConfig: {
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: 'OBJECT',
+        properties: {
+          risk_hint: { type: 'INTEGER', description: 'Estimated exploitation risk from 0 (clearly benign) to 100 (overt trafficking indicators). An ad with several strong risk signals should score 60+.' },
+          worth_full_scan: { type: 'BOOLEAN', description: 'true if the ad shows ANY risk signal and deserves the full forensic analysis; false only for clearly benign postings.' },
+          reason: { type: 'STRING', description: 'One short sentence (max 12 words) naming the decisive signal or its absence.' },
+        },
+        required: ['risk_hint', 'worth_full_scan'],
+      },
+      temperature: 0,
+      maxOutputTokens: 256,
+    },
+  };
+
+  const data = await postToGeminiWithFallback(apiKey, TRIAGE_MODEL, payload, onStatusUpdate);
+  if (!data.candidates || data.candidates.length === 0) {
+    throw new Error('No response returned from Gemini API.');
+  }
+  const parsed = JSON.parse(data.candidates[0].content.parts[0].text);
+  return {
+    riskHint: Math.max(0, Math.min(100, Number(parsed.risk_hint) || 0)),
+    worthFullScan: parsed.worth_full_scan !== false, // missing/malformed → escalate
+    reason: typeof parsed.reason === 'string' ? parsed.reason : '',
+  };
+}
+
 export async function analyzeJobPosting(apiKey, modelName, { text, imageBase64, onStatusUpdate }) {
   // No client key required: postToGeminiWithFallback routes to the gemini-proxy
   // edge function, which uses the server-held GEMINI_API_KEY. A client key, if
@@ -331,13 +400,16 @@ export async function analyzeJobPosting(apiKey, modelName, { text, imageBase64, 
     ],
     generationConfig: {
       responseMimeType: "application/json",
-      temperature: 0.1
+      temperature: 0.1,
+      // Guardrail against runaway generations. Sized for a long ad echoed once
+      // (translation) plus full forensic prose — a normal response fits easily.
+      maxOutputTokens: 8192
     }
   };
 
   try {
     const data = await postToGeminiWithFallback(apiKey, selectedModel, payload, onStatusUpdate);
-    
+
     if (!data.candidates || data.candidates.length === 0) {
       throw new Error('No candidates returned from Gemini API. The response may have been blocked.');
     }
@@ -374,8 +446,20 @@ export async function analyzeJobPosting(apiKey, modelName, { text, imageBase64, 
         cleanText = cleanText.substring(firstBrace, lastBrace + 1);
       }
     }
-    
-    return JSON.parse(cleanText);
+
+    const parsed = JSON.parse(cleanText);
+
+    // normalized_text is rebuilt client-side from the compact deobfuscation_map
+    // instead of being generated (and paid for) as a second echo of the ad.
+    // Downstream consumers keep reading result.normalized_text unchanged.
+    // Base text mirrors the old instruction: the English version of the ad.
+    const baseText = (parsed.is_translated && parsed.translated_text)
+      || parsed.raw_ocr_text
+      || text
+      || '';
+    parsed.normalized_text = buildNormalizedText(baseText, parsed.deobfuscation_map);
+
+    return parsed;
   } catch (error) {
     console.error('Gemini API Error:', error);
     throw error;
@@ -413,7 +497,8 @@ Provide a ~120 to 150 word summary of this posting history. Synthesize the affec
       parts: [{ text: textPayload }]
     }],
     generationConfig: {
-      temperature: 0.2
+      temperature: 0.2,
+      maxOutputTokens: 1024 // ~150-word prose summary; cap runaway generations
     }
   };
 
@@ -503,7 +588,8 @@ Generate the structured JSON content for the poster in the Target Language (${la
     }],
     generationConfig: {
       responseMimeType: "application/json",
-      temperature: 0.2
+      temperature: 0.2,
+      maxOutputTokens: 4096 // localized poster JSON; generous headroom
     }
   };
 
@@ -582,7 +668,8 @@ export async function analyzeCrop(apiKey, modelName, { imageBase64, onStatusUpda
     }],
     generationConfig: {
       responseMimeType: "application/json",
-      temperature: 0.2
+      temperature: 0.2,
+      maxOutputTokens: 1024 // short description + a handful of keywords
     }
   };
 
@@ -607,71 +694,6 @@ export async function analyzeCrop(apiKey, modelName, { imageBase64, onStatusUpda
     return JSON.parse(cleanText);
   } catch (error) {
     console.error('Gemini Crop Analysis Error:', error);
-    throw error;
-  }
-}
-
-export async function analyzeLanguageDialect(apiKey, modelName, { text, onStatusUpdate }) {
-  // No client key required: postToGeminiWithFallback routes to the gemini-proxy
-  // edge function, which uses the server-held GEMINI_API_KEY. A client key, if
-  // present, is used as an override.
-  const selectedModel = modelName || DEFAULT_MODEL;
-
-  const payload = {
-    systemInstruction: {
-      parts: [{ text: "You are an expert NLP forensic linguist specializing in recruitment scams and forced labor human trafficking campaigns. Analyze the text of the job advertisement and evaluate: direct translation syntax artifacts, obfuscation levels to bypass spam filters, and regional jargon signatures linked to online cyber-scam compound operations (ShaZhuPan)." }]
-    },
-    contents: [{
-      parts: [{
-        text: `Analyze this advertisement text:
-        "${text}"
-        
-        Provide a structured JSON response matching this schema:
-        {
-          "nativeDialectConfidence": number,
-          "estimatedNativeLanguage": "string",
-          "obfuscationLevel": number,
-          "syntacticArtifacts": [
-            {
-              "snippet": "string",
-              "explanation": "string"
-            }
-          ],
-          "regionalJargon": [
-            {
-              "term": "string",
-              "definition": "string"
-            }
-          ]
-        }`
-      }]
-    }],
-    generationConfig: {
-      responseMimeType: "application/json",
-      temperature: 0.1
-    }
-  };
-
-  try {
-    const data = await postToGeminiWithFallback(apiKey, selectedModel, payload, onStatusUpdate);
-    if (!data.candidates || data.candidates.length === 0) {
-      throw new Error('No response returned from Gemini API.');
-    }
-
-    const resText = data.candidates[0].content.parts[0].text;
-    
-    let cleanText = resText;
-    const firstBrace = cleanText.indexOf('{');
-    if (firstBrace !== -1) {
-      const lastBrace = cleanText.lastIndexOf('}');
-      if (lastBrace !== -1) {
-        cleanText = cleanText.substring(firstBrace, lastBrace + 1);
-      }
-    }
-
-    return JSON.parse(cleanText);
-  } catch (error) {
-    console.error('Gemini Dialect Analysis Error:', error);
     throw error;
   }
 }
@@ -714,7 +736,8 @@ export async function generateHonestAd(apiKey, modelName, { adText, flags, playb
     }],
     generationConfig: {
       responseMimeType: "application/json",
-      temperature: 0.4
+      temperature: 0.4,
+      maxOutputTokens: 2048 // 5-7 line pairs + epitaph
     }
   };
 
@@ -765,7 +788,10 @@ export async function translateInterviewLines(apiKey, modelName, { lines, langs,
     }],
     generationConfig: {
       responseMimeType: "application/json",
-      temperature: 0.2
+      temperature: 0.2,
+      // Scales with languages requested; current install uses a short line set
+      // across ~6 languages, which fits comfortably.
+      maxOutputTokens: 4096
     }
   };
 

@@ -2,13 +2,22 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Network } from 'vis-network';
 import { DataSet } from 'vis-data';
 import { useNavigate } from 'react-router-dom';
-import { RotateCcw, AlertTriangle, ArrowRight, ShieldAlert, CheckCircle2, AlertCircle, Play, Pause, Eye, EyeOff, Briefcase, FileSearch } from 'lucide-react';
+import { RotateCcw, AlertTriangle, ArrowRight, ShieldAlert, CheckCircle2, AlertCircle, Play, Pause, Eye, EyeOff, Briefcase, FileSearch, Search } from 'lucide-react';
 import { getCleanContactValue } from '../utils/caseHelpers';
 
 const truncateLabel = (s, max) => {
   if (!s) return s;
   return s.length > max ? s.substring(0, max - 1) + '…' : s;
 };
+
+// Same risk thresholds/colors as the registry list and review page
+const riskChipClasses = (score) =>
+  score >= 60 ? 'text-red-400 bg-red-500/10 border-red-500/30'
+    : score >= 30 ? 'text-amber-400 bg-amber-500/10 border-amber-500/30'
+      : 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30';
+
+// "✈️ @xin_xing91" → "@xin_xing91"
+const stripIconPrefix = (label) => String(label || '').replace(/^[^\s]+\s/, '');
 
 const inviteLinkUrl = (code) => `https://t.me/+${code}`;
 
@@ -71,7 +80,16 @@ export default function NetworkGraphView({ scans, focusContact = null }) {
   // When arriving to inspect a specific recruiter cluster, drop the hub
   // threshold so even a 2-ad cluster is visible.
   const [minConnections, setMinConnections] = useState(focusContact ? 1 : 3);
-  const [graphStats, setGraphStats] = useState({ nodes: 0, edges: 0, hubs: 0 });
+  const [graphStats, setGraphStats] = useState({ nodes: 0, edges: 0, hubs: 0, hiddenScans: 0 });
+  // Ranked recruiter hubs for the sidebar index
+  const [hubList, setHubList] = useState([]);
+  // In-graph search
+  const [graphQuery, setGraphQuery] = useState('');
+  const [searchMiss, setSearchMiss] = useState(false);
+  // Imperative handle into the current network build (search/sidebar use it)
+  const graphApiRef = useRef(null);
+  // Mirrors physicsEnabled so the auto-freeze handler reads the live value
+  const physicsRef = useRef(true);
 
   // Reset selected node if it gets filtered out
   useEffect(() => {
@@ -83,6 +101,15 @@ export default function NetworkGraphView({ scans, focusContact = null }) {
       }
     }
   }, [showCompanies, showContacts, selectedNode]);
+
+  // Physics toggle applies in place (setOptions) instead of rebuilding the
+  // network — rebuilding would throw away the stabilized layout.
+  useEffect(() => {
+    physicsRef.current = physicsEnabled;
+    if (networkRef.current) {
+      networkRef.current.setOptions({ physics: { enabled: physicsEnabled } });
+    }
+  }, [physicsEnabled]);
 
   useEffect(() => {
     if (!containerRef.current || !scans) return;
@@ -230,57 +257,83 @@ export default function NetworkGraphView({ scans, focusContact = null }) {
       }
     });
 
-    // Apply dynamic styling based on final connection counts for dark-mode integration
+    // Rank contact hubs by weight — the top 5 get the loudest treatment so the
+    // eye lands on the biggest recruiters first.
+    const hubRank = new Map();
+    Array.from(filteredNodesMap.values())
+      .filter(n => n.type === 'contact' && n.connectedScansCount > 1)
+      .sort((a, b) => b.connectedScansCount - a.connectedScansCount)
+      .forEach((n, i) => hubRank.set(n.id, i));
+
+    // Semantic labeling: only hubs carry permanent labels. Everything else is
+    // a dot with a hover tooltip — at 100+ nodes, always-on labels ARE the noise.
     filteredNodesMap.forEach((node) => {
       if (node.type === 'contact') {
         const isHub = node.connectedScansCount > 1;
-        node.color = {
-          background: isHub ? '#4c1d95' : '#1e1b4b',
-          border: isHub ? '#a855f7' : '#6366f1',
-          highlight: {
-            background: isHub ? '#5b21b6' : '#2e1065',
-            border: isHub ? '#a855f7' : '#818cf8'
-          }
-        };
-        node.font = {
-          color: isHub ? '#fdf2ff' : '#e0e7ff',
-          size: isHub ? 12 : 11,
-          bold: isHub,
-          face: 'monospace'
-        };
         if (isHub) {
-          node.borderWidth = 2.5;
-          node.label = `HUB: ${node.label.replace(/^[^\s]+\s/, '')}`;
-          node.shadow = { enabled: true, color: 'rgba(168,85,247,0.45)', size: 18, x: 0, y: 0 };
+          const isTopHub = (hubRank.get(node.id) ?? 99) < 5;
+          const w = Math.min(node.connectedScansCount, 10); // weight 2..10
+          node.title = `${stripIconPrefix(node.label)}\nLinked ads: ${node.connectedScansCount}`;
+          node.label = `HUB: ${stripIconPrefix(node.label)}`;
+          node.shape = 'box';
+          node.margin = 8;
+          node.color = {
+            background: '#4c1d95',
+            border: '#a855f7',
+            highlight: { background: '#5b21b6', border: '#c084fc' }
+          };
+          node.font = {
+            color: '#fdf2ff',
+            size: 11 + w,          // bigger recruiter → bigger label
+            bold: true,
+            face: 'monospace'
+          };
+          node.borderWidth = 2 + Math.min(w / 2, 3);
+          // Glow is reserved for the top 5 — 31 glowing hubs rank nothing.
+          node.shadow = isTopHub
+            ? { enabled: true, color: 'rgba(168,85,247,0.45)', size: 18, x: 0, y: 0 }
+            : false;
         } else {
+          // Non-hub contact: quiet purple dot, name on hover
+          node.title = stripIconPrefix(node.label);
+          node.label = undefined;
+          node.shape = 'dot';
+          node.size = 7;
+          node.color = {
+            background: '#312e81',
+            border: '#6366f1',
+            highlight: { background: '#3730a3', border: '#818cf8' }
+          };
           node.borderWidth = 1;
         }
       } else if (node.type === 'employer') {
         const isHub = node.connectedScansCount > 1;
-        node.color = {
-          background: '#1e293b',
-          border: isHub ? '#f59e0b' : '#475569',
-          highlight: {
-            background: '#334155',
-            border: isHub ? '#f59e0b' : '#64748b'
-          }
-        };
-        node.font = {
-          color: '#cbd5e1',
-          size: 11,
-          bold: true,
-          face: 'monospace'
-        };
         if (isHub) {
+          node.title = `${node.name}\nLinked ads: ${node.connectedScansCount}`;
+          node.shape = 'box';
+          node.color = {
+            background: '#1e293b',
+            border: '#f59e0b',
+            highlight: { background: '#334155', border: '#fbbf24' }
+          };
+          node.font = { color: '#cbd5e1', size: 11, bold: true, face: 'monospace' };
           node.borderWidth = 2;
-          node.shadow = { enabled: true, color: 'rgba(245,158,11,0.35)', size: 16, x: 0, y: 0 };
+          node.shadow = { enabled: true, color: 'rgba(245,158,11,0.30)', size: 14, x: 0, y: 0 };
+        } else {
+          // Non-hub employer: quiet slate dot, name on hover
+          node.label = undefined;
+          node.shape = 'dot';
+          node.size = 6;
+          node.color = {
+            background: '#334155',
+            border: '#64748b',
+            highlight: { background: '#475569', border: '#94a3b8' }
+          };
+          node.borderWidth = 1;
         }
       } else if (node.type === 'scan') {
-        node.font = {
-          color: '#7d8aa0',
-          size: 10,
-          face: 'monospace'
-        };
+        // Ads: risk-colored dots only; details live in the tooltip + click panel
+        node.label = undefined;
       }
     });
 
@@ -289,11 +342,41 @@ export default function NetworkGraphView({ scans, focusContact = null }) {
     const nodesDS = new DataSet(nodes);
     const edgesDS = new DataSet(edgesWithIds);
 
+    const renderedScanCount = nodes.filter(n => n.type === 'scan').length;
     setGraphStats({
       nodes: nodes.length,
       edges: edgesWithIds.length,
-      hubs: nodes.filter(n => n.type !== 'scan' && n.connectedScansCount > 1).length
+      hubs: nodes.filter(n => n.type !== 'scan' && n.connectedScansCount > 1).length,
+      // The receipt for pruning: how many scans the current filter hides
+      hiddenScans: Math.max(0, scans.length - renderedScanCount)
     });
+
+    // Ranked recruiter index for the sidebar: linked-ad count + max risk per hub
+    const hubScans = new Map(); // contactId -> scan data[]
+    filteredEdgesList.forEach(edge => {
+      const target = filteredNodesMap.get(edge.to);
+      if (target?.type === 'contact' && edge.from.startsWith('scan_')) {
+        const s = filteredNodesMap.get(edge.from);
+        if (s) {
+          if (!hubScans.has(edge.to)) hubScans.set(edge.to, []);
+          hubScans.get(edge.to).push(s.data);
+        }
+      }
+    });
+    setHubList(
+      Array.from(filteredNodesMap.values())
+        .filter(n => n.type === 'contact' && n.connectedScansCount > 1)
+        .map(n => {
+          const linked = hubScans.get(n.id) || [];
+          return {
+            id: n.id,
+            label: stripIconPrefix(n.contactInfo?.label || n.title || n.id),
+            count: n.connectedScansCount,
+            maxRisk: linked.reduce((m, s) => Math.max(m, s.riskScore || 0), 0)
+          };
+        })
+        .sort((a, b) => b.count - a.count || b.maxRisk - a.maxRisk)
+    );
 
     const options = {
       nodes: {
@@ -305,7 +388,9 @@ export default function NetworkGraphView({ scans, focusContact = null }) {
         selectionWidth: 1.5
       },
       physics: {
-        enabled: physicsEnabled,
+        // Always stabilize with physics on; the once-handler below applies the
+        // user's toggle (or auto-freeze) after layout settles.
+        enabled: true,
         solver: 'forceAtlas2Based',
         forceAtlas2Based: {
           gravitationalConstant: -65,
@@ -352,68 +437,96 @@ export default function NetworkGraphView({ scans, focusContact = null }) {
       edgesDS.update(edgesWithIds.map(e => ({ id: e.id, color: e.color, width: 1 })));
     };
 
+    // Inspect a node: spotlight + select + populate the detail panel; optionally
+    // fly the camera to it. Shared by clicks, the hub sidebar, and search.
+    const inspectNode = (nodeId, { fly = false } = {}) => {
+      const node = filteredNodesMap.get(nodeId);
+      if (!node) return;
+      spotlight(nodeId);
+      network.selectNodes([nodeId]);
+      if (fly) {
+        network.focus(nodeId, { scale: 1.05, animation: { duration: 800, easingFunction: 'easeInOutQuad' } });
+      }
+      let connectedScans = [];
+      if (node.type === 'employer' || node.type === 'contact') {
+        filteredEdgesList.forEach(edge => {
+          if (edge.to === nodeId && edge.from.startsWith('scan_')) {
+            const scanNode = filteredNodesMap.get(edge.from);
+            if (scanNode) connectedScans.push(scanNode.data);
+          }
+        });
+      }
+      setSelectedNode({ ...node, connectedScans });
+    };
+
+    graphApiRef.current = { inspectNode, nodes };
+
     // Click handler
     network.on('click', (params) => {
       if (params.nodes.length > 0) {
-        const nodeId = params.nodes[0];
-        const node = filteredNodesMap.get(nodeId);
-        spotlight(nodeId);
-
-        // Find connected scans for aggregate nodes
-        let connectedScans = [];
-        if (node && (node.type === 'employer' || node.type === 'contact')) {
-          filteredEdgesList.forEach(edge => {
-            if (edge.to === nodeId && edge.from.startsWith('scan_')) {
-              const scanNode = filteredNodesMap.get(edge.from);
-              if (scanNode) connectedScans.push(scanNode.data);
-            }
-          });
-        }
-
-        setSelectedNode(node ? { ...node, connectedScans } : null);
+        inspectNode(params.nodes[0]);
       } else {
         clearSpotlight();
         setSelectedNode(null);
       }
     });
 
-    // Auto-focus a recruiter cluster when navigated in from a case review.
-    if (focusContact) {
-      const norm = String(focusContact).toLowerCase().replace(/^@/, '').trim();
-      const target = nodes.find(n =>
-        n.type === 'contact' && (
-          String(n.value ?? '').toLowerCase().replace(/^@/, '').trim() === norm ||
-          n.id === `tg_${norm}` ||
-          String(n.label ?? '').toLowerCase().includes(norm)
-        )
-      );
-      if (target) {
-        network.once('stabilizationIterationsDone', () => {
-          spotlight(target.id);
-          network.selectNodes([target.id]);
-          network.focus(target.id, { scale: 1.05, animation: { duration: 900, easingFunction: 'easeInOutQuad' } });
-          let connectedScans = [];
-          filteredEdgesList.forEach(edge => {
-            if (edge.to === target.id && edge.from.startsWith('scan_')) {
-              const scanNode = filteredNodesMap.get(edge.from);
-              if (scanNode) connectedScans.push(scanNode.data);
-            }
-          });
-          setSelectedNode({ ...target, connectedScans });
-        });
+    // After stabilization: apply the physics toggle (auto-freezing big graphs so
+    // they stop jittering), then handle an inbound cluster focus.
+    network.once('stabilizationIterationsDone', () => {
+      const autoFreeze = nodes.length > 100;
+      const desired = autoFreeze ? false : physicsRef.current;
+      network.setOptions({ physics: { enabled: desired } });
+      if (autoFreeze && physicsRef.current) setPhysicsEnabled(false);
+
+      // Auto-focus a recruiter cluster when navigated in from a case review.
+      if (focusContact) {
+        const norm = String(focusContact).toLowerCase().replace(/^@/, '').trim();
+        const target = nodes.find(n =>
+          n.type === 'contact' && (
+            String(n.contactInfo?.value ?? '').toLowerCase().replace(/^@/, '').trim() === norm ||
+            n.id === `tg_${norm}` ||
+            String(n.title ?? '').toLowerCase().includes(norm)
+          )
+        );
+        if (target) inspectNode(target.id, { fly: true });
       }
-    }
+    });
 
     return () => {
+      graphApiRef.current = null;
       if (networkRef.current) {
         networkRef.current.destroy();
+        // Null the ref so other effects never call into a destroyed network
+        networkRef.current = null;
       }
     };
-  }, [scans, physicsEnabled, showContacts, showCompanies, minConnections, focusContact]);
+  }, [scans, showContacts, showCompanies, minConnections, focusContact]);
 
   const fitGraph = () => {
     if (networkRef.current) {
       networkRef.current.fit({ animation: { duration: 1000 } });
+    }
+  };
+
+  // Find a contact/employer by handle or name, fly to it, spotlight it
+  const handleGraphSearch = (e) => {
+    e.preventDefault();
+    const q = graphQuery.trim().toLowerCase().replace(/^@/, '');
+    if (!q || !graphApiRef.current) return;
+    const { inspectNode, nodes } = graphApiRef.current;
+    const target = nodes.find(n =>
+      n.type !== 'scan' && (
+        String(n.contactInfo?.value ?? '').toLowerCase().includes(q) ||
+        String(n.name ?? '').toLowerCase().includes(q) ||
+        String(n.title ?? '').toLowerCase().includes(q)
+      )
+    );
+    if (target) {
+      setSearchMiss(false);
+      inspectNode(target.id, { fly: true });
+    } else {
+      setSearchMiss(true);
     }
   };
 
@@ -671,23 +784,43 @@ export default function NetworkGraphView({ scans, focusContact = null }) {
           </button>
           <span className="text-[10px] font-mono text-slate-500 uppercase tracking-wider pl-1 hidden sm:inline">
             {graphStats.nodes} nodes · {graphStats.edges} links · <span className="text-purple-400 font-bold">{graphStats.hubs} hubs</span>
+            {graphStats.hiddenScans > 0 && (
+              <span className="text-slate-600" title="Scans without enough shared connections at the current filter — see the registry list for these">
+                {' '}· {graphStats.hiddenScans} unclustered hidden
+              </span>
+            )}
           </span>
         </div>
 
         <div className="flex gap-2 items-center flex-wrap">
-          {/* Min Connections Dropdown Filter */}
+          {/* In-graph search: fly to a handle or company */}
+          <form
+            onSubmit={handleGraphSearch}
+            className={`flex items-center gap-1.5 bg-[#111318] border rounded-lg pl-2.5 pr-1.5 py-1.5 transition-colors ${searchMiss ? 'border-red-500/50' : 'border-slate-800 focus-within:border-slate-600'}`}
+            title="Find a recruiter handle or company and fly to it"
+          >
+            <Search className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
+            <input
+              value={graphQuery}
+              onChange={(e) => { setGraphQuery(e.target.value); setSearchMiss(false); }}
+              placeholder="Find @handle…"
+              className={`bg-transparent outline-none text-[11px] font-mono w-28 placeholder:text-slate-600 ${searchMiss ? 'text-red-400' : 'text-slate-300'}`}
+            />
+          </form>
+
+          {/* Hub threshold filter */}
           <div className="flex items-center gap-1.5 bg-[#111318] border border-slate-800 rounded-lg p-1">
-            <span className="text-[9px] font-mono text-slate-400 uppercase pl-1.5 pr-0.5 font-bold">Min Connections:</span>
+            <span className="text-[9px] font-mono text-slate-400 uppercase pl-1.5 pr-0.5 font-bold">Recruiters with:</span>
             <select
               value={minConnections}
               onChange={(e) => setMinConnections(Number(e.target.value))}
               className="bg-[#0a0c12] border border-slate-800 rounded px-2 py-1 text-[10px] text-slate-300 focus:outline-none focus:ring-1 focus:ring-amber-500 cursor-pointer font-mono"
             >
-              <option value={1}>1+ connection</option>
-              <option value={2}>2+ connections (Hubs)</option>
-              <option value={3}>3+ connections</option>
-              <option value={4}>4+ connections</option>
-              <option value={5}>5+ connections</option>
+              <option value={1}>1+ linked ads (all)</option>
+              <option value={2}>2+ linked ads (hubs)</option>
+              <option value={3}>3+ linked ads</option>
+              <option value={4}>4+ linked ads</option>
+              <option value={5}>5+ linked ads</option>
             </select>
           </div>
           <button
@@ -715,23 +848,67 @@ export default function NetworkGraphView({ scans, focusContact = null }) {
         </div>
       </div>
 
-      {/* Network Canvas */}
-      <div className="flex-1 relative bg-[#0a0c12] min-h-[550px] h-[550px]">
-        <div ref={containerRef} className="w-full h-full absolute inset-0" />
+      {/* Legend — one line, decodes every mark on the canvas */}
+      <div className="border-b border-slate-800 bg-[#0e121a] px-4 py-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[9px] font-mono text-slate-500">
+        <span className="flex items-center gap-1.5"><span className="w-4 h-2.5 rounded-sm bg-[#4c1d95] border border-[#a855f7]" /> recruiter hub (size = linked ads)</span>
+        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-[#312e81] border border-[#6366f1]" /> contact</span>
+        <span className="flex items-center gap-1.5"><span className="w-4 h-2.5 rounded-sm bg-[#1e293b] border border-[#f59e0b]" /> shared company</span>
+        <span className="flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-red-500" /><span className="w-2 h-2 rounded-full bg-amber-500 -ml-1" /><span className="w-2 h-2 rounded-full bg-emerald-500 -ml-1" /> ads (risk color)
+        </span>
+        <span className="text-slate-600 hidden sm:inline">· hover a dot for its name · click for details</span>
+      </div>
 
-        {graphStats.nodes === 0 && (
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div className="text-center max-w-sm px-6">
-              <AlertTriangle className="w-8 h-8 text-slate-700 mx-auto mb-3" />
-              <p className="text-sm text-slate-500 font-mono">
-                No linked entities at this filter level.
-              </p>
-              <p className="text-xs text-slate-600 font-mono mt-1.5">
-                Lower “Min Connections” to reveal smaller clusters, or enable Contacts/Companies above.
-              </p>
+      {/* Hub index + network canvas */}
+      <div className="flex-1 flex min-h-[550px] h-[550px]">
+        {/* Ranked recruiter sidebar — the index to the map */}
+        {hubList.length > 0 && (
+          <div className="hidden md:flex flex-col w-56 flex-shrink-0 border-r border-slate-800 bg-[#0e121a]">
+            <div className="px-3 py-2 border-b border-slate-800 text-[9px] font-mono font-bold uppercase tracking-widest text-slate-500 flex-shrink-0">
+              Top recruiter hubs · {hubList.length}
+            </div>
+            <div className="flex-1 overflow-y-auto divide-y divide-slate-800/60">
+              {hubList.map((hub, i) => (
+                <button
+                  key={hub.id}
+                  type="button"
+                  onClick={() => graphApiRef.current?.inspectNode(hub.id, { fly: true })}
+                  className={`w-full text-left px-3 py-2 transition-colors hover:bg-purple-950/20 ${selectedNode?.id === hub.id ? 'bg-purple-950/30 border-l-2 border-purple-500' : 'border-l-2 border-transparent'}`}
+                >
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="text-[9px] font-mono text-slate-600 w-4 flex-shrink-0 text-right">{i + 1}</span>
+                    <span className="text-[11px] font-mono font-bold text-purple-200 truncate">{hub.label}</span>
+                  </div>
+                  <div className="flex items-center gap-2 mt-1 ml-[22px]">
+                    <span className="text-[9px] font-mono text-slate-500">{hub.count} ads</span>
+                    <span className={`text-[9px] font-mono font-black px-1 py-px rounded border ${riskChipClasses(hub.maxRisk)}`}>
+                      max {hub.maxRisk}
+                    </span>
+                  </div>
+                </button>
+              ))}
             </div>
           </div>
         )}
+
+        {/* Network Canvas */}
+        <div className="relative flex-1 bg-[#0a0c12] min-w-0">
+          <div ref={containerRef} className="w-full h-full absolute inset-0" />
+
+          {graphStats.nodes === 0 && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div className="text-center max-w-sm px-6">
+                <AlertTriangle className="w-8 h-8 text-slate-700 mx-auto mb-3" />
+                <p className="text-sm text-slate-500 font-mono">
+                  No linked entities at this filter level.
+                </p>
+                <p className="text-xs text-slate-600 font-mono mt-1.5">
+                  Lower the “Recruiters with” threshold to reveal smaller clusters, or enable Contacts/Companies above.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
     </div>

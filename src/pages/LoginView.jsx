@@ -1,22 +1,19 @@
 import React, { useState } from 'react';
 import { supabase } from '../utils/supabaseClient';
-import { Shield, Mail, Lock, Loader2, AlertCircle, LogIn, UserPlus } from 'lucide-react';
+import { Mail, Lock, Loader2, AlertCircle, LogIn } from 'lucide-react';
 import Logo from '../components/Logo';
 
 export default function LoginView() {
 
-  const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [successMsg, setSuccessMsg] = useState('');
 
   const handleAuth = async (e) => {
     e.preventDefault();
     setError('');
-    setSuccessMsg('');
-    
+
     if (!email.trim() || !password.trim()) {
       setError('Please fill in all fields.');
       return;
@@ -24,25 +21,11 @@ export default function LoginView() {
 
     setLoading(true);
     try {
-      if (isSignUp) {
-        const { data, error: signUpErr } = await supabase.auth.signUp({
-          email: email.trim(),
-          password: password,
-        });
-        if (signUpErr) throw signUpErr;
-        
-        if (data.user && data.session === null) {
-          setSuccessMsg('Registration successful! Please check your email for confirmation.');
-        } else {
-          setSuccessMsg('Account created successfully!');
-        }
-      } else {
-        const { error: signInErr } = await supabase.auth.signInWithPassword({
-          email: email.trim(),
-          password: password,
-        });
-        if (signInErr) throw signInErr;
-      }
+      const { error: signInErr } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password: password,
+      });
+      if (signInErr) throw signInErr;
     } catch (err) {
       console.error("Auth error:", err);
       setError(err.message || 'An error occurred during authentication.');
@@ -72,14 +55,6 @@ export default function LoginView() {
             <div className="flex items-start gap-2.5 bg-rose-500/10 border border-rose-550/20 p-3.5 rounded text-[11px] text-rose-400 font-mono">
               <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
               <span>{error}</span>
-            </div>
-          )}
-
-          {/* Success Notification */}
-          {successMsg && (
-            <div className="flex items-start gap-2.5 bg-[#3fb950]/10 border border-[#3fb950]/20 p-3.5 rounded text-[11px] text-[#3fb950] font-mono">
-              <Shield className="w-4 h-4 flex-shrink-0 mt-0.5 text-[#3fb950]" />
-              <span>{successMsg}</span>
             </div>
           )}
 
@@ -129,10 +104,6 @@ export default function LoginView() {
           >
             {loading ? (
               <Loader2 className="w-5 h-5 animate-spin" />
-            ) : isSignUp ? (
-              <>
-                <UserPlus className="w-5 h-5" /> Create Account
-              </>
             ) : (
               <>
                 <LogIn className="w-5 h-5" /> Sign In
@@ -140,16 +111,6 @@ export default function LoginView() {
             )}
           </button>
         </form>
-
-        <div className="text-center">
-          <button
-            type="button"
-            onClick={() => setIsSignUp(!isSignUp)}
-            className="text-xs font-bold text-amber-550 hover:text-amber-400 font-mono uppercase tracking-wider"
-          >
-            {isSignUp ? '[ Back to Sign In ]' : '[ Create a Local Account ]'}
-          </button>
-        </div>
 
       </div>
     </div>

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { HelpCircle, ChevronDown, ChevronUp, Cpu, Key, BarChart3, Fingerprint, MessageSquare, Image, Eye, Languages, ShieldAlert } from 'lucide-react';
+import { HelpCircle, ChevronDown, ChevronUp, Cpu, Key, BarChart3, Fingerprint, MessageSquare, Image, Eye, ShieldAlert, Database } from 'lucide-react';
 
 export default function FaqView() {
   const [openSections, setOpenSections] = useState({});
@@ -27,6 +27,27 @@ export default function FaqView() {
             <li><strong>Training Data Exclusion:</strong> According to Google Cloud’s standard developer API terms, data transmitted via commercial API keys is not used to train Google’s public foundation models.</li>
             <li><strong>Local Credential Security:</strong> Your Gemini API keys are stored solely in the local browser session cache (SessionStorage / Settings), are cleared immediately when you close the tab, and are never transmitted to any third-party databases.</li>
           </ul>
+        </div>
+      )
+    },
+    {
+      id: 'data-provenance',
+      icon: <Database className="w-4 h-4 text-amber-500" />,
+      title: 'Data Sources & Provenance',
+      summary: 'Where the data comes from: public channel previews and fully synthetic exemplars — no live operations.',
+      details: (
+        <div className="space-y-3 leading-relaxed text-slate-300">
+          <p>
+            Every record inside Sentinel AI comes from one of two places: <strong>publicly available sources</strong> or <strong>fully synthetic data</strong>. The platform never engages with live networks, joins private groups, or contacts suspected recruiters.
+          </p>
+          <ul className="list-disc pl-5 space-y-2">
+            <li><strong>Public Telegram Previews:</strong> The live feed reads only the public web preview of Telegram channels (<code>t.me/s/&lt;channel&gt;</code>) — the exact pages Telegram already serves to any logged-out browser. No accounts, no bots, no credentials, and strictly read-only: the system never posts, replies, or interacts with a channel or its operators.</li>
+            <li><strong>Synthetic Exemplars:</strong> The Gallery's curated exhibit pieces, decoy candidate personas, and generated CVs are synthetic composites of documented recruitment patterns. Every name, handle, phone number, and backstory is fictional and does not correspond to any real person, organization, or contact point.</li>
+            <li><strong>Offline Demo Snapshot:</strong> When the live ingestion service is unreachable, the app replays a build-time snapshot of the same public channel previews. It contains only content Telegram publishes to the open web, and records ingested from it are tagged as snapshot-sourced in the Audit Registry.</li>
+          </ul>
+          <p>
+            This satisfies the hackathon's ethical &amp; safety rules: build tools, not live operations — use publicly available, synthetic, or simulated data.
+          </p>
         </div>
       )
     },
@@ -60,7 +81,7 @@ export default function FaqView() {
       details: (
         <div className="space-y-3 leading-relaxed text-slate-350">
           <p>
-            Sentinel AI harnesses Google's state-of-the-art Gemini Large Language Models (LLMs) to perform high-precision Optical Character Recognition (OCR), entity extraction, and dialect analysis. To keep scans reliable and cost-effective, the app is optimized to handle rate limits (Resource Exhausted errors) and quota boundaries transparently.
+            Sentinel AI harnesses Google's state-of-the-art Gemini Large Language Models (LLMs) to perform high-precision Optical Character Recognition (OCR) and entity extraction. To keep scans reliable and cost-effective, the app is optimized to handle rate limits (Resource Exhausted errors) and quota boundaries transparently.
           </p>
           <ul className="list-disc pl-5 space-y-2">
             <li><strong>Model Tiering & Selection:</strong> The system defaults to <code>gemini-2.5-flash</code> for primary analyses due to its low latency and superior performance in structured JSON extraction. If more complex reasoning is required (e.g. detailed forensic analysis), the app supports manual or automatic escalation to high-reasoning models like <code>gemini-2.5-pro</code>.</li>
@@ -187,28 +208,6 @@ export default function FaqView() {
           </ul>
           <p>
             This forensic evidence is displayed in a dedicated panel on the review screen, providing key location leads to help trace recruiter networks.
-          </p>
-        </div>
-      )
-    },
-    {
-      id: 'heuristics',
-      icon: <Languages className="w-4 h-4 text-amber-500" />,
-      title: 'Dialect & Language Heuristics',
-      summary: 'Analyzing language syntax anomalies to determine recruiter origin.',
-      details: (
-        <div className="space-y-3 leading-relaxed text-slate-350">
-          <p>
-            Many recruitment ads target specific regional demographics but are written by foreign handlers. These handlers often rely on machine translation (such as Google Translate or DeepL) or have varying levels of local language fluency, which introduces unique dialect errors.
-          </p>
-          <p>
-            The **Language OSINT Dialect Analyzer** uses Gemini models to analyze the grammatical syntax, vocabulary choices, spelling errors, and idioms in the advertisement text.
-          </p>
-          <p>
-            The analyzer checks for literal word-for-word translations, unusual character choices (e.g. mixing Simplified Chinese symbols into regional scripts), or incorrect syntax. The system then outputs a probability profile highlighting the writer's native language origin.
-          </p>
-          <p>
-            This analysis is logged to the investigation notes to help identify the location of the recruiting syndicate's operators.
           </p>
         </div>
       )

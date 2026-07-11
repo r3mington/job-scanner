@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Radio, Play, Pause, Plus, X, Loader2, CheckCircle2, AlertTriangle, RotateCcw, Send, Clock } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import useTelegramFeed from '../hooks/useTelegramFeed';
+import { TELEGRAM_SNAPSHOT_CAPTURED_AT } from '../data/telegramSnapshot';
 
 function relTime(ts) {
   if (!ts) return '—';
@@ -14,7 +15,7 @@ export default function TelegramFeedPanel() {
   const { user, profile } = useAuth();
   const feed = useTelegramFeed({ user, profile });
   const {
-    channels, running, logs, stats, lastPollAt, usingSnapshot, latestPost,
+    channels, running, logs, stats, lastPollAt, usingSnapshot, latestPost, progress,
     start, stop, addChannel, toggleChannel, removeChannel, resetCursors,
   } = feed;
 
@@ -59,8 +60,10 @@ export default function TelegramFeedPanel() {
       {/* Provenance / ethics banner */}
       <div className="p-3 bg-cyan-950/15 border border-cyan-500/25 rounded text-[11px] text-cyan-300/90 font-mono leading-relaxed">
         Reads the <span className="font-bold">public web preview</span> of Telegram channels
-        (t.me/s/…) — no login, no bot, read-only. Flagged posts flow into the Audit Registry
-        tagged <span className="font-bold">Live Feed</span>.
+        (t.me/s/…) — no login, no bot, read-only; only publicly available broadcast data is
+        ever ingested, and the platform never interacts with a channel. Flagged posts flow
+        into the Audit Registry tagged <span className="font-bold">Live Feed</span> (or{' '}
+        <span className="font-bold">Snapshot</span> when replaying the bundled archive).
       </div>
 
       {/* Live counters */}
@@ -110,7 +113,9 @@ export default function TelegramFeedPanel() {
 
       {usingSnapshot && (
         <div className="text-[10px] font-mono text-amber-400/80 bg-amber-950/15 border border-amber-500/20 rounded p-2">
-          Live fetch unavailable — replaying bundled channel snapshot.
+          Live fetch unavailable — replaying an offline snapshot of the same public channel
+          previews (captured {TELEGRAM_SNAPSHOT_CAPTURED_AT}). Registry rows from this replay
+          are tagged <span className="font-bold">Telegram Snapshot (public archive)</span>.
         </div>
       )}
 
@@ -186,6 +191,13 @@ export default function TelegramFeedPanel() {
         <div className="px-3 py-2 border-b border-slate-800 flex items-center gap-2">
           <Send className="w-3 h-3 text-cyan-400" />
           <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400 font-bold">Ingestion Stream</span>
+          {progress && (
+            <span className="ml-auto flex items-center gap-1.5 text-[9px] font-mono text-cyan-400/90">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              <span className="text-slate-500">@{progress.channel}</span>
+              <span>{progress.index}/{progress.total}</span>
+            </span>
+          )}
         </div>
         <div ref={logRef} className="h-48 overflow-y-auto p-2.5 font-mono text-[10px] space-y-1">
           {logs.length === 0 ? (

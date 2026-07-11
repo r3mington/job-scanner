@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { supabase, mapRecordToDb } from '../utils/supabaseClient';
-import { analyzeJobPosting } from '../services/geminiService';
+import { analyzeJobPosting, triageJobPosting } from '../services/geminiService';
 import { calculateRiskScore, getRiskLevel } from '../utils/scoring';
 import { getActiveApiKey } from '../utils/apiKey';
 import { TELEGRAM_SNAPSHOT } from '../data/telegramSnapshot';
@@ -26,6 +26,10 @@ const CURSOR_KEY = (ch) => `tg_feed_cursor_${ch}`;
 const POLL_MS = 45_000;
 const MAX_POSTS_PER_TICK = 8;   // bound Gemini spend per poll
 const SCAN_GAP_MS = 6000;       // same pacing as the CSV batch pipeline
+// Stage-1 triage: posts the cheap flash-lite filter clears below this hint
+// score skip the full forensic scan (and the registry). The filter is tuned
+// to over-escalate, so this is a second, belt-and-braces gate.
+const TRIAGE_ESCALATE_AT = 30;
 
 const DEFAULT_CHANNELS = [
   { username: 'workinuae', title: 'Work in UAE 🇦🇪', active: true },
@@ -51,6 +55,9 @@ export default function useTelegramFeed({ user, profile }) {
   const [lastPollAt, setLastPollAt] = useState(null);
   const [usingSnapshot, setUsingSnapshot] = useState(false);
   const [latestPost, setLatestPost] = useState(null);
+  // Live progress for the panel indicator: which channel/post is being screened
+  // right now and how far through the current batch. null when idle.
+  const [progress, setProgress] = useState(null);
 
   const timerRef = useRef(null);
   const busyRef = useRef(false);
@@ -118,7 +125,10 @@ export default function useTelegramFeed({ user, profile }) {
   }, [persistChannels]);
 
   // ── Scan one post through the standard pipeline ─────────────────────────────
-  const scanPost = useCallback(async (channel, post) => {
+  // `live` distinguishes provenance in the registry: posts fetched from the
+  // t.me/s/ preview in real time vs. replayed from the bundled public-archive
+  // snapshot when the edge function is unreachable.
+  const scanPost = useCallback(async (channel, post, onStatusUpdate = null, live = true) => {
     // Client key optional — the analyzer routes through the gemini-proxy edge
     // function (server-held GEMINI_API_KEY) when no client key is present.
     const apiKey = getActiveApiKey();
@@ -133,7 +143,18 @@ export default function useTelegramFeed({ user, profile }) {
       if (dup && dup.length > 0) return { skipped: true };
     } catch { /* non-fatal — proceed to scan */ }
 
-    const result = await analyzeJobPosting(apiKey, modelName, { text: post.text });
+    // Stage 1: cheap flash-lite triage. Most feed posts are benign; only ads
+    // showing a risk signal pay for the full forensic analysis below. Any
+    // triage failure fails OPEN into the full scan — never silently drop.
+    try {
+      const triage = await triageJobPosting(apiKey, { text: post.text, onStatusUpdate });
+      if (!triage.worthFullScan && triage.riskHint < TRIAGE_ESCALATE_AT) {
+        return { triaged: true, score: triage.riskHint, reason: triage.reason };
+      }
+    } catch { /* triage unavailable — full scan */ }
+
+    // Stage 2: full forensic pipeline (identical to manual scans).
+    const result = await analyzeJobPosting(apiKey, modelName, { text: post.text, onStatusUpdate });
     const activeFlags = result.detected_red_flags || [];
     const scoreResult = calculateRiskScore(activeFlags, {
       parsedSalaryUsd: result.parsed_salary_usd,
@@ -142,7 +163,6 @@ export default function useTelegramFeed({ user, profile }) {
       contactMethod: result.contact_method,
       suspiciousSpans: result.suspicious_spans || [],
       predictedPlaybook: result.predicted_playbook || [],
-      obfuscationLevel: null,
       sourcePlatform: 'Telegram',
       employer: result.employer_identity,
     });
@@ -176,12 +196,12 @@ export default function useTelegramFeed({ user, profile }) {
       isTranslated: result.is_translated || false,
       translatedText: result.translated_text || null,
       batchId: `tgfeed_${channel}`,
-      batchName: `📡 @${channel} — Live Feed`,
+      batchName: live ? `📡 @${channel} — Live Feed` : `📼 @${channel} — Public Archive Snapshot`,
       userId: user?.id || null,
       normalizedText: result.normalized_text || '',
       sourcePlatform: 'Telegram',
       sourceUrl: post.link,
-      ingestionMethod: 'Telegram Live Feed',
+      ingestionMethod: live ? 'Telegram Live Feed' : 'Telegram Snapshot (public archive)',
       postDate: post.date || 'unspecified',
     };
 
@@ -192,7 +212,12 @@ export default function useTelegramFeed({ user, profile }) {
 
   // ── One polling pass over all active channels ───────────────────────────────
   const tick = useCallback(async () => {
-    if (busyRef.current) return;
+    if (busyRef.current) {
+      // The previous batch is still draining (slow model calls + scan pacing).
+      // Say so, otherwise the skipped poll looks like the engine died.
+      if (runningRef.current) addLog('info', '⏳ Still screening the previous batch — this poll runs once it finishes.');
+      return;
+    }
     busyRef.current = true;
     try {
       for (const ch of channelsRef.current.filter(c => c.active)) {
@@ -211,20 +236,36 @@ export default function useTelegramFeed({ user, profile }) {
           continue;
         }
 
-        addLog('info', `@${ch.username}: ${fetched.posts.length} new post${fetched.posts.length > 1 ? 's' : ''} — screening…`);
         const sortedPosts = [...fetched.posts].sort((a, b) => b.id - a.id);
         const batch = sortedPosts.slice(0, MAX_POSTS_PER_TICK);
+        const queued = fetched.posts.length - batch.length;
+        addLog('info', `@${ch.username}: ${fetched.posts.length} new post${fetched.posts.length > 1 ? 's' : ''} — screening ${batch.length}${queued > 0 ? ` now, ${queued} queued for the next poll` : ''}…`);
 
-        for (const post of batch) {
+        for (let i = 0; i < batch.length; i++) {
+          const post = batch[i];
           if (!runningRef.current) break;
+          // Drive the panel's live progress indicator (channel · n/m · post id).
+          setProgress({ channel: ch.username, index: i + 1, total: batch.length, postId: post.id });
+          // Per-post heartbeat so a slow model call never looks like a stall.
+          addLog('info', `➜ @${ch.username}/#${post.id} — analyzing…`);
           try {
-            const res = await scanPost(ch.username, post);
+            // Surface the analyzer's own retry/backoff/transport-fallback events
+            // (the usual reason a scan goes quiet) instead of discarding them.
+            const res = await scanPost(ch.username, post, (evt) => {
+              if (evt && evt.type === 'warning') {
+                addLog('error', `   ↳ @${ch.username}/#${post.id}: ${evt.message}`);
+              }
+            }, fetched.live);
             const currentCursor = getCursor(ch.username);
             if (post.id > currentCursor) {
               setCursor(ch.username, post.id);
             }
             if (res.skipped) {
               addLog('info', `➜ @${ch.username}/#${post.id} already in registry — skipped.`);
+            } else if (res.triaged) {
+              // Cleared by the stage-1 filter: counted as screened, not stored.
+              setStats(s => ({ screened: s.screened + 1, flagged: s.flagged }));
+              addLog('success', `✔ CLEARED (triage) — "Post #${post.id}" · ${res.score}%${res.reason ? ' · ' + res.reason : ''}`);
             } else {
               const flagged = res.score >= 60;
               setStats(s => ({ screened: s.screened + 1, flagged: s.flagged + (flagged ? 1 : 0) }));
@@ -252,12 +293,16 @@ export default function useTelegramFeed({ user, profile }) {
               setCursor(ch.username, post.id); // don't wedge the queue on a bad post
             }
           }
+          // A long tick can outrun the poll interval; refresh the activity clock
+          // after every post so the header reads "live" instead of a stale dash.
+          setLastPollAt(Date.now());
           await new Promise(r => setTimeout(r, SCAN_GAP_MS));
         }
       }
       setLastPollAt(Date.now());
     } finally {
       busyRef.current = false;
+      setProgress(null); // batch done (or bailed) — drop the indicator
     }
   }, [addLog, fetchPosts, scanPost]);
 
@@ -288,7 +333,7 @@ export default function useTelegramFeed({ user, profile }) {
   useEffect(() => () => clearInterval(timerRef.current), []);
 
   return {
-    channels, running, logs, stats, lastPollAt, usingSnapshot, latestPost,
+    channels, running, logs, stats, lastPollAt, usingSnapshot, latestPost, progress,
     start, stop, addChannel, toggleChannel, removeChannel, resetCursors,
   };
 }

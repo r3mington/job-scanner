@@ -2,6 +2,7 @@
 // Used as an offline/demo fallback when the live telegram-feed edge function
 // is unreachable. Read-only public broadcast data; no accounts, no interaction.
 // Captured: 2026-07-08T09:06:05.771Z
+export const TELEGRAM_SNAPSHOT_CAPTURED_AT = '2026-07-08';
 export const TELEGRAM_SNAPSHOT = {
   "workinuae": [
     {

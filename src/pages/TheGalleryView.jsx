@@ -25,11 +25,15 @@ const CRITICAL_FLAGS = new Set(
 const flagTier = (flag) => (CRITICAL_FLAGS.has(flag) ? 'critical' : (RISK_FLAGS[flag]?.category || 'medium'));
 
 // ── Curated pieces: the hall is never empty (no data / no key / cold judge) ──
+// All three are SYNTHETIC composites of documented recruitment patterns —
+// every name, handle, and phone number is fictional (numbers use invalid
+// all-zero subscriber blocks so they can never reach a real person).
 const CURATED_PIECES = [
   {
     id: 'g_curated_1',
+    synthetic: true,
     title: 'Customer Service Agents — Bangkok',
-    meta: 'Composite of documented patterns · SE-Asia corridor',
+    meta: 'Synthetic exemplar · SE-Asia corridor · fictional handles',
     text: `HIRING: Customer Service Agents 📞\n$1,500/month + 2% commission. Location: Bangkok (hybrid).\nFree accommodation provided. Visa and flight ticket sponsored.\nNo experience required. Professional English a plus.\nUrgent — apply today! Contact us on Telegram only: @BorderZoneHR`,
     spans: [
       { snippet: 'Free accommodation provided', flag: 'Housing Compound Isolation', explanation: 'Employer-controlled housing is used to isolate and confine workers.' },
@@ -41,9 +45,10 @@ const CURATED_PIECES = [
   },
   {
     id: 'g_curated_2',
+    synthetic: true,
     title: 'Data Typists Wanted — Overseas',
-    meta: 'Composite of documented patterns · Gulf corridor',
-    text: `DATA TYPISTS WANTED ⌨️ — Dream opportunity abroad.\nEarn $3,000+ monthly. Meals and housing included.\nWe handle all documents and processing for you.\nJust basic English needed. Start immediately.\nWhatsApp our HR team now: +971 55 163 9029`,
+    meta: 'Synthetic exemplar · Gulf corridor · fictional numbers',
+    text: `DATA TYPISTS WANTED ⌨️ — Dream opportunity abroad.\nEarn $3,000+ monthly. Meals and housing included.\nWe handle all documents and processing for you.\nJust basic English needed. Start immediately.\nWhatsApp our HR team now: +971 55 000 0000`,
     spans: [
       { snippet: 'Dream opportunity abroad', flag: 'Vague Description', explanation: 'Distance is the point — help cannot reach the isolated worker.' },
       { snippet: 'Earn $3,000+ monthly', flag: 'Wage Disparity', explanation: 'A wage far above the local market anchors the target with false hope.' },
@@ -53,8 +58,9 @@ const CURATED_PIECES = [
   },
   {
     id: 'g_curated_3',
+    synthetic: true,
     title: 'Promoters / Live Hosts',
-    meta: 'Composite of documented patterns · border SEZ',
+    meta: 'Synthetic exemplar · border SEZ · fictional entities',
     text: `Live Stream Hosts & Promoters 🌟 — high commission!\nProvided dormitory near the workplace. Passport held safely by company for your protection.\nSpecial economic zone, easy border crossing arranged.\nReferrals welcome — bring a friend, earn a bonus.`,
     spans: [
       { snippet: 'Passport held safely by company', flag: 'Passport/ID Control', explanation: '"For your protection" is how confiscation is framed to the target.' },
@@ -189,6 +195,11 @@ function Artwork({ piece, position, rotationY, onApproach }) {
               <div className="text-[7px] font-mono uppercase tracking-[0.14em] text-center mt-0.5" style={{ color: '#5d4d2c' }}>
                 {piece.meta}
               </div>
+              {piece.synthetic && (
+                <div className="mt-1 mx-auto w-fit px-1.5 py-0.5 rounded-sm text-[6px] font-mono font-bold uppercase tracking-[0.18em]" style={{ background: '#3a2f1a', color: '#d9c294' }}>
+                  Synthetic — no real person, handle, or number
+                </div>
+              )}
             </div>
           </div>
 
