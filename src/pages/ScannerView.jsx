@@ -1,5 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { Camera, Image as ImageIcon, FileText, Upload, X, FileSpreadsheet, Play, AlertCircle, Loader2, Download, Copy, ArrowRight, ChevronDown, ChevronUp, Globe, Link, Calendar, Radio } from 'lucide-react';
+import { Camera, Image as ImageIcon, FileText, Upload, X, FileSpreadsheet, Play, AlertCircle, Loader2, Download, Copy, ArrowRight, ChevronDown, ChevronUp, Globe, Link, Calendar, Radio, MapPin, Aperture } from 'lucide-react';
+import exifr from 'exifr';
 import TelegramFeedPanel from '../components/TelegramFeedPanel';
 import { useNavigate } from 'react-router-dom';
 import { supabase, mapRecordToDb } from '../utils/supabaseClient';
@@ -7,6 +8,9 @@ import { analyzeJobPosting } from '../services/geminiService';
 import { calculateRiskScore, getRiskLevel } from '../utils/scoring';
 import { useAuth } from '../context/AuthContext';
 import { getActiveApiKey } from '../utils/apiKey';
+import { compressImageDataUrl, formatBytes } from '../utils/imageCompression';
+
+const COMPRESS_PREF_KEY = 'sentinel_compress_images';
 
 export default function ScannerView() {
   const navigate = useNavigate();
@@ -24,6 +28,15 @@ export default function ScannerView() {
   const [isDragging, setIsDragging] = useState(false);
   const [imageMeta, setImageMeta] = useState(null);
   const [csvMapping, setCsvMapping] = useState(null);
+
+  // On-the-fly compression before storage (opt-out for EXIF-based tasks —
+  // canvas re-encoding strips all EXIF from the stored copy).
+  const [compressEnabled, setCompressEnabled] = useState(() => localStorage.getItem(COMPRESS_PREF_KEY) !== 'false');
+  const [compressedImage, setCompressedImage] = useState(null); // { dataUrl, bytes, originalBytes, skipped }
+  const [isCompressing, setIsCompressing] = useState(false);
+  // EXIF snapshot parsed from the ORIGINAL upload bytes (independent of the
+  // compression toggle — the preview always reflects what the file carried).
+  const [exifSummary, setExifSummary] = useState(null); // { status: 'none'|'found', ...fields }
 
   // Metadata state
   const [sourcePlatform, setSourcePlatform] = useState('unspecified');
@@ -152,8 +165,34 @@ export default function ScannerView() {
       ctx.drawImage(videoRef.current, 0, 0);
       const dataUrl = canvas.toDataURL('image/jpeg');
       setCapturedImage(dataUrl);
+      // Canvas frames carry no capture metadata — say so instead of showing nothing
+      setExifSummary({ status: 'none', reason: 'Live camera frame — no EXIF segment' });
       stopCamera();
     }
+  };
+
+  // Compress eagerly whenever an image lands (or the toggle flips) so the card
+  // can show the exact before → after savings ahead of the scan.
+  useEffect(() => {
+    if (!capturedImage || !compressEnabled) {
+      setCompressedImage(null);
+      setIsCompressing(false);
+      return;
+    }
+    let cancelled = false;
+    setIsCompressing(true);
+    compressImageDataUrl(capturedImage)
+      .then((result) => { if (!cancelled) setCompressedImage(result); })
+      .catch(() => { if (!cancelled) setCompressedImage(null); }) // undecodable — upload original
+      .finally(() => { if (!cancelled) setIsCompressing(false); });
+    return () => { cancelled = true; };
+  }, [capturedImage, compressEnabled]);
+
+  const toggleCompression = () => {
+    setCompressEnabled(prev => {
+      localStorage.setItem(COMPRESS_PREF_KEY, String(!prev));
+      return !prev;
+    });
   };
 
   const handleFileUpload = (e) => {
@@ -165,6 +204,28 @@ export default function ScannerView() {
         size: `${sizeMb} MB`,
         type: file.type || 'image/jpeg'
       });
+      // Parse EXIF off the raw file bytes before any re-encoding touches them
+      setExifSummary(null);
+      exifr.parse(file, { tiff: true, exif: true, gps: true, xmp: false, icc: false })
+        .then((parsed) => {
+          if (!parsed || Object.keys(parsed).length === 0) {
+            setExifSummary({ status: 'none', reason: 'No EXIF segment in this file' });
+            return;
+          }
+          setExifSummary({
+            status: 'found',
+            tagCount: Object.keys(parsed).length,
+            camera: [parsed.Make, parsed.Model].filter(Boolean).join(' ') || null,
+            software: parsed.Software || null,
+            captured: parsed.DateTimeOriginal
+              ? new Date(parsed.DateTimeOriginal).toLocaleString()
+              : (parsed.CreateDate ? new Date(parsed.CreateDate).toLocaleString() : null),
+            gps: (parsed.latitude !== undefined && parsed.longitude !== undefined)
+              ? `${parsed.latitude.toFixed(5)}, ${parsed.longitude.toFixed(5)}`
+              : null
+          });
+        })
+        .catch(() => setExifSummary({ status: 'none', reason: 'EXIF segment unreadable' }));
       const reader = new FileReader();
       reader.onloadend = () => {
         setCapturedImage(reader.result);
@@ -199,6 +260,8 @@ export default function ScannerView() {
     setBatchName('');
     setImageMeta(null);
     setCsvMapping(null);
+    setCompressedImage(null);
+    setExifSummary(null);
     setSourcePlatform('unspecified');
     setSourceUrl('');
     setIngestionMethod('Analyst Upload');
@@ -352,9 +415,14 @@ export default function ScannerView() {
   };
 
   const handleScan = () => {
+    // Ship the compressed copy when the toggle is on and re-encoding actually
+    // saved space; otherwise the original bytes go through untouched.
+    const imageToScan = (compressEnabled && compressedImage && !compressedImage.skipped)
+      ? compressedImage.dataUrl
+      : capturedImage;
     navigate('/review', {
       state: {
-        image: capturedImage,
+        image: imageToScan,
         text: pastedText,
         isExistingScan: false,
         sourcePlatform: sourcePlatform || 'unspecified',
@@ -522,6 +590,96 @@ export default function ScannerView() {
                   Clear
                 </button>
               </div>
+
+              {/* Storage compression toggle */}
+              <div className="border border-slate-800 bg-[#0a0c12] rounded p-3 space-y-1.5">
+                <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={compressEnabled}
+                    onChange={toggleCompression}
+                    className="mt-0.5 w-3.5 h-3.5 accent-amber-500 cursor-pointer"
+                  />
+                  <span className="min-w-0">
+                    <span className="block text-xs font-mono font-bold text-slate-300">
+                      Compress image to save space
+                    </span>
+                    <span className="block text-[10px] font-mono text-slate-500 leading-relaxed mt-0.5">
+                      Downscales &amp; re-encodes before storage. Untick if you plan EXIF-based
+                      tasks — compression strips all metadata from the stored copy.
+                    </span>
+                  </span>
+                </label>
+                {compressEnabled && (
+                  <div className="pl-6 text-[10px] font-mono">
+                    {isCompressing ? (
+                      <span className="text-slate-500 flex items-center gap-1.5">
+                        <Loader2 className="w-3 h-3 animate-spin" /> Estimating savings…
+                      </span>
+                    ) : compressedImage ? (
+                      compressedImage.skipped ? (
+                        <span className="text-slate-500">Already optimised — original will be stored as-is.</span>
+                      ) : (
+                        <span className="text-[#3fb950]">
+                          {formatBytes(compressedImage.originalBytes)} → {formatBytes(compressedImage.bytes)}
+                          {' '}(−{Math.round((1 - compressedImage.bytes / compressedImage.originalBytes) * 100)}%)
+                        </span>
+                      )
+                    ) : null}
+                  </div>
+                )}
+              </div>
+
+              {/* EXIF snapshot — parsed from the original bytes before any re-encode */}
+              {exifSummary && (
+                <div className="border border-slate-800 bg-[#0a0c12] rounded p-3 font-mono">
+                  <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 pb-1.5 border-b border-slate-800">
+                    <Aperture className="w-3 h-3 text-amber-500" />
+                    EXIF Snapshot
+                    {exifSummary.status === 'found' && (
+                      <span className="ml-auto text-amber-500 normal-case">{exifSummary.tagCount} tags decoded</span>
+                    )}
+                  </div>
+                  {exifSummary.status === 'none' ? (
+                    <p className="text-[10px] text-slate-500">{exifSummary.reason}</p>
+                  ) : (
+                    <div className="space-y-1 text-[10px]">
+                      {exifSummary.camera && (
+                        <div className="flex justify-between gap-2">
+                          <span className="text-slate-500">Camera:</span>
+                          <span className="text-slate-300 font-bold text-right truncate">{exifSummary.camera}</span>
+                        </div>
+                      )}
+                      {exifSummary.software && (
+                        <div className="flex justify-between gap-2">
+                          <span className="text-slate-500">Software:</span>
+                          <span className="text-slate-300 font-bold text-right truncate">{exifSummary.software}</span>
+                        </div>
+                      )}
+                      {exifSummary.captured && (
+                        <div className="flex justify-between gap-2">
+                          <span className="text-slate-500">Captured:</span>
+                          <span className="text-slate-300 font-bold text-right">{exifSummary.captured}</span>
+                        </div>
+                      )}
+                      {exifSummary.gps && (
+                        <div className="flex justify-between gap-2">
+                          <span className="text-slate-500 flex items-center gap-1"><MapPin className="w-3 h-3 text-rose-400" /> GPS:</span>
+                          <span className="text-rose-300 font-bold text-right">{exifSummary.gps}</span>
+                        </div>
+                      )}
+                      {!exifSummary.camera && !exifSummary.software && !exifSummary.captured && !exifSummary.gps && (
+                        <p className="text-slate-500">Tags present, but no camera / date / GPS fields.</p>
+                      )}
+                      {compressEnabled && (
+                        <p className="text-amber-500/80 pt-1.5 mt-1.5 border-t border-slate-850 leading-relaxed">
+                          ⚠ Compression is ON — these tags will be stripped from the stored copy.
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           ) : activeTab === 'camera' ? (
             <>
@@ -903,10 +1061,10 @@ export default function ScannerView() {
             <>
               <button
                 onClick={handleScan}
-                disabled={!capturedImage && !pastedText.trim()}
+                disabled={(!capturedImage && !pastedText.trim()) || isCompressing}
                 className="w-full bg-amber-500 hover:bg-amber-600 disabled:bg-slate-800 disabled:text-slate-600 text-[#0d1117] font-bold py-3.5 rounded transition-all active:scale-[0.98] font-mono text-sm"
               >
-                Scan for Risks
+                {isCompressing ? 'Compressing Image…' : 'Scan for Risks'}
               </button>
               {!capturedImage && !pastedText.trim() && (
                 <p className="text-[10px] font-mono text-slate-500 text-center uppercase tracking-wider max-w-xs leading-normal">
