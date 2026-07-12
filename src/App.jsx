@@ -1,6 +1,6 @@
 import React, { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
-import { Shield, Database, BarChart3, LogOut, Loader2, HelpCircle, Home, BookOpen, MessageSquare, Frame } from 'lucide-react';
+import { Shield, Database, BarChart3, LogOut, Loader2, HelpCircle, Home, BookOpen, MessageSquare, Frame, Github, Youtube, Presentation } from 'lucide-react';
 import ScannerView from './pages/ScannerView';
 import FaqView from './pages/FaqView';
 import logoImg from './assets/logo.png';
@@ -101,6 +101,44 @@ function Layout({ children }) {
                   <MessageSquare className="w-4 h-4" />
                   <span>The Interview</span>
                 </Link>
+              </div>
+            </div>
+
+            <div className="mt-4 pt-3 border-t border-slate-800/60">
+              <div className="text-[9px] font-mono uppercase tracking-widest text-slate-500 px-3 pb-2 font-bold">
+                Project Links
+              </div>
+              <div className="flex items-stretch gap-1.5 px-3">
+                <a
+                  href="https://github.com/r3mington/job-scanner"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="Source code on GitHub"
+                  className="flex-1 flex flex-col items-center gap-1 py-2 rounded border border-transparent text-slate-600 hover:text-amber-400 hover:bg-slate-900/40 hover:border-slate-800 transition-all"
+                >
+                  <Github className="w-4 h-4" />
+                  <span className="text-[8px] uppercase tracking-wider">Code</span>
+                </a>
+                <a
+                  href="https://youtu.be/2E4Inj6gHeI"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="Video demo on YouTube"
+                  className="flex-1 flex flex-col items-center gap-1 py-2 rounded border border-transparent text-slate-600 hover:text-amber-400 hover:bg-slate-900/40 hover:border-slate-800 transition-all"
+                >
+                  <Youtube className="w-4 h-4" />
+                  <span className="text-[8px] uppercase tracking-wider">Demo</span>
+                </a>
+                <a
+                  href="/sentinel-ai-deck.pdf"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="Presentation deck (PDF)"
+                  className="flex-1 flex flex-col items-center gap-1 py-2 rounded border border-transparent text-slate-600 hover:text-amber-400 hover:bg-slate-900/40 hover:border-slate-800 transition-all"
+                >
+                  <Presentation className="w-4 h-4" />
+                  <span className="text-[8px] uppercase tracking-wider">Deck</span>
+                </a>
               </div>
             </div>
           </nav>
