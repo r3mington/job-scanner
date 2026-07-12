@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { supabase } from '../utils/supabaseClient';
-import { Mail, Lock, Loader2, AlertCircle, LogIn } from 'lucide-react';
+import { Mail, Lock, Loader2, AlertCircle, LogIn, AlertTriangle } from 'lucide-react';
 import Logo from '../components/Logo';
 
 export default function LoginView() {
@@ -46,6 +46,40 @@ export default function LoginView() {
           <p className="text-xs text-slate-400 max-w-[280px] mx-auto font-mono">
             Securely detect risky job postings and human exploitation scams.
           </p>
+        </div>
+
+        {/* Competition-only judge access — remove after the event */}
+        <div className="border border-amber-500/40 bg-amber-500/5 rounded p-4 space-y-3">
+          <div className="flex items-center gap-2 text-amber-500">
+            <AlertTriangle className="w-5 h-5 flex-shrink-0" />
+            <span className="text-xs font-mono font-bold uppercase tracking-wider">
+              Judge Access — Competition Only
+            </span>
+          </div>
+          <p className="text-[10px] text-amber-500/80 font-mono leading-relaxed">
+            These shared credentials exist solely for Austin AI Hub competition
+            judging and will be revoked when the event ends.
+          </p>
+          <div className="bg-[#0a0c12] border border-slate-800 rounded p-3 font-mono text-[11px] space-y-1">
+            <div className="flex justify-between gap-2">
+              <span className="text-slate-500">Email:</span>
+              <span className="text-slate-200 font-bold select-all">judges@austinaihub.org</span>
+            </div>
+            <div className="flex justify-between gap-2">
+              <span className="text-slate-500">Password:</span>
+              <span className="text-slate-200 font-bold select-all">austinaihub</span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setEmail('judges@austinaihub.org');
+              setPassword('austinaihub');
+            }}
+            className="w-full py-2 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/40 text-amber-500 font-mono font-bold text-[10px] uppercase tracking-wider rounded transition-colors"
+          >
+            Fill Judge Credentials
+          </button>
         </div>
 
         <form onSubmit={handleAuth} className="space-y-4">
