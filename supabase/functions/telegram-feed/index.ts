@@ -50,11 +50,24 @@ serve(async (req) => {
       return json({ error: { message: "Invalid channel username" } });
     }
 
-    const res = await fetch(`https://t.me/s/${clean}`, {
-      headers: { "User-Agent": "Mozilla/5.0 (SentinelAI read-only research fetch)" },
-    });
-    if (!res.ok) {
-      return json({ error: { message: `Telegram preview returned ${res.status}` } });
+    // t.me occasionally drops off DNS (observed 2026-07); Telegram serves the
+    // identical preview on its official mirror domains, so walk the list.
+    const hosts = ["t.me", "telegram.dog", "telegram.me"];
+    let res: Response | null = null;
+    let lastErr = "";
+    for (const host of hosts) {
+      try {
+        const attempt = await fetch(`https://${host}/s/${clean}`, {
+          headers: { "User-Agent": "Mozilla/5.0 (SentinelAI read-only research fetch)" },
+        });
+        if (attempt.ok) { res = attempt; break; }
+        lastErr = `${host} returned ${attempt.status}`;
+      } catch (e) {
+        lastErr = `${host}: ${(e as Error).message}`;
+      }
+    }
+    if (!res) {
+      return json({ error: { message: `Telegram preview unreachable (${lastErr})` } });
     }
     const html = await res.text();
 
@@ -91,6 +104,8 @@ serve(async (req) => {
 
     return json({ channel: clean, title: channelTitle, count: result.length, posts: result });
   } catch (error) {
-    return json({ error: { message: (error as Error).message } }, 500);
+    // 200 with an error object: supabase-js swallows non-2xx bodies, and the
+    // client already routes data.error to its log with the real message.
+    return json({ error: { message: (error as Error).message } });
   }
 });
